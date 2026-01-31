@@ -1,0 +1,56 @@
+name: Auto Update Docs
+
+on:
+  push:
+    branches:
+      - '**' # run on every branch push
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true  # Needed to push changes
+
+      - name: Set up Git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Convert all urls from HTTPS to SSH connection
+          sed -i 's|url = https://github.com/|url = git@github.com:|' .git/config
+
+      # 1. Generate a SSH key-pair: `ssh-keygen -t ed25519 -N "" -f /tmp/github`
+      # 2. Go to: https://github.com/<USERNAME>/<REPO>/settings/secrets/actions
+      #    Create a secret with the Name `SSH_PRIVATE_KEY` and
+      #    the SSH private key as the Secret.
+      # 3. Go to: https://github.com/<USERNAME>/<REPO>/settings/keys
+      #    Add a deploy key with the Title `Github Action Key` and
+      #    the SSH public key as the Key.
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+            ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Run Nix and Bash commands
+        run: |
+          mkdir -v -p docs/
+          nix --extra-experimental-features 'nix-command flakes' run .#gen-docs
+
+      - name: Commit changes if any
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add docs/
+            git commit -m "Updated docs"
+            git push
+          else
+            echo "No changes to commit."
+          fi
+
