@@ -40,6 +40,50 @@ recursiveMerge [
 ```
 
 
+# disko {#sec-functions-library-disko}
+Generate a zfs filesystem for a user
+
+## Example
+
+```nix
+DeclareZfsRootDisk {
+  lib = lib;
+  listOfUsernames = [ "foo" { name: "bar"; } { name: "bar"; home: "/home/bar2"; } ]
+  hostname = config.networking.hostname;
+  enableEncryption = false;
+}
+=>
+{ ... }
+```
+
+## Type
+
+```
+DeclareZfsRootDisk :: Attribute -> Attribute
+```
+
+## Arguments
+
+pkgs
+: `pkgs` from nixpkgs or the nixpkgs 😅 Need for the `dmidecode` package
+
+lib
+: `lib` from nixpkgs.
+
+hostname
+: The name of the device. The pool will be name: zroot-<HOSTNAME>
+
+enableEncryption
+: Enable or Disable of the drive should be encrypted.
+: Currently the encryption is using the motherboards UUID.
+: You can find it with the command: `dmidecode --string system-uuid`
+
+listOfUsernames
+: A list of `string` or `attribute` element (may be mixed).
+: The `string` element is: <USERNAME>.
+: The `attribute` element is: { name = "<USERNAME>"; mountpoint = "<MOUNTPOINT>"; }
+
+
 # strings {#sec-functions-library-strings}
 
 
