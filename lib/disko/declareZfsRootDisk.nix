@@ -5,7 +5,8 @@
 
   ```nix
   DeclareZfsRootDisk {
-    lib = lib;
+    inherit pkgs lib;
+    devicePath = "/dev/disk/by-id/nvme-WDC_PC_SN479_WEFWOER-512G-1233_23425X589324";
     listOfUsernames = [ "foo" { name: "bar"; } { name: "bar"; home: "/home/bar2"; } ]
     hostname = config.networking.hostname;
     enableEncryption = false;
@@ -28,6 +29,9 @@
   lib
   : `lib` from nixpkgs.
 
+  devicePath
+  : The absolute path to the device
+
   hostname
   : The name of the device. The pool will be name: zroot-<HOSTNAME>
 
@@ -41,14 +45,19 @@
   : The `string` element is: <USERNAME>.
   : The `attribute` element is: { name = "<USERNAME>"; mountpoint = "<MOUNTPOINT>"; }
 
+  defineBootPartitions
+  : Defines boot partitions for systems that are not `x86_64-linux` or `aarch64-linux`,
+  : or when boot partitions must be overwritten
 */
 {
   pkgs,
   lib,
+  devicePath,
   hostname,
   enableEncryption ? true,
   swapSize ? 32,
   listOfUsernames,
+  defineBootPartitions ? null
 }:
 let
 
@@ -65,7 +74,7 @@ let
 
   swap_size =
     if ( builtins.isInt swapSize && swapSize >= 0 )
-    then swap_size
+    then swapSize
     else throw "The size of the SWAP partition in Gigabytes. If 0 when no SWAP partition will be created. The value can be negative"
   ;
 
@@ -182,36 +191,33 @@ let
 
 in
 {
-  boot.zfs.requestEncryptionCredentials = lib.mkDefualt enableEncryption;
+  boot.supportedFilesystems = [ "zfs" ];
 
-  security.pam.zfs = {
+  boot.zfs.devNodes = lib.mkDefault "/dev/disk/by-partuuid";
+  boot.zfs.forceImportRoot = lib.mkDefault true;
+  boot.zfs.requestEncryptionCredentials = lib.mkDefault enableEncryption;
+
+  security.pam.zfs = lib.mkIf enableEncryption {
     enable = true;
-    homes = "${zroot_name}/HOME";
+    homes = lib.mkDefault "${zroot_name}/HOME";
   };
+
+  services.zfs.autoScrub.enable = lib.mkDefault true;
+  services.zfs.trim.enable = lib.mkDefault true;
+
+  systemd.services.systemd-journal-flush.after = [ "zfs-import.target" "zfs-mount.service" ];
+
 
   disko.devices = {
     disk = {
       main = {
-        device = "/dev/disk/by-id/nvme-WDC_PC_SN730_SDBQNTY-512G-1001_20266B801959_1";
+        device = devicePath;
         type = "disk";
 
         content = {
           type = "gpt";
 
           partitions = {
-            ESP = {
-              label = "ESP";
-              priority = 1;
-              type = "EF00";
-              start = "2MiB";
-              size = "2G";
-              content = {
-                type = "filesystem";
-                format = "vfat";
-                mountpoint = "/boot";
-                mountOptions = [ "umask=0077" ];
-              };
-            };
             zfs = {
               priority = 10;
               # size = "100%";
@@ -231,7 +237,80 @@ in
                 randomEncryption = true;
               };
             };
-          });
+          }) // (
+            if ( builtins.isAttrs defineBootPartitions )
+            then defineBootPartitions
+            else if ( pkgs.stdenv.hostPlatform.system == "x86_64-linux" )
+            then {
+              ESP = {
+                label = "ESP";
+                priority = 1;
+                type = "EF00";
+                start = "2MiB";
+                size = "2G";
+                content = {
+                  type = "filesystem";
+                  format = "vfat";
+                  mountpoint = "/boot";
+                  mountOptions = [ "umask=0077" ];
+                };
+              };
+            }
+            else if ( pkgs.stdenv.hostPlatform.system == "aarch64-linux" )
+            then {
+              FIRMWARE = {
+                priority = 1;
+                label = "FIRMWARE";
+
+                type = "0700"; # Microsoft basic data
+                # attributes = [
+                #   0 # Required Partition
+                # ];
+
+                start = "2MiB";
+                size = "2G";
+                content = {
+                  type = "filesystem";
+                  format = "vfat";
+                  mountpoint = "/boot/firmware";
+                  mountOptions = [
+                    "noatime"
+                    "noauto"
+                    "x-systemd.automount"
+                    "x-systemd.idle-timeout=1min"
+                  ];
+                };
+              };
+
+              ESP = {
+                label = "ESP";
+                priority = 2;
+                type = "EF00";
+                # attributes = [
+                #   2 # Legacy BIOS Bootable, for U-Boot to find extlinux config
+                # ];
+                size = "2G";
+                content = {
+                  type = "filesystem";
+                  format = "vfat";
+                  mountpoint = "/boot";
+                  mountOptions = [
+                    "noatime"
+                    "noauto"
+                    "x-systemd.automount"
+                    "x-systemd.idle-timeout=1min"
+                    "umask=0077"
+                  ];
+                };
+              };
+            }
+            else throw ''
+              Boot partitions are not defined.
+              Boot partitions are only pre-defined for `x86_64-linux` and `aarch64-linux`
+              systems, not for `${pkgs.stdenv.hostPlatform.system}`.
+              Use the argument `defineBootPartitions` to defined boot partitions.
+            ''
+          );
         };
       };
     };
@@ -288,7 +367,7 @@ in
     };
   };
 
-  initrd.postDeviceCommands = lib.optionalString enableEncryption ''
+  boot.initrd.postDeviceCommands = lib.mkIf enableEncryption ''
     KEY="$(${pkgs.dmidecode}/bin/dmidecode --string system-uuid | tr -d '\n')"
     SECRET_FOLDER_PATH="/tmp/secrets"
     KEY_FILE_PATH="$SECRET_FOLDER_PATH/zpool.key"
