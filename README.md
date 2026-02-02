@@ -17,7 +17,7 @@ into a nixos config.
 
     nixpkgs-lib-extensions = {
       url = "git+https://github.com/dvaerum/nixpkgs-lib-extensions";
-      inputs.nixpkgs.follows = "nixpkgs-stable";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
