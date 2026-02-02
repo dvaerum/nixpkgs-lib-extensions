@@ -41,9 +41,13 @@ recursiveMerge [
 
 
 # disko {#sec-functions-library-disko}
+
+
+## `lib.disko.declareZfsRootDisk` {#lib.disko.declareZfsRootDisk}
+
 Generate a zfs filesystem for a user
 
-## Example
+### Example
 
 ```nix
 DeclareZfsRootDisk {
@@ -57,13 +61,13 @@ DeclareZfsRootDisk {
 { ... }
 ```
 
-## Type
+### Type
 
 ```
 DeclareZfsRootDisk :: Attribute -> Attribute
 ```
 
-## Arguments
+### Arguments
 
 pkgs
 : `pkgs` from nixpkgs or the nixpkgs 😅 Need for the `dmidecode` package
