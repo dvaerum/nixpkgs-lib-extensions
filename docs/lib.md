@@ -47,7 +47,8 @@ Generate a zfs filesystem for a user
 
 ```nix
 DeclareZfsRootDisk {
-  lib = lib;
+  inherit pkgs lib;
+  devicePath = "/dev/disk/by-id/nvme-WDC_PC_SN479_WEFWOER-512G-1233_23425X589324";
   listOfUsernames = [ "foo" { name: "bar"; } { name: "bar"; home: "/home/bar2"; } ]
   hostname = config.networking.hostname;
   enableEncryption = false;
@@ -70,6 +71,9 @@ pkgs
 lib
 : `lib` from nixpkgs.
 
+devicePath
+: The absolute path to the device
+
 hostname
 : The name of the device. The pool will be name: zroot-<HOSTNAME>
 
@@ -82,6 +86,10 @@ listOfUsernames
 : A list of `string` or `attribute` element (may be mixed).
 : The `string` element is: <USERNAME>.
 : The `attribute` element is: { name = "<USERNAME>"; mountpoint = "<MOUNTPOINT>"; }
+
+defineBootPartitions
+: Defines boot partitions for systems that are not `x86_64-linux` or `aarch64-linux`,
+: or when boot partitions must be overwritten
 
 
 # strings {#sec-functions-library-strings}
