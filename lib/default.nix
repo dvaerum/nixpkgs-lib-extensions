@@ -22,8 +22,8 @@ let
     in
       if builtins.isAttrs unknown_import
       then unknown_import
-      else if builtins.isFunction unknown_import
-      then { "${basename}" = unknown_import; }
+      # else if builtins.isFunction unknown_import
+      # then { "${basename}" = unknown_import; }
       else throw "The file `${folder_name}/${file_name}` have to either contain an attribute or a function"
   ;
 
