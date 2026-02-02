@@ -31,7 +31,7 @@ into a nixos config.
       inherit system;
 
       lib = nixpkgs.lib.extend (final: prev:
-        prev.recursiveUpdate prev nixpkgs-lib-extensions.lib
+        nixpkgs-lib-extensions.extendLib prev
       );
       
       modules = [
@@ -60,9 +60,9 @@ into a nixos config.
       inherit system;
 
       lib = nixpkgs.lib.extend (final: prev:
-        prev.recursiveUpdate prev nixpkgs-lib-extensions.lib
+        nixpkgs-lib-extensions.extendLib prev
       );
-      
+
       modules = [
         ./configuration.nix
       ];
