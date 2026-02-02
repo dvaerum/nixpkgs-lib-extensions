@@ -86,6 +86,10 @@ enableEncryption
 : Currently the encryption is using the motherboards UUID.
 : You can find it with the command: `dmidecode --string system-uuid`
 
+swapSize
+: Set the size (in GiB) of the SWAP partition. Default is `32`.
+: Set it to `0` to disable having a SWAP partition.
+
 listOfUsernames
 : A list of `string` or `attribute` element (may be mixed).
 : The `string` element is: <USERNAME>.
