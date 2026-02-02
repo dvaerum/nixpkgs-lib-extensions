@@ -35,7 +35,7 @@
             set -x
 
             function de_dub_sec_func_lib {
-              awk '!/#[^{]+{#sec-functions-library[^}]+}/ || !a[$0]++'
+              awk '!/^# [^{]+{#sec-functions-library[^}]+}/ || !a[$0]++'
             }
 
             find lib -iname "*.nix" -type f  | sort -V | while read -r nix_file; do
