@@ -225,13 +225,15 @@
             partitions = {
               zfs = {
                 priority = 10;
-                # size = "100%";
-                end = "-${toString swap_size}G";
                 content = {
                   type = "zfs";
                   pool = "${zroot_name}";
                 };
-              };
+              } // (
+                if swap_size == 0
+                then { size = "100%"; }
+                else { end = "-${toString swap_size}G"; }
+              );
             } // ( lib.optionalAttrs ( swap_size > 0 ) {
               SWAP = {
                 label = "SWAP";
