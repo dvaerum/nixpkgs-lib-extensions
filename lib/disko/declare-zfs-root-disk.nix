@@ -45,6 +45,11 @@
     : Set the size (in GiB) of the SWAP partition. Default is `32`.
     : Set it to `0` to disable having a SWAP partition.
 
+    useZfsForTmp
+    : Select if `/tmp` should be a zfs dataset with
+    : `sync=disabled`, `setuid=off` and `devices=off` or
+    : if it should be `tmpfs`.
+
     listOfUsernames
     : A list of `string` or `attribute` element (may be mixed).
     : The `string` element is: <USERNAME>.
@@ -61,6 +66,7 @@
     hostname,
     enableEncryption ? true,
     swapSize ? 32,
+    useZfsForTmp ? true,
     listOfUsernames,
     defineBootPartitions ? null
   }:
@@ -181,7 +187,9 @@
           mountpoint = "legacy";
         };
       };
+    };
 
+    use_zfs_for_tmp = lib.optionalAttrs useZfsForTmp {
       "TMP" = {
         type = "zfs_fs";
         mountpoint = "/tmp";
@@ -196,11 +204,20 @@
 
   in
   {
-    boot.supportedFilesystems = [ "zfs" ];
+    boot = {
+      supportedFilesystems = [ "zfs" ];
 
-    boot.zfs.devNodes = lib.mkDefault "/dev/disk/by-partuuid";
-    boot.zfs.forceImportRoot = lib.mkDefault true;
-    boot.zfs.requestEncryptionCredentials = lib.mkDefault enableEncryption;
+      zfs = {
+        devNodes = lib.mkDefault "/dev/disk/by-partuuid";
+        forceImportRoot = lib.mkDefault true;
+        requestEncryptionCredentials = lib.mkDefault enableEncryption;
+      };
+
+      tmp = {
+        useTmpfs = lib.mkDefault (!useZfsForTmp);
+        cleanOnBoot = lib.mkDefault useZfsForTmp;
+      };
+    };
 
     security.pam.zfs = lib.mkIf enableEncryption {
       enable = true;
@@ -211,7 +228,6 @@
     services.zfs.trim.enable = lib.mkDefault true;
 
     systemd.services.systemd-journal-flush.after = [ "zfs-import.target" "zfs-mount.service" ];
-
 
     disko.devices = {
       disk = {
@@ -342,7 +358,7 @@
             canmount = "off";
           } // encryption_attribures;
 
-          datasets = zroot_general_datasets // zfs_filesystems_for_users;
+          datasets = zroot_general_datasets // zfs_filesystems_for_users // use_zfs_for_tmp;
 
           preCreateHook = lib.optionalString enableEncryption ''
             if which dmidecode > /dev/null 2> /dev/null; then
