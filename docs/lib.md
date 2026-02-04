@@ -90,6 +90,11 @@ swapSize
 : Set the size (in GiB) of the SWAP partition. Default is `32`.
 : Set it to `0` to disable having a SWAP partition.
 
+useZfsForTmp
+: Select if `/tmp` should be a zfs dataset with
+: `sync=disabled`, `setuid=off` and `devices=off` or
+: if it should be `tmpfs`.
+
 listOfUsernames
 : A list of `string` or `attribute` element (may be mixed).
 : The `string` element is: <USERNAME>.
