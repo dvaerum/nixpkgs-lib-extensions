@@ -210,7 +210,8 @@
       zfs = {
         devNodes = lib.mkDefault "/dev/disk/by-partuuid";
         forceImportRoot = lib.mkDefault true;
-        requestEncryptionCredentials = lib.mkDefault enableEncryption;
+
+        requestEncryptionCredentials = lib.mkDefault false;
       };
 
       tmp = {
@@ -218,6 +219,19 @@
         cleanOnBoot = lib.mkDefault useZfsForTmp;
       };
     };
+
+    boot.initrd.postResumeCommands = lib.optionalString enableEncryption (lib.mkAfter /* bash */ ''
+      zfs list -rHo name,keylocation,keystatus -t volume,filesystem | \
+      while IFS=$'\t' read -r dataset keylocation keystatus; do
+        if [[ "$keystatus" != "unavailable" ]]; then
+          continue
+        fi
+        case "$keylocation" in
+          none|prompt ) ;;
+          * ) zfs load-key "$dataset" || true ;;
+        esac
+      done
+    '');
 
     security.pam.zfs = lib.mkIf enableEncryption {
       enable = true;
