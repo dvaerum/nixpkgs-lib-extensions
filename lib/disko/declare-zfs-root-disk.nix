@@ -8,7 +8,7 @@
     declareZfsRootDisk {
       inherit pkgs lib;
       devicePath = "/dev/disk/by-id/nvme-WDC_PC_SN479_WEFWOER-512G-1233_23425X589324";
-      listOfUsernames = [ "foo" { name: "bar"; } { name: "bar"; home: "/home/bar2"; } ]
+      listOfUsernames = [ "foo" { name = "bar"; } { name = "bar"; home = "/home/bar2"; } ];
       hostname = config.networking.hostName;
       enableEncryption = false;
     }
