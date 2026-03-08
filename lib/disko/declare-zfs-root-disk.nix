@@ -163,7 +163,7 @@
         type = "zfs_fs";
         options = {
           mountpoint = "/home";
-          canmount = "off";
+          canmount = "on";
         };
       };
       "VAR" = {
