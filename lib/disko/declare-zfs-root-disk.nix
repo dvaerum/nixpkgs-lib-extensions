@@ -190,6 +190,10 @@
         };
       };
 
+      # NixOS >= 26.05 uses systemd stage 1 by default, which does not support
+      # boot.initrd.postDeviceCommands or boot.initrd.postResumeCommands.
+      useSystemdInitrd = lib.versionAtLeast lib.version "26.05";
+
       use_zfs_for_tmp = lib.optionalAttrs useZfsForTmp {
         "TMP" = {
           type = "zfs_fs";
@@ -221,8 +225,88 @@
         };
       };
 
-      boot.initrd.postResumeCommands = lib.optionalString enableEncryption (
-        lib.mkAfter /* bash */ ''
+      # NixOS >= 26.05: use systemd initrd services
+      boot.initrd.systemd = lib.mkIf enableEncryption {
+        extraBin = {
+          dmidecode = "${pkgs.dmidecode}/bin/dmidecode";
+        };
+
+        services.zfs-key-file-setup = {
+          description = "Create ZFS encryption key file from system UUID";
+          unitConfig.DefaultDependencies = false;
+          wantedBy = [ "zfs-import-${zroot_name}.service" ];
+          before = [ "zfs-import-${zroot_name}.service" ];
+          after = [ "systemd-modules-load.service" ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+          };
+          script = ''
+            KEY="$(dmidecode --string system-uuid | tr -d '\n')"
+            SECRET_FOLDER_PATH="/tmp/secrets"
+            KEY_FILE_PATH="$SECRET_FOLDER_PATH/zpool.key"
+
+            if ! [[ -d "$SECRET_FOLDER_PATH" ]]; then
+              rm -rf "$SECRET_FOLDER_PATH"
+            fi
+
+            mkdir -p "$SECRET_FOLDER_PATH"
+            chmod 700 "$SECRET_FOLDER_PATH"
+            echo -n "$KEY" > "$KEY_FILE_PATH"
+          '';
+        };
+
+        services.zfs-load-encryption-keys = {
+          description = "Load ZFS encryption keys for all datasets";
+          unitConfig.DefaultDependencies = false;
+          wantedBy = [
+            "zfs-import.target"
+            "sysroot.mount"
+          ];
+          after = [
+            "zfs-key-file-setup.service"
+            "zfs-import-${zroot_name}.service"
+          ];
+          before = [
+            "zfs-import.target"
+            "sysroot.mount"
+          ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+          };
+          script = ''
+            zfs list -rHo name,keylocation,keystatus -t volume,filesystem | \
+            while IFS=$'\t' read -r dataset keylocation keystatus; do
+              if [[ "$keystatus" != "unavailable" ]]; then
+                continue
+              fi
+              case "$keylocation" in
+                none|prompt ) ;;
+                * ) zfs load-key "$dataset" || true ;;
+              esac
+            done
+          '';
+        };
+      };
+
+      # NixOS < 26.05: use legacy initrd hooks
+      boot.initrd.postDeviceCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) ''
+        KEY="$(${pkgs.dmidecode}/bin/dmidecode --string system-uuid | tr -d '\n')"
+        SECRET_FOLDER_PATH="/tmp/secrets"
+        KEY_FILE_PATH="$SECRET_FOLDER_PATH/zpool.key"
+
+        if ! [[ -d "$SECRET_FOLDER_PATH" ]]; then
+          rm -rf "$SECRET_FOLDER_PATH"
+        fi
+
+        mkdir -p "$SECRET_FOLDER_PATH"
+        chmod 700 "$SECRET_FOLDER_PATH"
+        echo -n "$KEY" > "$KEY_FILE_PATH"
+      '';
+
+      boot.initrd.postResumeCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) (
+        lib.mkAfter ''
           zfs list -rHo name,keylocation,keystatus -t volume,filesystem | \
           while IFS=$'\t' read -r dataset keylocation keystatus; do
             if [[ "$keystatus" != "unavailable" ]]; then
@@ -411,18 +495,5 @@
         };
       };
 
-      boot.initrd.postDeviceCommands = lib.mkIf enableEncryption ''
-        KEY="$(${pkgs.dmidecode}/bin/dmidecode --string system-uuid | tr -d '\n')"
-        SECRET_FOLDER_PATH="/tmp/secrets"
-        KEY_FILE_PATH="$SECRET_FOLDER_PATH/zpool.key"
-
-        if ! [[ -d "$SECRET_FOLDER_PATH" ]]; then
-          rm -rf "$SECRET_FOLDER_PATH"
-        fi
-
-        mkdir -p "$SECRET_FOLDER_PATH"
-        chmod 700 "$SECRET_FOLDER_PATH"
-        echo -n "$KEY" > "$KEY_FILE_PATH"
-      '';
     };
 }
