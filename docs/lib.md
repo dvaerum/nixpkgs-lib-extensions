@@ -69,12 +69,6 @@ DeclareZfsRootDisk :: Attribute -> Attribute
 
 ### Arguments
 
-pkgs
-: `pkgs` from nixpkgs or the nixpkgs 😅 Need for the `dmidecode` package
-
-lib
-: `lib` from nixpkgs.
-
 devicePath
 : The absolute path to the device
 
