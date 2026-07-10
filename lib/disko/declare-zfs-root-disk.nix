@@ -24,12 +24,6 @@
 
     # Arguments
 
-    pkgs
-    : `pkgs` from nixpkgs or the nixpkgs 😅 Need for the `dmidecode` package
-
-    lib
-    : `lib` from nixpkgs.
-
     devicePath
     : The absolute path to the device
 
@@ -61,8 +55,6 @@
   */
   declareZfsRootDisk =
     {
-      pkgs,
-      lib,
       devicePath,
       hostname,
       enableEncryption ? true,
@@ -70,6 +62,15 @@
       useZfsForTmp ? true,
       listOfUsernames,
       defineBootPartitions ? null,
+    }:
+    # Returns a module function (valid in `imports`) so the actual initrd
+    # type can be read from `config`, `pkgs` & `lib` instead
+    # of having to pass them as arguments.
+    {
+      config,
+      pkgs,
+      lib,
+      ...
     }:
     let
 
@@ -190,9 +191,9 @@
         };
       };
 
-      # NixOS >= 26.05 uses systemd stage 1 by default, which does not support
-      # boot.initrd.postDeviceCommands or boot.initrd.postResumeCommands.
-      useSystemdInitrd = lib.versionAtLeast lib.version "26.05";
+      # systemd stage 1 does not support boot.initrd.postDeviceCommands or
+      # boot.initrd.postResumeCommands.
+      useSystemdInitrd = config.boot.initrd.systemd.enable;
 
       use_zfs_for_tmp = lib.optionalAttrs useZfsForTmp {
         "TMP" = {
@@ -209,6 +210,11 @@
 
     in
     {
+      # Attribute definitions to this file in error messages, instead of
+      # whichever configuration.nix called the function.
+      # Can be really helpful when debugging.
+      _file = "nixpkgs-lib-extensions/lib/disko/declare-zfs-root-disk.nix";
+
       boot = {
         supportedFilesystems = [ "zfs" ];
 
