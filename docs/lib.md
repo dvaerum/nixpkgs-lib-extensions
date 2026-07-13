@@ -98,6 +98,14 @@ defineBootPartitions
 : Defines boot partitions for systems that are not `x86_64-linux` or `aarch64-linux`,
 : or when boot partitions must be overwritten
 
+extraDatasets
+: An attribute set of additional zfs datasets, merged into the generated ones.
+: Keys are dataset paths relative to the pool root (like the generated
+: `ROOT/NixOS` or `HOME/<username>`), values are disko dataset definitions.
+: Merged last, so it can also override a generated dataset.
+: Example: { "DATA" = { type = "zfs_fs"; options.mountpoint = "none"; };
+:            "DATA/media" = { type = "zfs_fs"; mountpoint = "/srv/media"; options.mountpoint = "legacy"; }; }
+
 
 # strings {#sec-functions-library-strings}
 
