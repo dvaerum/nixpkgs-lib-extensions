@@ -52,6 +52,14 @@
     defineBootPartitions
     : Defines boot partitions for systems that are not `x86_64-linux` or `aarch64-linux`,
     : or when boot partitions must be overwritten
+
+    extraDatasets
+    : An attribute set of additional zfs datasets, merged into the generated ones.
+    : Keys are dataset paths relative to the pool root (like the generated
+    : `ROOT/NixOS` or `HOME/<username>`), values are disko dataset definitions.
+    : Merged last, so it can also override a generated dataset.
+    : Example: { "DATA" = { type = "zfs_fs"; options.mountpoint = "none"; };
+    :            "DATA/media" = { type = "zfs_fs"; mountpoint = "/srv/media"; options.mountpoint = "legacy"; }; }
   */
   declareZfsRootDisk =
     {
@@ -62,6 +70,7 @@
       useZfsForTmp ? true,
       listOfUsernames,
       defineBootPartitions ? null,
+      extraDatasets ? { },
     }:
     # Returns a module function (valid in `imports`) so the actual initrd
     # type can be read from `config`, `pkgs` & `lib` instead
@@ -91,6 +100,15 @@
           swapSize
         else
           throw "The size of the SWAP partition in Gigabytes. If 0 when no SWAP partition will be created. The value can be negative";
+
+      # Additional zfs datasets requested by the caller. Keys are dataset paths
+      # relative to the pool root (e.g. "DATA/media" becomes
+      # <zroot_name>/DATA/media); parent datasets must be declared by the caller too.
+      extra_datasets =
+        if (builtins.isAttrs extraDatasets) then
+          extraDatasets
+        else
+          throw "The argument `extraDatasets` must be of type `attrset` (dataset path -> disko dataset definition)";
 
       /**
         Generate a zfs filesystem for a user
@@ -469,7 +487,7 @@
             }
             // encryption_attribures;
 
-            datasets = zroot_general_datasets // zfs_filesystems_for_users // use_zfs_for_tmp;
+            datasets = zroot_general_datasets // zfs_filesystems_for_users // use_zfs_for_tmp // extra_datasets;
 
             preCreateHook = lib.optionalString enableEncryption ''
               if which dmidecode > /dev/null 2> /dev/null; then
