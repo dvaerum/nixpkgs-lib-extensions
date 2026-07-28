@@ -10,50 +10,57 @@
   ...
 }:
 let
-  # normalUserModule as a unit: apply its inner module function directly
-  # (the config stub stands in for the host's users.defaultUserShell)
-  aliceModule = (builtins.head (myLib.normalUserModule "alice").imports) {
-    inherit lib;
-    config.users.defaultUserShell = "SENTINEL-SHELL";
-  };
+  # normalUserModule as a unit: apply its inner module function directly.
+  # The config stub supplies the merged uid the module inspects; its
+  # conditional settings come back as mkIf structures (condition/content).
+  unitModule =
+    username: uid:
+    (builtins.head (myLib.normalUserModule username).imports) {
+      inherit lib;
+      config.users.users.${username}.uid = uid;
+    };
+  aliceModule = unitModule "alice" null;
+  rootModule = unitModule "root" 0;
 in
 {
   # the module itself declares the account, the private group, and sets the
   # primary group at priority 900 (beats isNormalUser's mkDefault "users",
   # loses to a plain assignment)
   normal-user-module-unit =
-    aliceModule.users.users.alice.isNormalUser
-    && aliceModule.users.groups ? alice
-    && aliceModule.users.users.alice.group.priority == 900
-    && aliceModule.users.users.alice.group.content == "alice";
+    aliceModule.users.users.alice.isNormalUser.condition
+    && aliceModule.users.users.alice.isNormalUser.content
+    && aliceModule.users.groups.condition
+    && aliceModule.users.groups.content ? alice
+    && aliceModule.users.users.alice.group.condition
+    && aliceModule.users.users.alice.group.content.priority == 900
+    && aliceModule.users.users.alice.group.content.content == "alice";
 
-  # the shell comes from users.defaultUserShell, defined once at priority
-  # 999 with NixOS's useDefaultShell path suppressed -- stronger than the
-  # two mkDefault definitions that would collide on root, weaker than a
-  # plain `shell = ...` assignment
-  normal-user-module-shell =
-    aliceModule.users.users.alice.useDefaultShell.priority == 900
-    && !aliceModule.users.users.alice.useDefaultShell.content
-    && aliceModule.users.users.alice.shell.priority == 999
-    && aliceModule.users.users.alice.shell.content == "SENTINEL-SHELL";
+  # a merged uid below 1000 marks a system account: everything the module
+  # would set is condition-gated off (NixOS forbids isNormalUser there)
+  normal-user-module-uid-gated =
+    !rootModule.users.users.root.isNormalUser.condition
+    && !rootModule.users.users.root.group.condition
+    && !rootModule.users.groups.condition;
 
-  # ... which makes "root" a valid registry user: its built-in shell
-  # definition (mkDefault, 1000) loses to ours instead of colliding, and
-  # root's other built-ins (home /root, group root) stay in force
+  # ... so "root" is a valid registry user: the account stays the
+  # NixOS-defined system one, and ALL of NixOS's own assertions hold
+  # (forcing them is what catches uid/isNormalUser conflicts -- reading
+  # individual attributes alone would not)
   root-registry-entry-safe =
     let
-      root-user =
+      cfg =
         (myLib.nixosConfigurationsBuilder {
           inherit inputs system;
           hostname = "rootentry";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
           homeConfigurations."root" = exampleDir + "/users/alice";
-        }).rootentry.config.users.users.root;
+        }).rootentry.config;
     in
-    root-user.isNormalUser
-    && root-user.home == "/root"
-    && root-user.group == "root"
-    && root-user.shell != null;
+    !cfg.users.users.root.isNormalUser
+    && cfg.users.users.root.home == "/root"
+    && cfg.users.users.root.group == "root"
+    && cfg.users.users.root.shell != null
+    && builtins.all (a: a.assertion) cfg.assertions;
   # the default userModuleFn (normalUserModule) creates an account for
   # every derived user, including system-only eve
   user-accounts-created = laptop.config.users.users.dave.isNormalUser && laptop.config.users.users.eve.isNormalUser;

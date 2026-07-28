@@ -22,15 +22,15 @@
       users.users.alice = {
         isNormalUser = true;
         group = "alice"; # overridable with a plain assignment
-        # the default shell, defined once at priority 999 instead of
-        # via NixOS's useDefaultShell path -- this makes "root" a valid
-        # registry user (root's built-in shell definition would collide
-        # with the useDefaultShell one); a plain `shell = ...` wins
-        useDefaultShell = false;
-        shell = config.users.defaultUserShell;
       };
       users.groups.alice = { };
     }
+    # System accounts are left untouched: when the user's merged uid is
+    # below 1000 (root, or a configuration.nix pinning a reserved uid)
+    # the module contributes nothing -- NixOS forbids isNormalUser on
+    # such accounts, and they define their own group and shell. So
+    # "root" is a valid registry entry: it only gets its home.nix /
+    # configuration.nix, never account changes.
 
     # a custom userModuleFn can build on it:
     userModuleFn = username: {
@@ -55,23 +55,27 @@
     imports = [
       (
         { config, lib, ... }:
+        let
+          # An account with a fixed uid below 1000 is a system account --
+          # root (uid 0), or any registry user whose configuration.nix pins
+          # a reserved uid. NixOS asserts isNormalUser is never combined
+          # with such a uid, and those accounts define their own group and
+          # shell, so this module leaves them entirely untouched. Reading
+          # the merged uid here is safe: this module never defines it.
+          normalAccount =
+            let
+              uid = config.users.users.${username}.uid;
+            in
+            uid == null || uid >= 1000;
+        in
         {
           users.users.${username} = {
-            isNormalUser = true;
+            isNormalUser = lib.mkIf normalAccount true;
             # priority 900: beats isNormalUser's own mkDefault "users" (1000),
             # still loses to a plain `group = ...` assignment (100)
-            group = lib.mkOverride 900 username;
-            # `isNormalUser` normally triggers NixOS's default-shell path
-            # (useDefaultShell -> a mkDefault shell definition). For root
-            # that collides with NixOS's built-in mkDefault root.shell:
-            # two equal-priority definitions of a unique option. Suppress
-            # that path and define the same value once at priority 999 --
-            # beats both mkDefaults (1000), loses to a plain `shell = ...`
-            # assignment (100).
-            useDefaultShell = lib.mkOverride 900 false;
-            shell = lib.mkOverride 999 config.users.defaultUserShell;
+            group = lib.mkIf normalAccount (lib.mkOverride 900 username);
           };
-          users.groups.${username} = { };
+          users.groups = lib.mkIf normalAccount { ${username} = { }; };
         }
       )
     ];

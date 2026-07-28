@@ -644,15 +644,15 @@ extLib.normalUserModule "alice"
   users.users.alice = {
     isNormalUser = true;
     group = "alice"; # overridable with a plain assignment
-    # the default shell, defined once at priority 999 instead of
-    # via NixOS's useDefaultShell path -- this makes "root" a valid
-    # registry user (root's built-in shell definition would collide
-    # with the useDefaultShell one); a plain `shell = ...` wins
-    useDefaultShell = false;
-    shell = config.users.defaultUserShell;
   };
   users.groups.alice = { };
 }
+# System accounts are left untouched: when the user's merged uid is
+# below 1000 (root, or a configuration.nix pinning a reserved uid)
+# the module contributes nothing -- NixOS forbids isNormalUser on
+# such accounts, and they define their own group and shell. So
+# "root" is a valid registry entry: it only gets its home.nix /
+# configuration.nix, never account changes.
 
 # a custom userModuleFn can build on it:
 userModuleFn = username: {
