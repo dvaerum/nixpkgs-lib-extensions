@@ -261,6 +261,7 @@ For every flake input, by convention:
 | `homeManagerModules.default` / `homeModules.default` | added to every home |
 | `overlays.default`               | applied to `pkgs`            |
 | `extendLib`                      | merged into the system `lib` |
+| `lib`                            | namespaced: `lib.<name>.*`   |
 | `nixpkgs-*` (package sets)       | `pkgs-*` specialArgs         |
 
 The `default` export is auto-loaded. Without one, a set with exactly
@@ -277,6 +278,14 @@ modules = [
     .nixosModules.dell-xps-13-9310
 ];
 ```
+
+An input's standalone `lib` export is added under its own name --
+`lib.NixVirt.domain` in any module (and `pkgs.lib.NixVirt` too), no
+wiring needed. It is namespaced, never merged flat: `extendLib` is
+the convention for extending the flat lib. Overwrite detection
+protects the base: an input whose name collides with an existing
+`lib` attribute (an input named `strings`, say) is skipped with a
+warning, and nixpkgs trees are not namespaced at all.
 
 Opt an input out of the NixOS-module auto-import with
 `excludeModuleInputs = [ "name" ];` (it does not affect home-manager

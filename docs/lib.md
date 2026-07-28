@@ -451,6 +451,13 @@ automatically when the matching input exists:
 - lib extensions from any input exposing an `extendLib` function; this repo's
   own extensions are always applied to the system `lib` and also passed as the
   `extLib` specialArg.
+- each input's standalone `lib` export, namespaced by input name:
+  `lib.<inputName>` in modules and `pkgs.lib.<inputName>` (e.g.
+  `lib.NixVirt.domain`). Never merged flat -- `extendLib` is the
+  composable way into the flat lib -- and never overwriting: an input
+  whose name collides with an existing `lib` attribute is skipped with
+  a warning, and nixpkgs trees are not namespaced (their lib is the
+  base).
 - every `nixpkgs-*` input as a `pkgs-*` specialArg (e.g. `inputs.nixpkgs-unstable`
   becomes the `pkgs-unstable` specialArg).
 

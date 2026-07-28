@@ -43,6 +43,17 @@ let
       home.sessionVariables.FROM_INPUT_HM = "1";
     };
     extendLib = prev: { autoExtMarker = "auto-ext-marker"; };
+    # a standalone `lib` export (NixVirt style): must appear namespaced,
+    # as lib.fake-module-input.* / pkgs.lib.fake-module-input.*
+    lib.probeGroup = "from-lib-probe";
+  };
+
+  # An input named after an existing lib attribute: overwrite detection
+  # must SKIP namespacing its `lib` export (with a warning) so nothing in
+  # the base lib is ever shadowed.
+  fake-strings-collision = {
+    outPath = "/nix/store/fake-strings-collision";
+    lib.hijacked = true;
   };
 
   # An input matching NO generic convention (like fenix): it must ride along
@@ -127,6 +138,7 @@ let
     # specialArg (and its helper nixosModules must NOT be auto-imported).
     nixpkgs-unstable = nixpkgs;
     inherit fake-module-input fake-multi-module-input fake-single-module-input fake-sops-shaped-input;
+    strings = fake-strings-collision;
     fenix = fake-fenix;
     nur = nur-shaped "nur";
     not-nur = nur-shaped "notnur";

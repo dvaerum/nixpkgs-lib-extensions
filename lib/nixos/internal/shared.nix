@@ -209,9 +209,46 @@ let
       # available since the builders are part of nixpkgs-lib-extensions) plus any
       # other input that exposes an `extendLib` function.
       libExtenders = baseLib.filter (v: baseLib.isAttrs v && v ? extendLib) (baseLib.attrValues inputs);
-      lib = baseLib.foldl' (acc: ext: acc.extend (final: prev: ext.extendLib prev)) (
+      extendedLib = baseLib.foldl' (acc: ext: acc.extend (final: prev: ext.extendLib prev)) (
         baseLib.extend (final: prev: baseLib.recursiveUpdate prev extLib)
       ) libExtenders;
+
+      # Each input's standalone `lib` export, namespaced by input name:
+      # exposed as `lib.<name>` in modules and as `pkgs.lib.<name>` (e.g.
+      # `lib.NixVirt.domain`). A plain `lib` export is a foreign namespace
+      # and is never merged flat -- `extendLib` remains the composable way
+      # into the flat lib. Skipped: nixpkgs trees (their lib IS the base).
+      libsFromInputs = baseLib.mapAttrs (_: v: v.lib) (
+        baseLib.filterAttrs (
+          name: v:
+          baseLib.isAttrs v
+          && baseLib.isAttrs (v.lib or null)
+          && !(v ? legacyPackages && v.lib ? nixosSystem)
+        ) inputs
+      );
+
+      # Overwrite detection: an input whose name collides with an existing
+      # `lib` attribute (e.g. an input named `strings`) is NOT namespaced --
+      # nothing in the base lib is ever shadowed -- and a warning names it.
+      # Returns only the additions, for merging onto `base` by the caller.
+      inputLibAdditions =
+        base:
+        let
+          clashes = builtins.attrNames (builtins.intersectAttrs base libsFromInputs);
+        in
+        (
+          if clashes == [ ] then
+            x: x
+          else
+            warn ''
+              nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " clashes}: the name collides with an existing `lib` attribute. Rename the input to expose its lib as `lib.<name>`.''
+        )
+          (builtins.removeAttrs libsFromInputs clashes);
+
+      # Through the fixed point (`extend`), NOT a plain `//`: evalModules
+      # hands modules the lib from its own fixed point, so additions merged
+      # outside it would be invisible as the module-arg `lib`.
+      lib = extendedLib.extend (final: prev: inputLibAdditions prev);
 
       pkgsConfig = {
         cudaSupport = builtins.elem "cudaSupport" tags;
@@ -246,7 +283,13 @@ let
         npkgs:
         import (patchSrc npkgs) {
           inherit system;
-          overlays = autoOverlays ++ extraOverlays;
+          # the input-lib namespacing overlay sits between the collected
+          # input overlays and the caller's extraOverlays, so extraOverlays
+          # can still override pkgs.lib entirely
+          overlays =
+            autoOverlays
+            ++ [ (final: prev: { lib = prev.lib // inputLibAdditions prev.lib; }) ]
+            ++ extraOverlays;
           config = pkgsConfig;
         };
 

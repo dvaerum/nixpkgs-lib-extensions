@@ -75,6 +75,46 @@
   input-extend-lib-applied = custom.config.users.groups ? auto-ext-marker;
   own-ext-lib-in-system-lib = custom.config.users.groups ? Ext-marker;
 
+  # an input's standalone `lib` export is namespaced by input name into
+  # the module-arg lib ...
+  input-lib-namespaced-in-module-lib =
+    (myLib.nixosConfigurationsBuilder {
+      inherit inputs system;
+      hostname = "libprobe";
+      modules = [
+        (exampleDir + "/hosts/server/configuration.nix")
+        ({ lib, ... }: { users.groups.${lib.fake-module-input.probeGroup} = { }; })
+      ];
+    }).libprobe.config.users.groups ? from-lib-probe;
+
+  # ... and into pkgs.lib; nixpkgs trees are NOT namespaced (their lib
+  # IS the base)
+  input-lib-namespaced-in-pkgs-lib =
+    laptop.pkgs.lib.fake-module-input.probeGroup == "from-lib-probe"
+    && !(laptop.pkgs.lib ? nixpkgs-unstable);
+
+  # ... and home-manager modules see it too (via pkgs.lib)
+  input-lib-reaches-home-modules =
+    (myLib.homeConfigurationsBuilder {
+      inherit inputs system;
+      hostname = "laptop";
+      homeConfigurations."alice" = exampleDir + "/users/alice";
+      homeSharedModules = [
+        (
+          { lib, ... }:
+          {
+            home.sessionVariables.LIB_PROBE = lib.fake-module-input.probeGroup;
+          }
+        )
+      ];
+    })."alice@laptop".config.home.sessionVariables.LIB_PROBE == "from-lib-probe";
+
+  # overwrite detection: the input named `strings` collides with
+  # lib.strings, so its lib export is skipped (warning) and the base
+  # lib attribute survives untouched
+  input-lib-collision-skipped =
+    laptop.pkgs.lib.strings ? concatStringsSep && !(laptop.pkgs.lib.strings ? hijacked);
+
   # auto-collection can be opted out per input name
   exclude-module-inputs-respected = !(custom.config.users.groups ? from-input-module);
 }
