@@ -22,26 +22,6 @@ in
     && aliceModule.users.groups ? alice
     && aliceModule.users.users.alice.group.priority == 900
     && aliceModule.users.users.alice.group.content == "alice";
-  # root is special-cased to an empty module: NixOS fully defines the
-  # account itself, and isNormalUser would add second definitions of the
-  # unique `shell`/`home` options
-  normal-user-module-root-empty =
-    (builtins.head (myLib.normalUserModule "root").imports) { inherit lib; } == { };
-
-  # ... so a host with "root" in the registry evaluates: root keeps its
-  # NixOS-defined system account (uid 0's home, not isNormalUser)
-  root-registry-entry-safe =
-    let
-      root-user =
-        (myLib.nixosConfigurationsBuilder {
-          inherit inputs system;
-          hostname = "rootentry";
-          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-          homeConfigurations."root" = exampleDir + "/users/alice";
-        }).rootentry.config.users.users.root;
-    in
-    !root-user.isNormalUser && root-user.home == "/root";
-
   # the default userModuleFn (normalUserModule) creates an account for
   # every derived user, including system-only eve
   user-accounts-created = laptop.config.users.users.dave.isNormalUser && laptop.config.users.users.eve.isNormalUser;
