@@ -1,25 +1,38 @@
 {
   /**
-    Generate a zfs filesystem for a user
+    Declare a complete ZFS root disk as a NixOS module: GPT partitions
+    (boot/ESP, optional swap, zfs), the `zroot-<hostname>` pool, the
+    standard datasets (root, /var, /var/log, /nix/store, /home, optional
+    /tmp) plus one HOME dataset per user, with optional encryption keyed
+    to the motherboard's UUID.
+
+    Prerequisites: the disko NixOS module must be imported (it provides
+    the `disko.devices` options -- automatic when disko is a flake input
+    of a `nixosConfigurationsBuilder` setup), and ZFS requires
+    `networking.hostId` to be set.
 
     # Example
 
     ```nix
-    declareZfsRootDisk {
-      inherit pkgs lib;
-      devicePath = "/dev/disk/by-id/nvme-WDC_PC_SN479_WEFWOER-512G-1233_23425X589324";
-      listOfUsernames = [ "foo" { name: "bar"; } { name: "bar"; home: "/home/bar2"; } ]
-      hostname = config.networking.hostName;
-      enableEncryption = false;
-    }
-    =>
-    { ... }
+    # use in `imports`; the returned module receives config/pkgs/lib itself
+    # extLib = inputs.nixpkgs-lib-extensions.lib
+    imports = [
+      (extLib.declareZfsRootDisk {
+        devicePath = "/dev/disk/by-id/nvme-WDC_PC_SN479_WEFWOER-512G-1233_23425X589324";
+        listOfUsernames = [
+          "foo"
+          { username = "bar"; mountpoint = "/home/bar2"; }
+        ];
+        hostname = "myhost";
+        enableEncryption = false;
+      })
+    ];
     ```
 
     # Type
 
     ```
-    DeclareZfsRootDisk :: Attribute -> Attribute
+    declareZfsRootDisk :: Attribute -> Module
     ```
 
     # Arguments
@@ -28,11 +41,11 @@
     : The absolute path to the device
 
     hostname
-    : The name of the device. The pool will be name: zroot-<HOSTNAME>
+    : The host's name; the pool will be named: zroot-<HOSTNAME>
 
     enableEncryption
-    : Enable or Disable of the drive should be encrypted.
-    : Currently the encryption is using the motherboards UUID.
+    : Whether the pool should be encrypted. Default `true`.
+    : Currently the encryption is using the motherboards UUID as the key.
     : You can find it with the command: `dmidecode --string system-uuid`
 
     swapSize
@@ -42,21 +55,23 @@
     useZfsForTmp
     : Select if `/tmp` should be a zfs dataset with
     : `sync=disabled`, `setuid=off` and `devices=off` or
-    : if it should be `tmpfs`.
+    : if it should be `tmpfs`. Default `true` (zfs dataset).
 
     listOfUsernames
     : A list of `string` or `attribute` element (may be mixed).
     : The `string` element is: <USERNAME>.
-    : The `attribute` element is: { name = "<USERNAME>"; mountpoint = "<MOUNTPOINT>"; }
+    : The `attribute` element is: { username = "<USERNAME>"; mountpoint = "<MOUNTPOINT>"; }
 
     defineBootPartitions
     : Defines boot partitions for systems that are not `x86_64-linux` or `aarch64-linux`,
-    : or when boot partitions must be overwritten
+    : or when boot partitions must be overwritten. Default `null` (use the
+    : predefined layout for the two supported platforms).
 
     extraDatasets
     : An attribute set of additional zfs datasets, merged into the generated ones.
     : Keys are dataset paths relative to the pool root (like the generated
     : `ROOT/NixOS` or `HOME/<username>`), values are disko dataset definitions.
+    : Parent datasets are not created implicitly -- declare them too.
     : Merged last, so it can also override a generated dataset.
     : Example: { "DATA" = { type = "zfs_fs"; options.mountpoint = "none"; };
     :            "DATA/media" = { type = "zfs_fs"; mountpoint = "/srv/media"; options.mountpoint = "legacy"; }; }
@@ -99,7 +114,7 @@
         if (builtins.isInt swapSize && swapSize >= 0) then
           swapSize
         else
-          throw "The size of the SWAP partition in Gigabytes. If 0 when no SWAP partition will be created. The value can be negative";
+          throw "The argument `swapSize` must be an integer >= 0 (GiB); 0 disables the SWAP partition";
 
       # Additional zfs datasets requested by the caller. Keys are dataset paths
       # relative to the pool root (e.g. "DATA/media" becomes
@@ -132,7 +147,7 @@
         user_setting
         : Takes a value of the `string` or `attribute.
         : The `string` element is: <USERNAME>.
-        : The `attribute` element is: { name = "<USERNAME>"; mountpoint = "<MOUNTPOINT>"; }
+        : The `attribute` element is: { username = "<USERNAME>"; mountpoint = "<MOUNTPOINT>"; }
       */
       gen_zfs_user_folder = (
         user_setting:
@@ -249,7 +264,10 @@
         };
       };
 
-      # NixOS >= 26.05: use systemd initrd services
+      # systemd initrd (boot.initrd.systemd.enable, the default since
+      # NixOS 26.05): encryption keys via initrd services. The whole block
+      # is inert on script-based initrd (boot.initrd.systemd options are
+      # ignored there), so it only gates on enableEncryption.
       boot.initrd.systemd = lib.mkIf enableEncryption {
         extraBin = {
           dmidecode = "${pkgs.dmidecode}/bin/dmidecode";
@@ -314,7 +332,8 @@
         };
       };
 
-      # NixOS < 26.05: use legacy initrd hooks
+      # script-based initrd (boot.initrd.systemd.enable = false):
+      # encryption keys via the legacy initrd hooks
       boot.initrd.postDeviceCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) ''
         KEY="$(${pkgs.dmidecode}/bin/dmidecode --string system-uuid | tr -d '\n')"
         SECRET_FOLDER_PATH="/tmp/secrets"
