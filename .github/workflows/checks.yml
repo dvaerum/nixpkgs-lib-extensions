@@ -1,0 +1,38 @@
+name: Flake Checks
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+jobs:
+  flake-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      # ubuntu-latest runners expose /dev/kvm, which the two VM tests
+      # (bootstrap-login-vm, bootstrap-switch-vm) require
+      - name: Run flake checks
+        run: |
+          nix --extra-experimental-features 'nix-command flakes' flake check --print-build-logs
+
+      # cross-system coverage: evaluate (not build) every check for the
+      # other supported systems. `nix flake check --all-systems --no-build`
+      # cannot be used -- the suite contains IFD steps, which --no-build
+      # refuses to realize.
+      - name: Evaluate checks for aarch64-linux
+        run: |
+          for check in builders zfs-root-disk bootstrap-script bootstrap-login-vm bootstrap-switch-vm; do
+            nix --extra-experimental-features 'nix-command flakes' \
+              eval --raw ".#checks.aarch64-linux.$check.drvPath"
+            echo " ok: $check"
+          done
