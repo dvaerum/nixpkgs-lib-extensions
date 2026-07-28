@@ -349,7 +349,7 @@ Rename or add a host -- four places move together:
    (only if the host has users)
 4. any `"user@<name>"` registry keys
 
-Package-set knobs per host (full reference in lib.md):
+Package-set knobs per host (full reference in [lib.md](lib.md)):
 
 ```nix
 laptop = {
@@ -385,7 +385,8 @@ laptop = {
 ## Verifying your setup
 
 This repo's own test suite doubles as living documentation: the
-example under `checks/example/` is evaluated by `nix flake check`,
-and two further VM tests boot a machine, log a user in and run a
-real `home-manager switch`. Reading `checks/builders/tests/` shows
-the exact guaranteed behavior of every feature described above.
+example under [checks/example/](../checks/example/) is evaluated by
+`nix flake check`, and two further VM tests boot a machine, log a
+user in and run a real `home-manager switch`. Reading
+[checks/builders/tests/](../checks/builders/tests/) shows the exact
+guaranteed behavior of every feature described above.

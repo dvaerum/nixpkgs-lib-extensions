@@ -1,7 +1,14 @@
-# attrsets {#sec-functions-library-attrsets}
+# Library reference
+
+Generated from the doc comments in `lib/` -- do not edit by hand;
+run `nix run .#gen-docs` after changing a doc comment. New to the
+builders? Start with the
+[getting-started guide](getting-started.md).
+
+# attrsets
 
 
-## `lib.attrsets.recursiveMerge` {#lib.attrsets.recursiveMerge}
+## `lib.attrsets.recursiveMerge`
 
 Recursively merge a list of attribute sets.
 
@@ -40,10 +47,10 @@ recursiveMerge [
 ```
 
 
-# disko {#sec-functions-library-disko}
+# disko
 
 
-## `lib.disko.declareZfsRootDisk` {#lib.disko.declareZfsRootDisk}
+## `lib.disko.declareZfsRootDisk`
 
 Declare a complete ZFS root disk as a NixOS module: GPT partitions
 (boot/ESP, optional swap, zfs), the `zroot-<hostname>` pool, the
@@ -122,10 +129,10 @@ declareZfsRootDisk :: Attribute -> Module
              "DATA/media" = { type = "zfs_fs"; mountpoint = "/srv/media"; options.mountpoint = "legacy"; }; }
 
 
-# imports {#sec-functions-library-imports}
+# imports
 
 
-## `lib.imports.importIfNix` {#lib.imports.importIfNix}
+## `lib.imports.importIfNix`
 
 Import a path only when it contains valid, importable Nix; otherwise
 return `{ }` (a harmless no-op module) with a warning naming the
@@ -171,7 +178,7 @@ importIfNix :: pkgs -> Path -> Any | { }
 
 
 
-## `lib.imports.importIfNixOr` {#lib.imports.importIfNixOr}
+## `lib.imports.importIfNixOr`
 
 Import a path only when it contains valid, importable Nix; otherwise
 return `default` instead of aborting evaluation. `importIfNix` is the
@@ -227,10 +234,10 @@ importIfNixOr :: pkgs -> Path -> Any -> Any
   The value returned (with a warning) when `path` is not importable.
 
 
-# nixos {#sec-functions-library-nixos}
+# nixos
 
 
-## `lib.nixos.buildNixosConfigurations` {#lib.nixos.buildNixosConfigurations}
+## `lib.nixos.buildNixosConfigurations`
 
 Build several NixOS systems in one call: applies
 `nixosConfigurationsBuilder` to every value of `hosts`, with the
@@ -277,7 +284,7 @@ buildNixosConfigurations ::
 
 
 
-## `lib.nixos.homeConfigurationsBuilder` {#lib.nixos.homeConfigurationsBuilder}
+## `lib.nixos.homeConfigurationsBuilder`
 
 Build the standalone home-manager configurations for a host's users, from an
 explicit registry, keyed `"<user>@<hostname>"`.
@@ -360,7 +367,7 @@ nixpkgs, systemType, specialArgs, desktopEnvironment, tags, patches,
 
 
 
-## `lib.nixos.homeManagerBootstrapModule` {#lib.nixos.homeManagerBootstrapModule}
+## `lib.nixos.homeManagerBootstrapModule`
 
 A NixOS module that provisions each user's standalone home-manager profile on
 login, via a systemd *user* service that runs `home-manager switch` in the
@@ -424,7 +431,7 @@ homeManagerBootstrapModule :: Attribute -> Module
 
 
 
-## `lib.nixos.nixosConfigurationsBuilder` {#lib.nixos.nixosConfigurationsBuilder}
+## `lib.nixos.nixosConfigurationsBuilder`
 
 Build a NixOS system for a host.
 
@@ -613,7 +620,7 @@ builders can be called with one common argument attrset.
 
 
 
-## `lib.nixos.normalUserModule` {#lib.nixos.normalUserModule}
+## `lib.nixos.normalUserModule`
 
 A function from a username to a NixOS module declaring that user as a
 normal account whose primary group is a private group named after the
@@ -660,10 +667,10 @@ normalUserModule :: String -> Module
   The name of the user account (and its private group) to create.
 
 
-# strings {#sec-functions-library-strings}
+# strings
 
 
-## `lib.strings.stringToTitle` {#lib.strings.stringToTitle}
+## `lib.strings.stringToTitle`
 
 Capitalize the first character of a string.
 

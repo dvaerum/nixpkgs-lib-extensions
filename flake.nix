@@ -64,18 +64,37 @@
             '
           }
 
-          find lib -iname "*.nix" -type f  | sort -V | while read -r nix_file; do
-            [[ "$nix_file" == "lib/default.nix" ]] && continue
-            # internal helper files are not part of the public lib
-            [[ "$nix_file" == */internal/* ]] && continue
+          # nixdoc's {#anchor} heading attributes are NixOS-manual syntax;
+          # GitHub renders them literally, so drop them (GitHub derives its
+          # own anchors from the heading text). Runs AFTER de_dub_sec_func_lib,
+          # which matches on the anchor.
+          function strip_heading_anchors {
+            sed -E 's/^(#+ .*[^ ]) \{#[^}]+\}$/\1/'
+          }
 
-            folder_name="$(basename "$(dirname "$nix_file")")"
-            nixdoc --category "$folder_name" \
-                   --description "$folder_name" \
-                   --anchor-prefix "" \
-                   --file "$nix_file"
+          {
+            cat <<'EOF'
+          # Library reference
 
-          done | de_dub_sec_func_lib | def_lists_to_bullets > docs/lib.md
+          Generated from the doc comments in `lib/` -- do not edit by hand;
+          run `nix run .#gen-docs` after changing a doc comment. New to the
+          builders? Start with the
+          [getting-started guide](getting-started.md).
+
+          EOF
+            find lib -iname "*.nix" -type f  | sort -V | while read -r nix_file; do
+              [[ "$nix_file" == "lib/default.nix" ]] && continue
+              # internal helper files are not part of the public lib
+              [[ "$nix_file" == */internal/* ]] && continue
+
+              folder_name="$(basename "$(dirname "$nix_file")")"
+              nixdoc --category "$folder_name" \
+                     --description "$folder_name" \
+                     --anchor-prefix "" \
+                     --file "$nix_file"
+
+            done | de_dub_sec_func_lib | def_lists_to_bullets | strip_heading_anchors
+          } > docs/lib.md
         '';
       };
 
