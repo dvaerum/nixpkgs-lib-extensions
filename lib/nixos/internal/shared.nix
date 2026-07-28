@@ -1,0 +1,340 @@
+# Shared helpers for the builders in lib/nixos (nixosConfigurationsBuilder,
+# homeConfigurationsBuilder and homeManagerBootstrapModule).
+#
+# This file lives in a subfolder so the lib loader (lib/default.nix) does not
+# pick it up as part of the public lib; the builder files import it directly:
+#
+#   extLib: let shared = import ./internal/shared.nix extLib; in { ... }
+#
+# Like the builder files it is a function of `extLib` — the fully assembled
+# nixpkgs-lib-extensions lib.
+extLib:
+let
+  # The home-manager input, detected by capability (its `lib` exposes
+  # `homeManagerConfiguration`) rather than by name, so it is found no matter
+  # what the consuming flake calls the input. null if none is present.
+  detectHomeManager =
+    inputs:
+    let
+      candidates = builtins.filter (
+        v: builtins.isAttrs v && (v.lib or { }) ? homeManagerConfiguration
+      ) (builtins.attrValues inputs);
+    in
+    if candidates == [ ] then null else builtins.head candidates;
+
+  # Registry values must be directories: a path literal or an absolute string
+  # pointing at an existing directory.
+  isDirEntry =
+    entry:
+    (builtins.isPath entry || (builtins.isString entry && builtins.substring 0 1 entry == "/"))
+    && builtins.pathExists entry
+    && builtins.readFileType entry == "directory";
+
+  # `builtins.warn` needs Nix >= 2.23; fall back to a trace with the same look.
+  warn = builtins.warn or (msg: val: builtins.trace "evaluation warning: ${msg}" val);
+
+  # The registry entries that apply for `username` on `hostname`:
+  # "<user>@<host>" and "<user>@*" both apply (and merge); the plain "<user>"
+  # entry is a standalone default, used ONLY when no @-entry matched -- it is
+  # never merged with @-entries (import it explicitly from another entry to
+  # reuse it). A plain entry shadowed by @-entries triggers a warning.
+  matchedEntries =
+    homeConfigurations: hostname: username:
+    let
+      atTier = builtins.filter (e: e != null) [
+        (homeConfigurations."${username}@*" or null)
+        (homeConfigurations."${username}@${hostname}" or null)
+      ];
+      fallback = homeConfigurations.${username} or null;
+    in
+    if atTier != [ ] then
+      (if fallback != null then
+        warn ''
+          homeConfigurations: the plain `${username}` entry is IGNORED on host
+          `${hostname}` because `${username}@...` entries exist. Plain entries
+          are standalone defaults, never merged with @-entries; import the
+          directory explicitly from an @-entry if you want to reuse it.
+        '' atTier
+      else
+        atTier)
+    else if fallback != null then
+      [ fallback ]
+    else
+      [ ];
+
+  # Validate one registry entry and return its parts. Every entry must be a
+  # directory shipping `home.nix` (home-manager config) and/or
+  # `configuration.nix` (NixOS config for that user: account, groups, ...).
+  entryFiles =
+    username: entry:
+    let
+      shown =
+        if builtins.isPath entry || builtins.isString entry then
+          toString entry
+        else
+          "a value of type `${builtins.typeOf entry}`";
+      hasHome = builtins.pathExists (entry + "/home.nix");
+      hasConf = builtins.pathExists (entry + "/configuration.nix");
+    in
+    if !(isDirEntry entry) then
+      throw ''
+        The homeConfigurations entry for `${username}` must be an existing
+        directory (as a path), but got: ${shown}
+      ''
+    else if !hasHome && !hasConf then
+      throw ''
+        The homeConfigurations directory for `${username}` (${shown})
+        contains neither a `home.nix` nor a `configuration.nix`.
+      ''
+    else
+      {
+        homeModule = if hasHome then entry + "/home.nix" else null;
+        nixosModule = if hasConf then entry + "/configuration.nix" else null;
+      };
+
+  # Everything that applies for a user on a host, across the matched entries:
+  # `homeModules` for home-manager, `nixosModules` for the system. A user
+  # whose matched entries only ship configuration.nix is system-only
+  # (homeModules == [ ]): no home output, no login bootstrap.
+  resolveUser =
+    homeConfigurations: hostname: username:
+    let
+      parts = map (entryFiles username) (matchedEntries homeConfigurations hostname username);
+      nonNull = builtins.filter (x: x != null);
+    in
+    {
+      homeModules = nonNull (map (p: p.homeModule) parts);
+      nixosModules = nonNull (map (p: p.nixosModule) parts);
+    };
+
+  # The subset of `users` that actually have a home configuration.
+  usersWithHome =
+    homeConfigurations: hostname: users:
+    builtins.filter (u: (resolveUser homeConfigurations hostname u).homeModules != [ ]) users;
+
+  # The users of a host, derived from the registry keys: "<user>@<host>" entries
+  # for this host, "<user>@*" wildcard entries (every host), plus plain
+  # "<user>" fallback entries (any host). Deduplicated (and sorted) via the
+  # listToAttrs/attrNames round-trip.
+  usersFromRegistry =
+    homeConfigurations: hostname:
+    let
+      toUser =
+        key:
+        let
+          m = builtins.match "(.*)@(.*)" key;
+          host = builtins.elemAt m 1;
+        in
+        if m == null then
+          key
+        else if host == hostname || host == "*" then
+          builtins.head m
+        else
+          null;
+      names = builtins.filter (u: u != null) (map toUser (builtins.attrNames homeConfigurations));
+    in
+    builtins.attrNames (
+      builtins.listToAttrs (
+        map (u: {
+          name = u;
+          value = null;
+        }) names
+      )
+    );
+
+  # From a flake's exported set (modules / overlays): prefer `.default`, else all.
+  pickExported = s: if s ? default then [ s.default ] else builtins.attrValues s;
+
+  # Special cases for inputs that do not follow the generic output
+  # conventions, keyed by the input's NAME in `inputs`. A case applies ONLY
+  # to the input with that exact key and never affects the generic handling
+  # of anything else. Each case maps the input onto the standard convention
+  # attributes (nixosModules / homeManagerModules / homeModules / overlays /
+  # extendLib); the generic collectors then treat it like any other input.
+  # Add further special cases here.
+  inputSpecialCases = {
+    # NUR exports its modules under `modules.nixos` / `modules.homeManager`
+    nur = v: {
+      nixosModules = v.modules.nixos or { };
+      homeManagerModules = v.modules.homeManager or { };
+    };
+  };
+
+  # The convention-shaped view of an input: its special case applied when
+  # one exists for its name, the input itself otherwise.
+  normalizeInput =
+    name: v:
+    if builtins.isAttrs v && inputSpecialCases ? ${name} then v // inputSpecialCases.${name} v else v;
+
+  # Shared context: everything the builders need (lib, pkgs, specialArgs and the
+  # auto-collected module/overlay sets). Builder-specific arguments are ignored
+  # here via `...`.
+  mkContext =
+    {
+      inputs,
+      hostname,
+      system,
+      nixpkgs ? inputs.nixpkgs,
+      tags ? [ ],
+      patches ? [ ],
+      extraOverlays ? [ ],
+      allowedUnfreePackages ? [ ],
+      permittedInsecurePackages ? [ ],
+      specialArgs ? { },
+      desktopEnvironment ? "plasma",
+      systemType ? null,
+      rootPath ? (inputs.self or ./.),
+      excludeModuleInputs ? [ ],
+      ...
+    }:
+    let
+      baseLib = nixpkgs.lib;
+
+      # Extend the system lib with this repo's own extensions (`extLib`, always
+      # available since the builders are part of nixpkgs-lib-extensions) plus any
+      # other input that exposes an `extendLib` function.
+      libExtenders = baseLib.filter (v: baseLib.isAttrs v && v ? extendLib) (baseLib.attrValues inputs);
+      lib = baseLib.foldl' (acc: ext: acc.extend (final: prev: ext.extendLib prev)) (
+        baseLib.extend (final: prev: baseLib.recursiveUpdate prev extLib)
+      ) libExtenders;
+
+      pkgsConfig = {
+        cudaSupport = builtins.elem "cudaSupport" tags;
+        allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) allowedUnfreePackages;
+        inherit permittedInsecurePackages;
+      };
+
+      # Optionally apply patches to a nixpkgs source tree.
+      patchSrc =
+        npkgs:
+        if patches == [ ] then
+          npkgs
+        else
+          npkgs.legacyPackages.${system}.applyPatches {
+            name = "nixpkgs-patched-src";
+            src = npkgs;
+            inherit patches;
+          };
+
+      # The collectors see inputs through their special case (if any); the
+      # `inputs`/`inputPkgs` specialArgs stay raw.
+      conventionInputs = builtins.mapAttrs normalizeInput inputs;
+
+      # Auto-collect overlays (package extensions) from every input exposing `overlays`.
+      autoOverlays = lib.unique (
+        lib.concatLists (
+          lib.mapAttrsToList (name: v: lib.optionals (lib.isAttrs v && v ? overlays) (pickExported v.overlays)) conventionInputs
+        )
+      );
+
+      mkPkgs =
+        npkgs:
+        import (patchSrc npkgs) {
+          inherit system;
+          overlays = autoOverlays ++ extraOverlays;
+          config = pkgsConfig;
+        };
+
+      selectedSrc = patchSrc nixpkgs;
+      pkgs = mkPkgs nixpkgs;
+
+      home-manager = detectHomeManager inputs;
+
+      # Identity (store path) of the home-manager input, so its NixOS module is
+      # kept out of the auto-collected set no matter how the input is named.
+      homeManagerId = if home-manager == null then null else home-manager.outPath or null;
+
+      # Skip when auto-collecting NixOS modules:
+      # - the home-manager input (used standalone; matched by identity, not name)
+      # - package-set flakes, i.e. anything with `legacyPackages` (nixpkgs and its
+      #   variants export helper modules like `readOnlyPkgs` that would break the
+      #   system when imported blindly)
+      # - anything listed in `excludeModuleInputs`
+      skipNixosModule =
+        name: v:
+        (homeManagerId != null && (v.outPath or null) == homeManagerId)
+        || v ? legacyPackages
+        || lib.elem name excludeModuleInputs;
+
+      # Auto-collect NixOS modules from every input exposing `nixosModules`.
+      autoNixosModules = lib.unique (
+        lib.concatLists (
+          lib.mapAttrsToList (
+            name: v:
+            lib.optionals (lib.isAttrs v && v ? nixosModules && !(skipNixosModule name v)) (pickExported v.nixosModules)
+          ) conventionInputs
+        )
+      );
+
+      # Auto-collect home-manager modules from inputs exposing them under the
+      # `homeManagerModules` or `homeModules` convention.
+      autoHomeModules = lib.unique (
+        lib.concatLists (
+          lib.mapAttrsToList (
+            name: v:
+            lib.optionals (lib.isAttrs v) (
+              pickExported (v.homeManagerModules or { }) ++ pickExported (v.homeModules or { })
+            )
+          ) conventionInputs
+        )
+      );
+
+      # Expose every other `nixpkgs-*` input as a `pkgs-*` specialArg, built the
+      # same way as the primary (e.g. nixpkgs-unstable -> pkgs-unstable).
+      pkgsFromInputs = lib.mapAttrs' (
+        name: np: lib.nameValuePair "pkgs-${lib.removePrefix "nixpkgs-" name}" (mkPkgs np)
+      ) (lib.filterAttrs (name: v: lib.hasPrefix "nixpkgs-" name && lib.isAttrs v && v ? legacyPackages) inputs);
+
+      # Every input's packages, pre-selected for this system: e.g.
+      # `inputPkgs.disko.disko-install`. Deliberately NOT merged into `pkgs`
+      # (input names would silently shadow nixpkgs attributes); an input's own
+      # `overlays.default` -- which IS auto-applied -- is the flake author's
+      # sanctioned way into `pkgs`.
+      inputPkgs = lib.mapAttrs (_: v: v.packages.${system}) (
+        lib.filterAttrs (_: v: lib.isAttrs v && (v.packages or { }) ? ${system}) inputs
+      );
+
+      # The whole `inputs` set is exposed so modules can reach anything not
+      # covered by the generic conventions (e.g. inputs.fenix) themselves --
+      # the lib carries no per-input special cases.
+      # Note: `pkgs` deliberately not included — modules already receive it from
+      # the module system, and `specialArgs.pkgs` would override that wiring
+      # (nixpkgs warns about it).
+      mySpecialArguments =
+        {
+          inherit
+            hostname
+            inputs
+            inputPkgs
+            rootPath
+            tags
+            desktopEnvironment
+            extLib
+            systemType
+            ;
+        }
+        // pkgsFromInputs
+        // specialArgs;
+    in
+    {
+      inherit
+        lib
+        pkgs
+        selectedSrc
+        mySpecialArguments
+        home-manager
+        autoNixosModules
+        autoHomeModules
+        ;
+    };
+in
+{
+  inherit
+    detectHomeManager
+    resolveUser
+    usersFromRegistry
+    usersWithHome
+    pickExported
+    mkContext
+    ;
+}

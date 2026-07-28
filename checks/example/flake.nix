@@ -1,0 +1,88 @@
+# EXAMPLE + TEST + TEMPLATE: a complete consumer flake for the lib/nixos
+# builders. Copy this directory (or run `nix flake init -t
+# github:dvaerum/nixpkgs-lib-extensions`) and adjust hosts/ and users/.
+#
+# It is also evaluated by `nix flake check`: ../builders.nix imports this
+# file and calls `outputs` with test inputs (a flake.nix is just a Nix
+# attrset with an `outputs` function), so the example cannot rot.
+#
+# Because of that double duty, some concrete values here (direnv/git
+# settings, group names) are asserted by the checks. They are realistic
+# placeholders: when copying this example, adjust or delete them freely.
+#
+# Layout convention: every registry value is a DIRECTORY containing
+#   home.nix           the user's home-manager configuration
+#   configuration.nix  NixOS config for that user (account, groups, ...)
+# (either may be omitted; only-configuration.nix = system-only user).
+{
+  description = "Example consumer of nixpkgs-lib-extensions' NixOS/home-manager builders";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixpkgs-lib-extensions = {
+      url = "github:dvaerum/nixpkgs-lib-extensions";
+      # avoid locking a second nixpkgs/home-manager
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows = "home-manager";
+    };
+  };
+
+  outputs =
+    { nixpkgs-lib-extensions, ... }@inputs:
+    # `let` names exactly the values used by more than one builder call.
+    let
+      extLib = nixpkgs-lib-extensions.lib;
+      system = "x86_64-linux";
+
+      # One registry shared by all hosts. Key forms:
+      #   "<user>@<host>"  that host only
+      #   "<user>@*"       every host; MERGES with a matching "<user>@<host>"
+      #   "<user>"         standalone default, only when NO @-entry matched
+      homeConfigurations = {
+        "alice" = ./users/alice; # plain default: applies (alice has no @-entries)
+        "bob@laptop" = ./users/bob; # laptop only
+        "carol@otherhost" = ./users/carol; # a different machine: never on laptop
+        "dave" = ./users/dave; # home.nix + configuration.nix (groups)
+        "eve" = ./users/eve; # ONLY configuration.nix -> system-only user
+        "frank@*" = ./users/frank-base; # on every host ...
+        "frank@laptop" = ./users/frank-laptop; # ... plus laptop extras (merged)
+        "grace@*" = ./users/grace-base; # on every host
+        "grace" = ./users/grace-plain; # IGNORED: shadowed by grace@* (warns)
+      };
+    in
+    {
+      # The attribute keys are the hostnames. Each host's own configuration
+      # is found by convention: ./hosts/<hostname>.nix (laptop) or
+      # ./hosts/<hostname>/configuration.nix (server) -- `modules` is only
+      # needed for anything beyond that.
+      nixosConfigurations = extLib.buildNixosConfigurations {
+        # A host with users, home configurations and the login bootstrap.
+        # Accounts for the registry users are created automatically:
+        # `userModuleFn` defaults to `extLib.normalUserModule`. Pass your own
+        # `username -> module` function for richer accounts, or `null` to
+        # disable account creation.
+        laptop = {
+          inherit inputs system homeConfigurations;
+        };
+        # A host without any user registry: no users, no bootstrap, no homes.
+        server = {
+          inherit inputs system;
+        };
+      };
+
+      # The standalone home-manager outputs for laptop, from the same registry.
+      homeConfigurations = extLib.homeConfigurationsBuilder {
+        inherit inputs system homeConfigurations;
+        hostname = "laptop";
+        # Added to every user's home configuration on this host
+        # (asserted by the checks; adjust freely).
+        homeSharedModules = [
+          { programs.direnv.enable = true; }
+        ];
+      };
+    };
+}
