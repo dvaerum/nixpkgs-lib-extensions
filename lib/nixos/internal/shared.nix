@@ -261,14 +261,16 @@ let
 
       # Skip when auto-collecting NixOS modules:
       # - the home-manager input (used standalone; matched by identity, not name)
-      # - package-set flakes, i.e. anything with `legacyPackages` (nixpkgs and its
-      #   variants export helper modules like `readOnlyPkgs` that would break the
-      #   system when imported blindly)
+      # - nixpkgs trees, identified by `legacyPackages` PLUS `lib.nixosSystem`:
+      #   they export helper modules like `readOnlyPkgs` that would break the
+      #   system when imported blindly. `legacyPackages` alone is not enough
+      #   to skip -- flakes like sops-nix export it (docs/packages) while also
+      #   shipping a real `nixosModules.default` that must be imported.
       # - anything listed in `excludeModuleInputs`
       skipNixosModule =
         name: v:
         (homeManagerId != null && (v.outPath or null) == homeManagerId)
-        || v ? legacyPackages
+        || (v ? legacyPackages && (v.lib or { }) ? nixosSystem)
         || lib.elem name excludeModuleInputs;
 
       # Auto-collect NixOS modules from every input exposing `nixosModules`.

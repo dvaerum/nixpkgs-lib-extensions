@@ -272,9 +272,11 @@ modules = [
 
 Opt an input out of the NixOS-module auto-import with
 `excludeModuleInputs = [ "name" ];` (it does not affect home-manager
-modules or overlays). Package-set flakes -- anything exposing
-`legacyPackages`, like the `nixpkgs-*` inputs -- are never
-module-imported: they ship helper modules that would break a system.
+modules or overlays). Nixpkgs trees -- anything exposing both
+`legacyPackages` and `lib.nixosSystem`, like the `nixpkgs-*` inputs
+-- are never module-imported: they ship helper modules that would
+break a system. Exporting `legacyPackages` alone (sops-nix does, for
+its docs) does not exclude an input.
 
 Inputs with nonstandard export names are normalized by a small table
 keyed by input name -- currently `nur` (`modules.nixos` /

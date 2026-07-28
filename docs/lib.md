@@ -439,8 +439,8 @@ The flake `inputs` are passed as a field, and a number of things are wired in
 automatically when the matching input exists:
 
 - NixOS modules from any input exposing `nixosModules.default` (excluded:
-  the home-manager input, since it is used standalone, and package-set
-  flakes like `nixpkgs-*` -- anything with `legacyPackages` -- whose helper
+  the home-manager input, since it is used standalone, and nixpkgs trees
+  -- anything with `legacyPackages` AND `lib.nixosSystem` -- whose helper
   modules would break the system; opt out more via `excludeModuleInputs`).
   The `default` export is auto-loaded; without one, a set with exactly one
   entry is used as-is (sops-nix style), while a multi-entry set is treated

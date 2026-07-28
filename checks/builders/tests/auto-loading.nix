@@ -16,6 +16,10 @@
   pkgs-variant-exposed = laptop._module.specialArgs ? pkgs-unstable;
 
   auto-nixos-module-imported = laptop.config.users.groups ? from-input-module;
+  # `legacyPackages` alone must not exclude an input from the module
+  # auto-import (sops-nix exports it next to its real default module);
+  # only nixpkgs trees (legacyPackages + lib.nixosSystem) are skipped
+  legacy-packages-alone-does-not-exclude = laptop.config.users.groups ? from-sops-shaped-module;
   # a set without `default` but exactly ONE entry is unambiguous
   # (sops-nix / plasma-manager style): that entry is auto-loaded
   single-export-without-default-imported =

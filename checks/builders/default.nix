@@ -96,6 +96,18 @@ let
     };
   };
 
+  # An input exporting `legacyPackages` (sops-nix publishes docs/packages
+  # there) that is NOT a nixpkgs tree (no `lib.nixosSystem`): its
+  # `nixosModules.default` must still be auto-imported. Only real nixpkgs
+  # trees are excluded from the module auto-import.
+  fake-sops-shaped-input = {
+    outPath = "/nix/store/fake-sops-shaped-input";
+    legacyPackages = { };
+    nixosModules.default = {
+      users.groups.from-sops-shaped-module = { };
+    };
+  };
+
   # An input exporting exactly ONE module under a name other than `default`
   # (sops-nix / plasma-manager style): unambiguous, so that entry is
   # auto-loaded despite the missing `default`.
@@ -114,7 +126,7 @@ let
     # A second package-set input: must be exposed as the `pkgs-unstable`
     # specialArg (and its helper nixosModules must NOT be auto-imported).
     nixpkgs-unstable = nixpkgs;
-    inherit fake-module-input fake-multi-module-input fake-single-module-input;
+    inherit fake-module-input fake-multi-module-input fake-single-module-input fake-sops-shaped-input;
     fenix = fake-fenix;
     nur = nur-shaped "nur";
     not-nur = nur-shaped "notnur";
