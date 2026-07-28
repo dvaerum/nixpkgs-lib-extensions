@@ -11,6 +11,12 @@
     account automatically. Pass your own function when accounts need more,
     or `userModuleFn = null` to disable account creation.
 
+    `root` is special-cased to an empty module: the account always exists
+    and is fully defined by NixOS itself (uid 0, group `root`, `/root`,
+    shell) -- marking it `isNormalUser` would conflict with those
+    definitions. A `"root"` registry entry therefore only contributes its
+    `home.nix`/`configuration.nix`, never account settings.
+
     # Example
 
     ```nix
@@ -49,7 +55,10 @@
     imports = [
       (
         { lib, ... }:
-        {
+        # root always exists and is fully defined by NixOS (uid 0, group
+        # `root`, home `/root`, shell): `isNormalUser` would add a second
+        # definition of unique options like `shell` and `home`.
+        lib.optionalAttrs (username != "root") {
           users.users.${username} = {
             isNormalUser = true;
             # priority 900: beats isNormalUser's own mkDefault "users" (1000),

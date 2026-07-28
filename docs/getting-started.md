@@ -192,7 +192,10 @@ changes -- no extra subfolder is consulted.
 Every registry-derived user gets a login account automatically:
 `userModuleFn` defaults to `normalUserModule`, which sets
 `isNormalUser` and gives the user a **private primary group** named
-after them (instead of the shared `users` group).
+after them (instead of the shared `users` group). `root` is the
+exception: NixOS fully defines that account itself, so a `"root"`
+registry entry only contributes its `home.nix`/`configuration.nix`
+and never touches the account.
 
 Richer accounts -- build on the default:
 

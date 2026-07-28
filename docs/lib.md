@@ -633,6 +633,12 @@ every user derived from the `homeConfigurations` registry gets a login
 account automatically. Pass your own function when accounts need more,
 or `userModuleFn = null` to disable account creation.
 
+`root` is special-cased to an empty module: the account always exists
+and is fully defined by NixOS itself (uid 0, group `root`, `/root`,
+shell) -- marking it `isNormalUser` would conflict with those
+definitions. A `"root"` registry entry therefore only contributes its
+`home.nix`/`configuration.nix`, never account settings.
+
 ### Example
 
 ```nix
