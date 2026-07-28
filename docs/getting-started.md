@@ -1,0 +1,377 @@
+# Getting started with the NixOS / home-manager builders
+
+This guide takes you from nothing to a NixOS host with provisioned
+users, using the builders from this repo. The API reference for every
+function lives in [lib.md](lib.md); this document explains the concepts
+and the workflow.
+
+## What you get
+
+- One **registry** declares your users: who exists, on which hosts,
+  what their home looks like, and their system-level config (groups,
+  account settings).
+- Each **host** is one attrset entry; its machine config is found by
+  file convention.
+- Login accounts are **created automatically**, each with a private
+  primary group.
+- On first login, a systemd user service runs `home-manager switch`
+  for the user in the background -- no manual bootstrap.
+- NixOS modules, home-manager modules, overlays and lib extensions
+  exported by your flake inputs are **wired in automatically**.
+
+## Quick start
+
+Scaffold a working setup into an empty directory:
+
+```
+nix flake init -t github:dvaerum/nixpkgs-lib-extensions
+git init && git add .
+```
+
+(`git add` matters: files a flake cannot see do not exist. A new
+`home.nix` that was never `git add`ed is skipped silently.)
+
+You now have:
+
+```
+flake.nix              two hosts, one registry
+hosts/
+  laptop.nix           host config, file form
+  server/
+    configuration.nix  host config, directory form
+users/
+  alice/               plain entry: on every host
+    home.nix
+  dave/                home AND system config
+    home.nix
+    configuration.nix
+  eve/                 system-only user (no home)
+    configuration.nix
+  frank-base/          wildcard entry (frank@*)
+  frank-laptop/        per-host extras (frank@laptop)
+  ...
+```
+
+**Make it real before building:** the scaffolded host files are
+placeholders (a fake root filesystem, no boot loader). Replace the
+contents of `hosts/laptop.nix` with your machine's actual config --
+typically an import of its `hardware-configuration.nix` plus a boot
+loader:
+
+```nix
+{ ... }:
+{
+  imports = [ ./laptop-hardware.nix ];
+  boot.loader.systemd-boot.enable = true;
+  system.stateVersion = "25.05";
+}
+```
+
+Then build and activate the host:
+
+```
+nixos-rebuild switch --flake .#laptop
+```
+
+This builds the SYSTEM only. The home configurations are exported per
+user and host (e.g. `homeConfigurations."alice@laptop"`) and applied
+later: on each user's first login, by the bootstrap service -- you
+normally never run `home-manager` by hand.
+
+## The registry
+
+The heart of the setup -- one attrset shared by all hosts:
+
+```nix
+homeConfigurations = {
+  "alice"        = ./users/alice;
+  "bob@laptop"   = ./users/bob;
+  "frank@*"      = ./users/frank-base;
+  "frank@laptop" = ./users/frank-laptop;
+};
+```
+
+Key forms:
+
+| Key form        | Applies                                     |
+|-----------------|---------------------------------------------|
+| `"user@host"`   | on that host only                           |
+| `"user@*"`      | on every host; MERGES with `"user@host"`    |
+| `"user"`        | standalone default: only when NO @-entry    |
+|                 | matched (never merged; a shadowed plain     |
+|                 | entry prints a warning)                     |
+
+Every value must be a **directory** containing one or both of:
+
+- `home.nix` -- the user's home-manager configuration
+- `configuration.nix` -- NixOS config for that user: extra groups,
+  account tweaks, anything system-level
+
+A directory with only `configuration.nix` is a **system-only user**:
+account and groups, but no home configuration and no bootstrap.
+
+The registry keys define the host's users -- there is no separate
+`users` argument anywhere.
+
+## Hosts
+
+Each host is one entry in `buildNixosConfigurations`; the key is the
+hostname. In your flake the full wiring looks like this (the scaffolded
+`flake.nix` is exactly this shape):
+
+```nix
+{
+  inputs = {
+    nixpkgs.url =
+      "github:NixOS/nixpkgs/nixos-unstable";
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixpkgs-lib-extensions = {
+      url = "github:dvaerum/nixpkgs-lib-extensions";
+      # avoid locking a second nixpkgs/home-manager
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows = "home-manager";
+    };
+  };
+
+  outputs =
+    { nixpkgs-lib-extensions, ... }@inputs:
+    let
+      extLib = nixpkgs-lib-extensions.lib;
+      system = "x86_64-linux";
+      homeConfigurations = {
+        # the registry from the previous section
+        "alice" = ./users/alice;
+      };
+    in
+    {
+      nixosConfigurations =
+        extLib.buildNixosConfigurations {
+          laptop = {
+            inherit inputs system
+              homeConfigurations;
+          };
+          server = {
+            # no registry: no users
+            inherit inputs system;
+          };
+        };
+
+      homeConfigurations =
+        extLib.homeConfigurationsBuilder {
+          inherit inputs system
+            homeConfigurations;
+          hostname = "laptop";
+        };
+    };
+}
+```
+
+Later snippets in this guide assume these bindings (`extLib`,
+`inputs`, `system`, the registry) from this skeleton.
+
+The host's own configuration is imported by convention, relative to
+your flake root:
+
+- `hosts/<hostname>.nix`, or
+- `hosts/<hostname>/configuration.nix`
+
+Both existing at once is an error. Anything extra goes in `modules`.
+
+With many machines, group them by kind: set `systemType = "vm";` on a
+host and the lookup moves one folder deeper, to
+`hosts/vm/<hostname>.nix` (or `hosts/vm/<hostname>/configuration.nix`).
+The value also reaches your modules as the `systemType` specialArg,
+so shared modules can branch on it. Without `systemType` nothing
+changes -- no extra subfolder is consulted.
+
+## Accounts
+
+Every registry-derived user gets a login account automatically:
+`userModuleFn` defaults to `normalUserModule`, which sets
+`isNormalUser` and gives the user a **private primary group** named
+after them (instead of the shared `users` group).
+
+Richer accounts -- build on the default:
+
+```nix
+userModuleFn = username: {
+  imports = [ (extLib.normalUserModule username) ];
+  users.users.${username} = {
+    extraGroups = [ "networkmanager" ];
+  };
+};
+```
+
+Disable account creation entirely with `userModuleFn = null;`
+(accounts must then come from your host config or the users'
+`configuration.nix` files).
+
+## The login bootstrap
+
+When a host gets a non-empty registry, a systemd *user* service is
+installed automatically. On a user's first login it runs
+
+```
+home-manager switch --flake <flakeRef>#<user>@<host>
+```
+
+in the background (login is never blocked). A stamp file in
+`$XDG_STATE_HOME` (default `~/.local/state`) prevents re-runs; pass
+`reactivateEveryLogin = true;` to re-apply on every new session
+instead. `flakeRef` defaults to your flake (`inputs.self`) -- the
+pinned copy from the last `nixos-rebuild`; point it at a mutable
+checkout (e.g. `"/etc/nixos"`) if users should build from a live
+tree.
+
+For this to work your flake must export the home configurations for
+EVERY host that has users -- the bootstrap on host X activates
+`<flakeRef>#<user>@X`, which must exist. One builder call per host,
+merged:
+
+```nix
+homeConfigurations =
+  extLib.homeConfigurationsBuilder {
+    inherit inputs system homeConfigurations;
+    hostname = "laptop";
+  }
+  // extLib.homeConfigurationsBuilder {
+    inherit inputs system homeConfigurations;
+    hostname = "desktop";
+  };
+```
+
+## What your inputs contribute automatically
+
+For every flake input, by convention:
+
+| Input exports                    | Effect                       |
+|----------------------------------|------------------------------|
+| `nixosModules`                   | imported into every host     |
+| `homeManagerModules`/`homeModules` | added to every home        |
+| `overlays`                       | applied to `pkgs`            |
+| `extendLib`                      | merged into the system `lib` |
+| `nixpkgs-*` (package sets)       | `pkgs-*` specialArgs         |
+
+`default` is preferred when an export set has one; otherwise all
+entries are used. Opt an input out of the NixOS-module auto-import
+with `excludeModuleInputs = [ "name" ];` (it does not affect
+home-manager modules or overlays). Package-set flakes -- anything
+exposing `legacyPackages`, like the `nixpkgs-*` inputs -- are never
+module-imported: they ship helper modules that would break a system.
+
+Inputs with nonstandard export names are normalized by a small table
+keyed by input name -- currently `nur` (`modules.nixos` /
+`modules.homeManager`). The home-manager input itself is detected by
+capability, whatever you named it, and its NixOS module is never
+auto-imported (it is used standalone).
+
+## What your modules receive (specialArgs)
+
+Both NixOS modules and home-manager modules get:
+
+| Arg                   | Content                                  |
+|-----------------------|------------------------------------------|
+| `inputs`              | the whole flake inputs set               |
+| `inputPkgs.<name>`    | every input's packages, pre-selected for |
+|                       | the host's system                        |
+| `pkgs-<variant>`      | package set per `nixpkgs-*` input        |
+| `extLib`              | this repo's lib (also merged into `lib`) |
+| `hostname`, `rootPath`, `tags`, `systemType`, `desktopEnvironment` | call arguments |
+| `listOfUsernames`     | the host's registry-derived users        |
+| `username`            | home-manager configs only: whose home    |
+
+Anything you pass as `specialArgs = { ... };` is merged LAST and can
+override all of the above. `pkgs` is deliberately not a specialArg --
+modules receive it from the module system.
+
+Example -- use a package from an input without any wiring:
+
+```nix
+{ inputPkgs, ... }:
+{
+  environment.systemPackages = [
+    inputPkgs.disko.disko-install
+  ];
+}
+```
+
+Input packages are deliberately NOT merged into `pkgs` (names would
+shadow nixpkgs attributes); an input's own `overlays.default` is the
+flake author's sanctioned way into `pkgs`.
+
+## Common recipes
+
+Add a user everywhere:
+
+```
+mkdir -p users/carol
+git add users/carol
+$EDITOR users/carol/home.nix
+```
+
+```nix
+# flake.nix registry
+"carol" = ./users/carol;
+```
+
+Give a user extra groups on one host only: create
+`users/carol-work/configuration.nix` with the groups and register
+
+```nix
+"carol@*"    = ./users/carol;      # home everywhere
+"carol@work" = ./users/carol-work; # extra config on work
+```
+
+Rename or add a host -- four places move together:
+
+1. the attrset key in `buildNixosConfigurations` (also becomes
+   `networking.hostName` by default)
+2. the host file: `hosts/<name>.nix` or
+   `hosts/<name>/configuration.nix`
+3. a `homeConfigurationsBuilder` call with `hostname = "<name>";`
+   (only if the host has users)
+4. any `"user@<name>"` registry keys
+
+Package-set knobs per host (full reference in lib.md):
+
+```nix
+laptop = {
+  inherit inputs system homeConfigurations;
+  # cudaSupport is the one tag with package-set
+  # effect; all tags reach modules as `tags`
+  tags = [ "cudaSupport" ];
+  # unfree package names to allow
+  allowedUnfreePackages = [ "steam" ];
+  # applied to the nixpkgs SOURCE via applyPatches
+  patches = [ ./patches/fix.patch ];
+  # on top of the auto-collected input overlays
+  extraOverlays = [ (final: prev: { ... }) ];
+};
+```
+
+## Gotchas
+
+- **Untracked files are invisible to flakes.** `git add` new user
+  directories and host files, or they are silently skipped.
+- A plain `"user"` entry is IGNORED (with a warning) as soon as any
+  `"user@..."` entry exists -- import its directory explicitly from
+  an @-entry if you want to reuse it.
+- "Every login" means every systemd user-manager instance: the
+  bootstrap re-runs when the user's first session starts, not on
+  each additional terminal login.
+- If the bootstrap seems to do nothing: the registry must be
+  non-empty, a home-manager input must exist, `inputs.self` (or
+  `flakeRef`) must be set, and at least one matched user must ship a
+  `home.nix` -- all four are required, and the service is simply
+  absent otherwise.
+
+## Verifying your setup
+
+This repo's own test suite doubles as living documentation: the
+example under `checks/example/` is evaluated by `nix flake check`,
+and two further VM tests boot a machine, log a user in and run a
+real `home-manager switch`. Reading `checks/builders/tests/` shows
+the exact guaranteed behavior of every feature described above.
