@@ -644,6 +644,12 @@ extLib.normalUserModule "alice"
   users.users.alice = {
     isNormalUser = true;
     group = "alice"; # overridable with a plain assignment
+    # the default shell, defined once at priority 999 instead of
+    # via NixOS's useDefaultShell path -- this makes "root" a valid
+    # registry user (root's built-in shell definition would collide
+    # with the useDefaultShell one); a plain `shell = ...` wins
+    useDefaultShell = false;
+    shell = config.users.defaultUserShell;
   };
   users.groups.alice = { };
 }

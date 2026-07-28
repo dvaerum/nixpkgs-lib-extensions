@@ -192,7 +192,11 @@ changes -- no extra subfolder is consulted.
 Every registry-derived user gets a login account automatically:
 `userModuleFn` defaults to `normalUserModule`, which sets
 `isNormalUser` and gives the user a **private primary group** named
-after them (instead of the shared `users` group).
+after them (instead of the shared `users` group). The login shell is
+`users.defaultUserShell`, defined once at override priority 999 --
+this sidesteps NixOS's `useDefaultShell` path, whose extra shell
+definition collides with root's built-in one, so `"root"` is a valid
+registry user. A plain `shell = ...` in your config still wins.
 
 Richer accounts -- build on the default:
 
