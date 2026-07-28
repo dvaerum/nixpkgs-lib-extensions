@@ -249,17 +249,31 @@ For every flake input, by convention:
 
 | Input exports                    | Effect                       |
 |----------------------------------|------------------------------|
-| `nixosModules`                   | imported into every host     |
-| `homeManagerModules`/`homeModules` | added to every home        |
-| `overlays`                       | applied to `pkgs`            |
+| `nixosModules.default`           | imported into every host     |
+| `homeManagerModules.default` / `homeModules.default` | added to every home |
+| `overlays.default`               | applied to `pkgs`            |
 | `extendLib`                      | merged into the system `lib` |
 | `nixpkgs-*` (package sets)       | `pkgs-*` specialArgs         |
 
-`default` is preferred when an export set has one; otherwise all
-entries are used. Opt an input out of the NixOS-module auto-import
-with `excludeModuleInputs = [ "name" ];` (it does not affect
-home-manager modules or overlays). Package-set flakes -- anything
-exposing `legacyPackages`, like the `nixpkgs-*` inputs -- are never
+The `default` export is auto-loaded. Without one, a set with exactly
+ONE entry is unambiguous and that entry is used (sops-nix and
+plasma-manager export their single module under a name, not
+`default`). A set with SEVERAL entries and no `default` is treated
+as a catalog of opt-in entries -- nixos-hardware, for example, ships
+hundreds of mutually exclusive hardware profiles -- and contributes
+nothing automatically; import the entries you want explicitly:
+
+```nix
+modules = [
+  inputs.nixos-hardware
+    .nixosModules.dell-xps-13-9310
+];
+```
+
+Opt an input out of the NixOS-module auto-import with
+`excludeModuleInputs = [ "name" ];` (it does not affect home-manager
+modules or overlays). Package-set flakes -- anything exposing
+`legacyPackages`, like the `nixpkgs-*` inputs -- are never
 module-imported: they ship helper modules that would break a system.
 
 Inputs with nonstandard export names are normalized by a small table

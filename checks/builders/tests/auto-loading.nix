@@ -16,8 +16,16 @@
   pkgs-variant-exposed = laptop._module.specialArgs ? pkgs-unstable;
 
   auto-nixos-module-imported = laptop.config.users.groups ? from-input-module;
-  auto-nixos-modules-all-without-default =
-    laptop.config.users.groups ? multi-one && laptop.config.users.groups ? multi-two;
+  # a set without `default` but exactly ONE entry is unambiguous
+  # (sops-nix / plasma-manager style): that entry is auto-loaded
+  single-export-without-default-imported =
+    laptop.config.users.groups ? single-module
+    && aliceHome.config.home.sessionVariables.FROM_SINGLE_HM == "1";
+  # ... but SEVERAL entries without `default` is a catalog of opt-in
+  # entries (nixos-hardware style) and contributes nothing -- evaluating
+  # the host also proves the catalog's `throw` tombstone is never forced
+  no-default-catalog-not-imported =
+    !(laptop.config.users.groups ? multi-one) && !(laptop.config.users.groups ? multi-two);
   auto-overlay-applied = laptop.pkgs ? from-input-overlay;
   auto-hm-modules-imported =
     aliceHome.config.home.sessionVariables.FROM_INPUT_HM == "1"

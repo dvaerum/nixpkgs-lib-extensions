@@ -75,8 +75,11 @@ let
     };
   };
 
-  # An input WITHOUT `default` exports: ALL of its modules must be picked up.
-  # Also exercises the `homeModules` (plasma-manager style) convention.
+  # An input whose `nixosModules` has NO `default` and SEVERAL entries: a
+  # catalog of opt-in entries (nixos-hardware style). NONE of them may be
+  # auto-imported, and their values must never be forced -- real catalogs
+  # contain `throw` tombstones for removed entries. Its `homeModules.default`
+  # IS still auto-loaded.
   fake-multi-module-input = {
     outPath = "/nix/store/fake-multi-module-input";
     nixosModules = {
@@ -86,9 +89,23 @@ let
       two = {
         users.groups.multi-two = { };
       };
+      removed-tombstone = throw "this catalog entry must never be forced";
     };
     homeModules.default = {
       home.sessionVariables.FROM_INPUT_HOME_MODULES = "1";
+    };
+  };
+
+  # An input exporting exactly ONE module under a name other than `default`
+  # (sops-nix / plasma-manager style): unambiguous, so that entry is
+  # auto-loaded despite the missing `default`.
+  fake-single-module-input = {
+    outPath = "/nix/store/fake-single-module-input";
+    nixosModules.the-only-one = {
+      users.groups.single-module = { };
+    };
+    homeManagerModules.the-only-one = {
+      home.sessionVariables.FROM_SINGLE_HM = "1";
     };
   };
 
@@ -97,7 +114,7 @@ let
     # A second package-set input: must be exposed as the `pkgs-unstable`
     # specialArg (and its helper nixosModules must NOT be auto-imported).
     nixpkgs-unstable = nixpkgs;
-    inherit fake-module-input fake-multi-module-input;
+    inherit fake-module-input fake-multi-module-input fake-single-module-input;
     fenix = fake-fenix;
     nur = nur-shaped "nur";
     not-nur = nur-shaped "notnur";

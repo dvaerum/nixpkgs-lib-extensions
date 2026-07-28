@@ -142,8 +142,23 @@ let
       )
     );
 
-  # From a flake's exported set (modules / overlays): prefer `.default`, else all.
-  pickExported = s: if s ? default then [ s.default ] else builtins.attrValues s;
+  # From a flake's exported set (modules / overlays): the `default` export
+  # is auto-loaded; without one, a set with exactly ONE entry is unambiguous
+  # (sops-nix / plasma-manager style) and that entry is used. A set with
+  # SEVERAL entries and no `default` is a catalog of opt-in entries
+  # (nixos-hardware ships hundreds of mutually exclusive profiles, some of
+  # them `throw` tombstones) -- importing them all is never right, so it
+  # contributes nothing. Reference catalog entries explicitly (e.g.
+  # `inputs.nixos-hardware.nixosModules.<profile>`) or add an
+  # `inputSpecialCases` entry mapping the input onto the convention.
+  pickExported =
+    s:
+    if s ? default then
+      [ s.default ]
+    else if builtins.length (builtins.attrNames s) == 1 then
+      builtins.attrValues s
+    else
+      [ ];
 
   # Special cases for inputs that do not follow the generic output
   # conventions, keyed by the input's NAME in `inputs`. A case applies ONLY

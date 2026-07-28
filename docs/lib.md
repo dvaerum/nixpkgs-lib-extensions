@@ -431,11 +431,16 @@ Build a NixOS system for a host.
 The flake `inputs` are passed as a field, and a number of things are wired in
 automatically when the matching input exists:
 
-- NixOS modules from any input exposing `nixosModules` (excluded: the
-  home-manager input, since it is used standalone, and package-set flakes
-  like `nixpkgs-*` -- anything with `legacyPackages` -- whose helper
+- NixOS modules from any input exposing `nixosModules.default` (excluded:
+  the home-manager input, since it is used standalone, and package-set
+  flakes like `nixpkgs-*` -- anything with `legacyPackages` -- whose helper
   modules would break the system; opt out more via `excludeModuleInputs`).
-- overlays from any input exposing `overlays`.
+  The `default` export is auto-loaded; without one, a set with exactly one
+  entry is used as-is (sops-nix style), while a multi-entry set is treated
+  as a catalog of opt-in entries (nixos-hardware style) and contributes
+  nothing -- import catalog entries explicitly, e.g.
+  `inputs.nixos-hardware.nixosModules.dell-xps-13-9310`.
+- overlays from any input exposing `overlays.default` (same rule).
 - lib extensions from any input exposing an `extendLib` function; this repo's
   own extensions are always applied to the system `lib` and also passed as the
   `extLib` specialArg.
