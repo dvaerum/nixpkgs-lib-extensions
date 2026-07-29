@@ -18,8 +18,21 @@ extLib:
     argument pairs instead -- `modules` (in `_defaults`) with
     `additionalModules` (per host), and `specialArgs` with
     `additionalSpecialArgs`; the pairs concatenate/merge by design.
-    `_defaults` must therefore not set `hostname`, `additionalModules` or
-    `additionalSpecialArgs` (throws) -- those belong to host entries.
+
+    `_defaults` can provide a default for every `nixosConfigurationsBuilder`
+    argument except the per-host ones:
+
+    - `inputs`, `system`, `nixpkgs`, `rootPath`
+    - `modules`, `userModuleFn`, `excludeModuleInputs`
+    - `homeConfigurations`, `flakeRef`, `reactivateEveryLogin`
+    - `tags`, `systemType`
+    - `patches`, `extraOverlays`, `allowedUnfreePackages`,
+      `permittedInsecurePackages`
+    - `specialArgs`
+
+    Not allowed in `_defaults` (throws): `hostname` (it comes from each
+    attribute key) and `additionalModules`/`additionalSpecialArgs` (the
+    per-host halves of the layered pairs above).
 
     # Example
 
