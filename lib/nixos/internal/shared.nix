@@ -219,14 +219,29 @@ let
       # `lib.NixVirt.domain`). A plain `lib` export is a foreign namespace
       # and is never merged flat -- `extendLib` remains the composable way
       # into the flat lib. Skipped: nixpkgs trees (their lib IS the base).
-      libsFromInputs = baseLib.mapAttrs (_: v: v.lib) (
-        baseLib.filterAttrs (
-          name: v:
-          baseLib.isAttrs v
-          && baseLib.isAttrs (v.lib or null)
-          && !(v ? legacyPackages && v.lib ? nixosSystem)
-        ) inputs
-      );
+      libsFromInputs =
+        let
+          raw = baseLib.mapAttrs (_: v: v.lib) (
+            baseLib.filterAttrs (
+              name: v:
+              baseLib.isAttrs v
+              && baseLib.isAttrs (v.lib or null)
+              && !(v ? legacyPackages && v.lib ? nixosSystem)
+            ) inputs
+          );
+        in
+        # The consuming flake's own lib output (inputs.self) is renamed to
+        # `flake`: `lib.flake.<helper>` reads as "from this flake", where
+        # `lib.self` would read oddly. An explicit input actually named
+        # `flake` keeps the name; self's lib is then dropped with a warning.
+        if raw ? self && !(raw ? flake) then
+          builtins.removeAttrs raw [ "self" ] // { flake = raw.self; }
+        else if raw ? self then
+          warn "nixpkgs-lib-extensions: not exposing the consuming flake's `lib` as `lib.flake`: an input named `flake` already claims the name." (
+            builtins.removeAttrs raw [ "self" ]
+          )
+        else
+          raw;
 
       # Namespaces this repo OWNS: extLib's folder namespaces that nixpkgs'
       # lib does not also define (e.g. `disko`, `nixos`, `imports` -- but

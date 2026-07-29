@@ -157,9 +157,11 @@ let
     not-nur = nur-shaped "notnur";
     # `self` points at the example directory, which is shaped like a real
     # consumer flake root -- so rootPath defaults (hosts/<hostname>
-    # convention, flakeRef) resolve against something that exists.
+    # convention, flakeRef) resolve against something that exists. Its
+    # `lib` export must surface renamed, as lib.flake (never lib.self).
     self = {
       outPath = toString exampleDir;
+      lib.selfHelper = "from-self-lib";
     };
   };
 

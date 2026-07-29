@@ -476,7 +476,10 @@ automatically when the matching input exists:
   MERGED into it with the existing side winning every conflict (so a
   `disko` input's helpers join `declareZfsRootDisk` under `lib.disko`);
   any other existing name is skipped with a warning, and nixpkgs trees
-  are not namespaced at all (their lib is the base).
+  are not namespaced at all (their lib is the base). The consuming
+  flake's own `lib` output (`inputs.self`) is renamed to `lib.flake`
+  -- export your helper functions there and every module gets them as
+  `lib.flake.<helper>` with zero wiring.
 - every `nixpkgs-*` input as a `pkgs-*` specialArg (e.g. `inputs.nixpkgs-unstable`
   becomes the `pkgs-unstable` specialArg).
 

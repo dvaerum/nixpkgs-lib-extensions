@@ -122,6 +122,11 @@
     builtins.isFunction laptop.pkgs.lib.disko.declareZfsRootDisk
     && laptop.pkgs.lib.disko.probeHelper == "disko-lib-helper";
 
+  # the consuming flake's own lib (inputs.self) surfaces renamed:
+  # lib.flake, never lib.self
+  self-lib-renamed-to-flake =
+    laptop.pkgs.lib.flake.selfHelper == "from-self-lib" && !(laptop.pkgs.lib ? self);
+
   # auto-collection can be opted out per input name
   exclude-module-inputs-respected = !(custom.config.users.groups ? from-input-module);
 }

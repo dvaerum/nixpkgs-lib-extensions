@@ -307,6 +307,30 @@ who owns the name:
   such an input name is almost always an accident; rename it.
 - nixpkgs trees are not namespaced at all (their lib IS the base).
 
+Your OWN flake's `lib` output is included too, renamed from `self`
+to **`lib.flake`** (`lib.self` would read oddly). This is the
+zero-wiring way to share helper functions with all your hosts:
+
+```nix
+# flake.nix outputs
+lib = import ./common/helper-functions {
+  inherit (nixpkgs) lib;
+};
+```
+
+```nix
+# any module, NixOS or home-manager
+{ lib, ... }:
+{
+  imports = [
+    (lib.flake.router-conf { ... })
+  ];
+}
+```
+
+(If you name an actual input `flake`, that input keeps the name and
+your self lib is dropped with a warning.)
+
 Opt an input out of the NixOS-module auto-import with
 `excludeModuleInputs = [ "name" ];` (it does not affect home-manager
 modules or overlays). Nixpkgs trees -- anything exposing both
