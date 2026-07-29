@@ -77,4 +77,20 @@ in
     };
     h = { };
   });
+
+  # _defaults is an ALLOWLIST: a typo'd key throws instead of being
+  # silently dropped by the builder's `...` pattern
+  defaults-typo-key-throws = throws (myLib.buildNixosConfigurations {
+    _defaults = {
+      homeConfiguration = { };
+    };
+    h = { };
+  });
+  # ... and the additional* special-case fires for unknown names too
+  defaults-additional-prefix-throws = throws (myLib.buildNixosConfigurations {
+    _defaults = {
+      additionalOverlays = [ ];
+    };
+    h = { };
+  });
 }

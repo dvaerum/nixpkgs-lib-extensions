@@ -83,23 +83,57 @@ extLib:
     : - `permittedInsecurePackages`
     : - `specialArgs`
     :
-    : Not allowed (throws): `hostname` (it comes from each attribute key)
-    : and `additionalModules`/`additionalSpecialArgs` (the per-host halves
-    : of the layered pairs).
+    : This list is an enforced ALLOWLIST: any other key throws, so typos
+    : (`homeConfiguration`, ...) fail loudly instead of being dropped
+    : silently. `hostname` (it comes from each attribute key) and the
+    : `additional*` arguments (the per-host halves of the layered pairs)
+    : get their own explanatory errors.
   */
   buildNixosConfigurations =
     hosts:
     let
       defaults = hosts._defaults or { };
-      forbidden = builtins.filter (k: defaults ? ${k}) [
-        "hostname"
-        "additionalModules"
-        "additionalSpecialArgs"
+      # ALLOWLIST: every nixosConfigurationsBuilder argument that may be
+      # defaulted. A key outside this list throws -- the builder itself
+      # ignores unknown arguments (its pattern ends in `...`), so a typo
+      # like `homeConfiguration` would otherwise be dropped silently.
+      # Keep in sync with the argument list in the doc comment above and
+      # in nixosConfigurationsBuilder.
+      allowedDefaults = [
+        "inputs"
+        "system"
+        "nixpkgs"
+        "rootPath"
+        "modules"
+        "userModuleFn"
+        "excludeModuleInputs"
+        "homeConfigurations"
+        "flakeRef"
+        "reactivateEveryLogin"
+        "tags"
+        "systemType"
+        "patches"
+        "extraOverlays"
+        "allowedUnfreePackages"
+        "permittedInsecurePackages"
+        "specialArgs"
       ];
+      complaint =
+        name:
+        if name == "hostname" then
+          "- `hostname`: never a default -- it comes from each attribute key. Drop it."
+        else if builtins.substring 0 10 name == "additional" then
+          "- `${name}`: the `additional*` arguments are the per-host halves of the layered pairs (modules/additionalModules, specialArgs/additionalSpecialArgs). Set the base half in `_defaults`, the additional half on the host entry."
+        else
+          "- `${name}`: not a nixosConfigurationsBuilder argument (typo?). `_defaults` accepts: ${builtins.concatStringsSep ", " allowedDefaults}.";
+      badDefaults = builtins.filter (k: !(builtins.elem k allowedDefaults)) (
+        builtins.attrNames defaults
+      );
     in
-    if forbidden != [ ] then
+    if badDefaults != [ ] then
       throw ''
-        buildNixosConfigurations: `_defaults` must not set ${builtins.concatStringsSep ", " forbidden}. `hostname` comes from each attribute key; the `additional*` arguments are the per-host extension slots for the layered pairs (modules/additionalModules, specialArgs/additionalSpecialArgs) -- set the base half in `_defaults` instead.
+        buildNixosConfigurations: invalid `_defaults` key(s):
+        ${builtins.concatStringsSep "\n" (map complaint badDefaults)}
       ''
     else
       builtins.mapAttrs (

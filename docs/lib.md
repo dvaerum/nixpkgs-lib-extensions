@@ -319,9 +319,11 @@ buildNixosConfigurations ::
   - `permittedInsecurePackages`
   - `specialArgs`
   
-  Not allowed (throws): `hostname` (it comes from each attribute key)
-  and `additionalModules`/`additionalSpecialArgs` (the per-host halves
-  of the layered pairs).
+  This list is an enforced ALLOWLIST: any other key throws, so typos
+  (`homeConfiguration`, ...) fail loudly instead of being dropped
+  silently. `hostname` (it comes from each attribute key) and the
+  `additional*` arguments (the per-host halves of the layered pairs)
+  get their own explanatory errors.
 
 
 
