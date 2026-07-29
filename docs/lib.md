@@ -255,21 +255,6 @@ argument pairs instead -- `modules` (in `_defaults`) with
 `additionalModules` (per host), and `specialArgs` with
 `additionalSpecialArgs`; the pairs concatenate/merge by design.
 
-`_defaults` can provide a default for every `nixosConfigurationsBuilder`
-argument except the per-host ones:
-
-- `inputs`, `system`, `nixpkgs`, `rootPath`
-- `modules`, `userModuleFn`, `excludeModuleInputs`
-- `homeConfigurations`, `flakeRef`, `reactivateEveryLogin`
-- `tags`, `systemType`
-- `patches`, `extraOverlays`, `allowedUnfreePackages`,
-  `permittedInsecurePackages`
-- `specialArgs`
-
-Not allowed in `_defaults` (throws): `hostname` (it comes from each
-attribute key) and `additionalModules`/`additionalSpecialArgs` (the
-per-host halves of the layered pairs above).
-
 ### Example
 
 ```nix
@@ -308,8 +293,20 @@ buildNixosConfigurations ::
 - **hosts**
   Attribute set mapping hostnames to `nixosConfigurationsBuilder`
   argument sets. The key provides `hostname`, so entries do not set
-  it themselves. The reserved `_defaults` entry is merged under every
-  host's arguments (host wins per argument).
+  it themselves.
+
+- **_defaults**
+  Optional reserved entry of `hosts` (never a hostname): arguments
+  merged under every host entry, the host winning per argument. Can
+  provide a default for every `nixosConfigurationsBuilder` argument
+  except the per-host ones: `inputs`, `system`, `nixpkgs`, `rootPath`,
+  `modules`, `userModuleFn`, `excludeModuleInputs`,
+  `homeConfigurations`, `flakeRef`, `reactivateEveryLogin`, `tags`,
+  `systemType`, `patches`, `extraOverlays`, `allowedUnfreePackages`,
+  `permittedInsecurePackages` and `specialArgs`.
+  Not allowed (throws): `hostname` (it comes from each attribute key)
+  and `additionalModules`/`additionalSpecialArgs` (the per-host halves
+  of the layered pairs).
 
 
 
