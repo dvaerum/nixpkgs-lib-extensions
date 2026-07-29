@@ -161,6 +161,40 @@ in
       }) true
     )).success;
 
+  # CONTEXT SHARING is observably equivalent: in a buildNixosConfigurations
+  # set, a host overriding no core argument reuses the `_defaults` context
+  # core, a host overriding one (nixpkgsConfig) gets its own -- the
+  # overriding host's pkgs must reflect its override while the sharing
+  # host matches a directly-built reference (which never sees `_core`).
+  defaults-core-sharing-equivalence =
+    let
+      built = myLib.buildNixosConfigurations {
+        _defaults = {
+          inherit inputs system;
+        };
+        # overrides no core argument (tags is per-host layer): shares the core
+        plainhost = {
+          tags = [ "shared-core" ];
+        };
+        # overrides a core argument: must get its own context
+        cudahost = {
+          nixpkgsConfig.cudaSupport = true;
+        };
+      };
+      reference =
+        (myLib.nixosConfigurationsBuilder {
+          inherit inputs system;
+          hostname = "plainhost";
+          tags = [ "shared-core" ];
+        }).plainhost;
+    in
+    built.cudahost.pkgs.config.cudaSupport
+    && !built.plainhost.pkgs.config.cudaSupport
+    && !reference.pkgs.config.cudaSupport
+    && built.plainhost._module.specialArgs.hostname == "plainhost"
+    && built.cudahost._module.specialArgs.hostname == "cudahost"
+    && built.plainhost._module.specialArgs.tags == reference._module.specialArgs.tags;
+
   # the allowlist and its documentation cannot drift: every allowlisted
   # name must appear backtick-quoted in the buildNixosConfigurations doc
   # comment (this is exactly the drift that happened with the loginUsers

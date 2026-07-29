@@ -82,15 +82,30 @@ in
     hosts:
     let
       split = shared.splitHostsArgs "buildHomeConfigurations" hosts;
+      # CONTEXT SHARING: same rule as in buildNixosConfigurations -- the
+      # host-independent context core is computed ONCE from `_defaults`
+      # and passed as `_core` to every home whose host entry overrides
+      # none of the core arguments (shared.coreArgNames); otherwise the
+      # host's homes get their own context from the merged arguments.
+      defaultsCore = shared.mkContextCore split.defaults;
+      coreArgSet = builtins.listToAttrs (
+        map (n: {
+          name = n;
+          value = null;
+        }) shared.coreArgNames
+      );
       hostHomes =
         hostname:
         let
-          merged = split.defaults // split.hostEntries.${hostname} // { inherit hostname; };
+          entry = split.hostEntries.${hostname};
+          merged = split.defaults // entry // { inherit hostname; };
           rawRegistry = merged.userRegistry or { };
           registry = if rawRegistry == null then { } else rawRegistry;
           loginUsers = merged.loginUsers or [ ];
           # login-managed users with an actual home.nix on this host
           usersHome = shared.loginUsersWithHome registry hostname loginUsers;
+          coreAttr =
+            if builtins.intersectAttrs coreArgSet entry == { } then { _core = defaultsCore; } else { };
         in
         # a host with no login-managed users (or no home-manager input)
         # simply contributes nothing
@@ -100,7 +115,7 @@ in
           builtins.listToAttrs (
             map (username: {
               name = "${username}@${hostname}";
-              value = extLib.homeConfigurationsBuilder (merged // { inherit username; });
+              value = extLib.homeConfigurationsBuilder (merged // { inherit username; } // coreAttr);
             }) usersHome
           );
     in

@@ -27,7 +27,7 @@ extLib:
     usersWithHome
     loginUsersWithHome
     ;
-  inherit (import ./context.nix extLib) mkContext;
+  inherit (import ./context.nix extLib) coreArgNames mkContextCore mkContext;
   inherit (import ./hosts-args.nix extLib)
     allowedDefaultArgs
     allowedHostArgs

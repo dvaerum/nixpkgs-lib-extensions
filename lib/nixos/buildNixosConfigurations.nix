@@ -112,10 +112,28 @@ in
     # buildHomeConfigurations: one hosts attrset feeds both
     let
       split = shared.splitHostsArgs "buildNixosConfigurations" hosts;
+      # CONTEXT SHARING: the expensive host-independent part of the
+      # evaluation context (one `import nixpkgs { ... }` per context) is
+      # computed ONCE from `_defaults` and passed as `_core` to every
+      # host that overrides NONE of the core arguments
+      # (shared.coreArgNames); a host overriding any of them gets its own
+      # context from its merged arguments, exactly as before. Lazy, so it
+      # is never forced when every host overrides a core argument.
+      defaultsCore = shared.mkContextCore split.defaults;
+      coreArgSet = builtins.listToAttrs (
+        map (n: {
+          name = n;
+          value = null;
+        }) shared.coreArgNames
+      );
     in
     builtins.mapAttrs (
       hostname: args:
-      (extLib.nixosConfigurationsBuilder (split.defaults // args // { inherit hostname; }))
-      .${hostname}
+      (extLib.nixosConfigurationsBuilder (
+        split.defaults
+        // args
+        // { inherit hostname; }
+        // (if builtins.intersectAttrs coreArgSet args == { } then { _core = defaultsCore; } else { })
+      )).${hostname}
     ) split.hostEntries;
 }

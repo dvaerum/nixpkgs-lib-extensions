@@ -3,6 +3,16 @@
 # auto-collected module/overlay sets) from one argument attrset. One of
 # the four concern-files aggregated by ./shared.nix.
 #
+# The context is built in two layers:
+#   mkContextCore  the host-INDEPENDENT part, a function of the core
+#                  arguments only (coreArgNames below) -- this is where
+#                  the expensive `import nixpkgs { ... }` happens
+#   mkContext      the per-host layer on top (mySpecialArguments); it
+#                  either computes a core itself or reuses one passed in
+#                  via the internal `_core` argument, which is how
+#                  buildNixosConfigurations/buildHomeConfigurations share
+#                  ONE core across all hosts that stick to the defaults
+#
 # Like the builder files it is a function of `extLib` — the fully
 # assembled nixpkgs-lib-extensions lib.
 extLib:
@@ -37,33 +47,42 @@ let
         }
     ) { seen = [ ]; out = [ ]; } list).out;
 
-  # Shared context: everything the builders need (lib, pkgs, specialArgs and the
-  # auto-collected module/overlay sets). Builder-specific arguments are ignored
-  # here via `...`.
-  mkContext =
+  # The argument names mkContextCore consumes -- everything the
+  # host-independent part of the context depends on. The build* functions
+  # use this list to decide whether a host entry may share the defaults'
+  # core: only when it overrides NONE of these.
+  coreArgNames = [
+    "inputs"
+    "system"
+    "nixpkgs"
+    "patches"
+    "extraOverlays"
+    "allowedUnfreePackages"
+    "permittedInsecurePackages"
+    "nixpkgsConfig"
+    "excludeModuleInputs"
+    "homeManager"
+    "inputSpecialCases"
+  ];
+
+  # The host-independent context core: lib, pkgs, the auto-collected
+  # module/overlay sets and the derived package sets -- everything that
+  # depends only on the core arguments (coreArgNames), NOT on
+  # hostname/tags/rootPath/specialArgs/... . Builder-specific and
+  # per-host arguments are ignored here via `...`.
+  mkContextCore =
     {
       inputs,
-      hostname,
       system,
       nixpkgs ? inputs.nixpkgs,
-      tags ? [ ],
       patches ? [ ],
       extraOverlays ? [ ],
       allowedUnfreePackages ? [ ],
       permittedInsecurePackages ? [ ],
-      specialArgs ? { },
-      additionalSpecialArgs ? { },
       nixpkgsConfig ? { },
+      excludeModuleInputs ? [ ],
       homeManager ? null,
       inputSpecialCases ? { },
-      systemType ? null,
-      # a throw, not a silent nonsense default: without inputs.self the
-      # old `./.` fallback pointed INSIDE this library's own store tree,
-      # so the hosts/<hostname> convention searched the wrong repo
-      rootPath ?
-        (inputs.self or (throw ''
-          nixpkgs-lib-extensions: `rootPath` was not given and `inputs.self` is missing, so the hosts/<hostname> convention and the rootPath specialArg have no root. Pass `rootPath` explicitly or include `self` in `inputs`.'')),
-      excludeModuleInputs ? [ ],
       ...
     }:
     let
@@ -127,7 +146,7 @@ let
       # - any other existing name (nixpkgs's `strings`, ...) -> skipped
       #   with a warning; such an input name is almost always an accident
       # Computed ONCE per context and shared by the module lib, pkgs.lib
-      # and every pkgs-* variant, so a warning fires once per host, not
+      # and every pkgs-* variant, so a warning fires once per context, not
       # once per lib construction.
       inputLibAdditions =
         let
@@ -271,6 +290,47 @@ let
       inputPkgs = lib.mapAttrs (_: v: v.packages.${system}) (
         lib.filterAttrs (_: v: lib.isAttrs v && (v.packages or { }) ? ${system}) inputs
       );
+    in
+    {
+      inherit
+        lib
+        pkgs
+        selectedSrc
+        home-manager
+        autoOverlays
+        autoNixosModules
+        autoHomeModules
+        pkgsFromInputs
+        inputPkgs
+        inputLibAdditions
+        ;
+    };
+
+  # Shared context: everything the builders need (lib, pkgs, specialArgs and the
+  # auto-collected module/overlay sets). Builder-specific arguments are ignored
+  # here via `...`. Adds the per-host layer (mySpecialArguments) on top of a
+  # context core -- one passed in via `_core` (internal plumbing of the
+  # build* functions; MUST have been built from the same core arguments),
+  # or computed here from the arguments otherwise.
+  mkContext =
+    {
+      inputs,
+      hostname,
+      tags ? [ ],
+      specialArgs ? { },
+      additionalSpecialArgs ? { },
+      systemType ? null,
+      # a throw, not a silent nonsense default: without inputs.self the
+      # old `./.` fallback pointed INSIDE this library's own store tree,
+      # so the hosts/<hostname> convention searched the wrong repo
+      rootPath ?
+        (inputs.self or (throw ''
+          nixpkgs-lib-extensions: `rootPath` was not given and `inputs.self` is missing, so the hosts/<hostname> convention and the rootPath specialArg have no root. Pass `rootPath` explicitly or include `self` in `inputs`.'')),
+      _core ? null,
+      ...
+    }@args:
+    let
+      core = if _core != null then _core else mkContextCore args;
 
       # The whole `inputs` set is exposed so modules can reach anything not
       # covered by the generic conventions (e.g. inputs.fenix) themselves --
@@ -283,14 +343,14 @@ let
           inherit
             hostname
             inputs
-            inputPkgs
             rootPath
             tags
             extLib
             systemType
             ;
+          inherit (core) inputPkgs;
         }
-        // pkgsFromInputs
+        // core.pkgsFromInputs
         // specialArgs
         # the per-host extension slot: layered after specialArgs so that
         # `_defaults.specialArgs` and a host's additionalSpecialArgs combine
@@ -298,17 +358,17 @@ let
         // additionalSpecialArgs;
     in
     {
-      inherit
+      inherit (core)
         lib
         pkgs
         selectedSrc
-        mySpecialArguments
         home-manager
         autoNixosModules
         autoHomeModules
         ;
+      inherit mySpecialArguments;
     };
 in
 {
-  inherit mkContext;
+  inherit coreArgNames mkContextCore mkContext;
 }
