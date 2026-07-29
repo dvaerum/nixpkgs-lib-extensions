@@ -57,7 +57,11 @@ extLib:
     hosts
     : Attribute set mapping hostnames to `nixosConfigurationsBuilder`
     : argument sets. The key provides `hostname`, so entries do not set
-    : it themselves.
+    : it themselves. Host entry keys are checked against the same
+    : allowlist as `_defaults` plus the per-host-only keys
+    : (`additionalModules`, `additionalSpecialArgs`, and a redundant
+    : `hostname` equal to the attribute key); anything else throws, so
+    : typos and leftover arguments fail loudly.
 
     _defaults
     : Optional reserved entry of `hosts` (never a hostname): arguments
@@ -129,11 +133,37 @@ extLib:
       badDefaults = builtins.filter (k: !(builtins.elem k allowedDefaults)) (
         builtins.attrNames defaults
       );
+
+      # Host entries share the allowlist, extended by the per-host-only
+      # keys: the additional* halves of the layered pairs, and a redundant
+      # `hostname` (tolerated when equal to the key, checked below).
+      allowedHostArgs = allowedDefaults ++ [
+        "hostname"
+        "additionalModules"
+        "additionalSpecialArgs"
+      ];
+      hostEntries = builtins.removeAttrs hosts [ "_defaults" ];
+      badHostKeys = builtins.concatLists (
+        builtins.attrValues (
+          builtins.mapAttrs (
+            hostname: args:
+            map (
+              k:
+              "- `${hostname}`: `${k}` is not a nixosConfigurationsBuilder argument (typo?). Host entries accept: ${builtins.concatStringsSep ", " allowedHostArgs}."
+            ) (builtins.filter (k: !(builtins.elem k allowedHostArgs)) (builtins.attrNames args))
+          ) hostEntries
+        )
+      );
     in
     if badDefaults != [ ] then
       throw ''
         buildNixosConfigurations: invalid `_defaults` key(s):
         ${builtins.concatStringsSep "\n" (map complaint badDefaults)}
+      ''
+    else if badHostKeys != [ ] then
+      throw ''
+        buildNixosConfigurations: invalid host entry key(s):
+        ${builtins.concatStringsSep "\n" badHostKeys}
       ''
     else
       builtins.mapAttrs (
@@ -146,5 +176,5 @@ extLib:
           ''
         else
           (extLib.nixosConfigurationsBuilder (defaults // args // { inherit hostname; })).${hostname}
-      ) (builtins.removeAttrs hosts [ "_defaults" ]);
+      ) hostEntries;
 }

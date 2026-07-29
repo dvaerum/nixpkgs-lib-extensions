@@ -93,4 +93,12 @@ in
     };
     h = { };
   });
+
+  # host entries are allowlisted too: a leftover argument (the removed
+  # `users`) or a typo throws instead of silently doing nothing
+  host-unknown-key-throws = throws (myLib.buildNixosConfigurations {
+    h = {
+      users = [ "root" ];
+    };
+  });
 }

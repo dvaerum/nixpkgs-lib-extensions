@@ -293,7 +293,11 @@ buildNixosConfigurations ::
 - **hosts**
   Attribute set mapping hostnames to `nixosConfigurationsBuilder`
   argument sets. The key provides `hostname`, so entries do not set
-  it themselves.
+  it themselves. Host entry keys are checked against the same
+  allowlist as `_defaults` plus the per-host-only keys
+  (`additionalModules`, `additionalSpecialArgs`, and a redundant
+  `hostname` equal to the attribute key); anything else throws, so
+  typos and leftover arguments fail loudly.
 
 - **_defaults**
   Optional reserved entry of `hosts` (never a hostname): arguments
