@@ -1,4 +1,4 @@
-# Intro
+# nixpkgs-lib-extensions
 
 Extra functions not originally in `nixpkgs.lib` which I find useful.
 Some I wrote myself and some I found on the internet.
@@ -9,7 +9,7 @@ Some I wrote myself and some I found on the internet.
   NixOS/home-manager builders: concepts, recipes, gotchas
 - [docs/lib.md](docs/lib.md) — generated API reference for every function
 
-# The NixOS / home-manager builders
+## The NixOS / home-manager builders
 
 The main feature of this repo: build your `nixosConfigurations` and
 standalone `homeConfigurations` from one per-user directory convention.
@@ -33,24 +33,40 @@ Highlights:
   hosts: `"alice@laptop"`, `"alice@*"` (every host), or plain `"alice"`.
 - Each host's own config is found by convention:
   `hosts/<hostname>.nix` or `hosts/<hostname>/configuration.nix`.
+- Arguments shared by every host go in one `_defaults` entry; host
+  entries override per argument, and unknown keys throw instead of
+  being silently ignored.
 - User accounts are created automatically (`normalUserModule`), and a
   systemd user service provisions each user's home-manager profile on
   first login.
-- NixOS modules, overlays and home-manager modules exported by your flake
-  inputs are wired in automatically.
+- NixOS modules, overlays, home-manager modules and lib extensions
+  exported by your flake inputs are wired in automatically; each
+  input's own `lib` is namespaced as `lib.<inputName>`, and your
+  flake's own `lib` output as `lib.flake`.
 
-# Use the extra library on its own
+## What else is in here
 
-Here are 3 different host examples for how to include the extra library
-into a nixos config without the builders.
+- `declareZfsRootDisk` (disko): a complete ZFS root disk as one call —
+  GPT partitions, pool, standard datasets plus one per user, optional
+  encryption and extra datasets.
+- `importIfNix` / `importIfNixOr`: git-crypt-friendly imports. A
+  `private.nix` that is an encrypted blob in the checkout (CI without
+  the git-crypt key) evaluates to a default value with a warning
+  instead of breaking evaluation.
+- Small string/attrset helpers (`stringToTitle`, `recursiveMerge`, ...).
 
-```
+## Use the extra library on its own
+
+Three host examples for including the extra library in a NixOS config
+without the builders.
+
+```nix
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     nixpkgs-lib-extensions = {
-      url = "git+https://github.com/dvaerum/nixpkgs-lib-extensions";
+      url = "github:dvaerum/nixpkgs-lib-extensions";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
