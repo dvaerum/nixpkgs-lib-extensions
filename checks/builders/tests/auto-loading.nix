@@ -9,6 +9,7 @@
   server,
   aliceHome,
   custom,
+  fake-multi-module-input,
   exampleDir,
   ...
 }:
@@ -22,15 +23,40 @@
   # only nixpkgs trees (legacyPackages + lib.nixosSystem) are skipped
   legacy-packages-alone-does-not-exclude = laptop.config.users.groups ? from-sops-shaped-module;
   # a set without `default` but exactly ONE entry is unambiguous
-  # (sops-nix / plasma-manager style): that entry is auto-loaded
+  # (sops-nix / plasma-manager style): that entry is auto-loaded,
+  # silently -- no lock-fragility warning
   single-export-without-default-imported =
     laptop.config.users.groups ? single-module
     && aliceHome.config.home.sessionVariables.FROM_SINGLE_HM == "1";
-  # ... but SEVERAL entries without `default` is a catalog of opt-in
-  # entries (nixos-hardware style) and contributes nothing -- evaluating
-  # the host also proves the catalog's `throw` tombstone is never forced
-  no-default-catalog-not-imported =
-    !(laptop.config.users.groups ? multi-one) && !(laptop.config.users.groups ? multi-two);
+  # ... but SEVERAL entries without `default` (nixos-hardware style) is
+  # ambiguous: auto-import refuses to guess and THROWS with the
+  # inputSpecialCases remedies instead of silently skipping the input
+  multi-export-without-default-throws =
+    !(builtins.tryEval (
+      (myLib.nixosConfigurationsBuilder {
+        inputs = inputs // { inherit fake-multi-module-input; };
+        inherit system;
+        hostname = "multithrow";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+      }).config.users.groups
+      ? multi-one
+    )).success;
+  # ... and the escape hatch works: opting the channel out via
+  # inputSpecialCases makes evaluation succeed with NONE of the entries
+  # imported -- which also proves the catalog's `throw` tombstone entry
+  # is never forced (the decision reads attrNames only)
+  catalog-opt-out-imports-nothing =
+    let
+      groups =
+        (myLib.nixosConfigurationsBuilder {
+          inputs = inputs // { inherit fake-multi-module-input; };
+          inherit system;
+          hostname = "catalogoptout";
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+          inputSpecialCases."fake-multi-module-input" = _: { nixosModules = { }; };
+        }).config.users.groups;
+    in
+    !(groups ? multi-one) && !(groups ? multi-two);
   auto-overlay-applied = laptop.pkgs ? from-input-overlay;
   auto-hm-modules-imported =
     aliceHome.config.home.sessionVariables.FROM_INPUT_HM == "1"

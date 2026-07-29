@@ -98,11 +98,13 @@ let
     };
   };
 
-  # An input whose `nixosModules` has NO `default` and SEVERAL entries: a
-  # catalog of opt-in entries (nixos-hardware style). NONE of them may be
-  # auto-imported, and their values must never be forced -- real catalogs
-  # contain `throw` tombstones for removed entries. Its `homeModules.default`
-  # IS still auto-loaded.
+  # An input whose `nixosModules` has NO `default` and SEVERAL entries
+  # (nixos-hardware style): auto-import refuses to guess and THROWS with
+  # instructions, and the entries' values must never be forced -- real
+  # catalogs contain `throw` tombstones for removed entries. NOT part of
+  # the shared `inputs` set (it would make every harness evaluation
+  # throw); the auto-loading tests thread it in via ctx for dedicated
+  # builder calls.
   fake-multi-module-input = {
     outPath = "/nix/store/fake-multi-module-input";
     nixosModules = {
@@ -114,6 +116,12 @@ let
       };
       removed-tombstone = throw "this catalog entry must never be forced";
     };
+  };
+
+  # An input contributing home modules under the NEW `homeModules` name:
+  # its `default` is auto-loaded.
+  fake-home-modules-input = {
+    outPath = "/nix/store/fake-home-modules-input";
     homeModules.default = {
       home.sessionVariables.FROM_INPUT_HOME_MODULES = "1";
     };
@@ -137,7 +145,7 @@ let
 
   # An input exporting exactly ONE module under a name other than `default`
   # (sops-nix / plasma-manager style): unambiguous, so that entry is
-  # auto-loaded despite the missing `default`.
+  # auto-loaded silently despite the missing `default`.
   fake-single-module-input = {
     outPath = "/nix/store/fake-single-module-input";
     nixosModules.the-only-one = {
@@ -153,7 +161,7 @@ let
     # A second package-set input: must be exposed as the `pkgs-unstable`
     # specialArg (and its helper nixosModules must NOT be auto-imported).
     nixpkgs-unstable = nixpkgs;
-    inherit fake-module-input fake-multi-module-input fake-single-module-input fake-sops-shaped-input;
+    inherit fake-module-input fake-home-modules-input fake-single-module-input fake-sops-shaped-input;
     strings = fake-strings-collision;
     disko = fake-disko-input;
     fenix = fake-fenix;
@@ -291,6 +299,7 @@ let
       bootstrapModuleFor
       applyBootstrap
       homesThrow
+      fake-multi-module-input
       exampleDir
       fixturesDir
       invalidFixturesDir

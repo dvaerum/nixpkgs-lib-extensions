@@ -42,26 +42,33 @@ let
   # From a flake's exported set (modules / overlays): the `default` export
   # is auto-loaded; without one, a set with exactly ONE entry is unambiguous
   # (sops-nix / plasma-manager style) and that entry is used. A set with
-  # SEVERAL entries and no `default` is a catalog of opt-in entries
-  # (nixos-hardware ships hundreds of mutually exclusive profiles, some of
-  # them `throw` tombstones) -- importing them all is never right, so it
-  # contributes nothing. Reference catalog entries explicitly (e.g.
-  # `inputs.nixos-hardware.nixosModules.<profile>`) or add an
-  # `inputSpecialCases` entry mapping the input onto the convention.
-  # `what` names the source in the single-entry warning: that branch is
-  # LOCK-FRAGILE -- upstream adding a second export (or a `default`)
-  # silently changes a consumer's next flake update from "the one module"
-  # to "nothing" (catalog treatment), so make the dependence visible.
+  # SEVERAL entries and no `default` is ambiguous (nixos-hardware ships
+  # hundreds of mutually exclusive profiles, some of them `throw`
+  # tombstones) -- importing them all is never right and silently skipping
+  # would hide functionality, so it THROWS with the exact remedies: pick
+  # one entry or opt out, both via `inputSpecialCases`. `name` is the
+  # input's key in `inputs`, `channel` the convention attribute
+  # ("overlays" / "nixosModules" / "homeModules"); both only render the
+  # message. LAZINESS: the decision looks at builtins.attrNames / length
+  # ONLY -- export VALUES are never forced here, because real catalogs
+  # contain `throw` tombstones for removed entries.
   pickExported =
-    what: s:
+    name: channel: s:
+    let
+      names = builtins.attrNames s;
+    in
     if s ? default then
       [ s.default ]
-    else if builtins.length (builtins.attrNames s) == 1 then
-      warn ''
-        nixpkgs-lib-extensions: auto-importing the sole export `${builtins.head (builtins.attrNames s)}` of ${what}. This changes if upstream adds exports -- pin it explicitly (or via inputSpecialCases) if you rely on it.''
-        (builtins.attrValues s)
+    else if builtins.length names == 1 then
+      builtins.attrValues s
+    else if names == [ ] then
+      [ ]
     else
-      [ ];
+      throw ''
+        nixpkgs-lib-extensions: input `${name}` exports ${toString (builtins.length names)} ${channel} entries and no `default` -- auto-import will not guess. Pick one or opt out via the builder's inputSpecialCases argument:
+          inputSpecialCases."${name}" = v: { ${channel}.default = v.${channel}.<the one you want>; };
+        or, for a catalog of opt-in entries:
+          inputSpecialCases."${name}" = _: { ${channel} = { }; };'';
 
   # Special cases for inputs that do not follow the generic output
   # conventions, keyed by the input's NAME in `inputs`. A case applies ONLY

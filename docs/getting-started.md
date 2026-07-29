@@ -399,12 +399,25 @@ For every flake input, by convention:
 The `default` export is auto-loaded. Without one, a set with exactly
 ONE entry is unambiguous and that entry is used (sops-nix and
 plasma-manager export their single module under a name, not
-`default`). A set with SEVERAL entries and no `default` is treated
-as a catalog of opt-in entries -- nixos-hardware, for example, ships
-hundreds of mutually exclusive hardware profiles -- and contributes
-nothing automatically; import the entries you want explicitly:
+`default`). A set with SEVERAL entries and no `default` is ambiguous
+-- nixos-hardware, for example, ships hundreds of mutually exclusive
+hardware profiles -- and the builder refuses to guess: evaluation
+throws, telling you to resolve it via the `inputSpecialCases`
+argument. Either pick the entry to auto-import:
 
 ```nix
+inputSpecialCases."nixos-hardware" = v: {
+  nixosModules.default =
+    v.nixosModules.dell-xps-13-9310;
+};
+```
+
+or, for a catalog of opt-in entries, opt the channel out and import
+the entries you want explicitly in `modules`:
+
+```nix
+inputSpecialCases."nixos-hardware" = _: { nixosModules = { }; };
+
 modules = [
   inputs.nixos-hardware
     .nixosModules.dell-xps-13-9310

@@ -608,10 +608,14 @@ automatically when the matching input exists:
   -- anything with `legacyPackages` AND `lib.nixosSystem` -- whose helper
   modules would break the system; opt out more via `excludeModuleInputs`).
   The `default` export is auto-loaded; without one, a set with exactly one
-  entry is used as-is (sops-nix style), while a multi-entry set is treated
-  as a catalog of opt-in entries (nixos-hardware style) and contributes
-  nothing -- import catalog entries explicitly, e.g.
-  `inputs.nixos-hardware.nixosModules.dell-xps-13-9310`.
+  entry is used as-is (sops-nix style), while a multi-entry set with no
+  `default` is ambiguous (nixos-hardware style catalogs) and the builder
+  THROWS with instructions: resolve it via `inputSpecialCases`, either
+  picking the entry to auto-import
+  (`inputSpecialCases."nixos-hardware" = v: { nixosModules.default =
+  v.nixosModules.dell-xps-13-9310; };`) or opting the channel out
+  (`inputSpecialCases."nixos-hardware" = _: { nixosModules = { }; };`)
+  and importing catalog entries explicitly in `modules`.
 - overlays from any input exposing `overlays.default` (same rule).
 - lib extensions from any input exposing an `extendLib` function; this repo's
   own extensions are always applied to the system `lib` and also passed as the

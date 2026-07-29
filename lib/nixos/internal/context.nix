@@ -207,7 +207,7 @@ let
         lib.concatLists (
           lib.mapAttrsToList (
             name: v:
-            lib.optionals (lib.isAttrs v && v ? overlays) (pickExported "input `${name}` (overlays)" v.overlays)
+            lib.optionals (lib.isAttrs v && v ? overlays) (pickExported name "overlays" v.overlays)
           ) conventionInputs
         )
       );
@@ -253,7 +253,7 @@ let
           lib.mapAttrsToList (
             name: v:
             lib.optionals (lib.isAttrs v && v ? nixosModules && !(skipNixosModule name v)) (
-              pickExported "input `${name}` (nixosModules)" v.nixosModules
+              pickExported name "nixosModules" v.nixosModules
             )
           ) conventionInputs
         )
@@ -270,7 +270,7 @@ let
           lib.mapAttrsToList (
             name: v:
             lib.optionals (lib.isAttrs v) (
-              pickExported "input `${name}` (home modules)" (v.homeModules or v.homeManagerModules or { })
+              pickExported name "homeModules" (v.homeModules or v.homeManagerModules or { })
             )
           ) conventionInputs
         )
