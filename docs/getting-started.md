@@ -429,6 +429,37 @@ laptop = {
 };
 ```
 
+## Patching nixpkgs itself
+
+For a nixpkgs fix that has not reached your channel yet (typically
+an open pull request), a host can build from a patched COPY of the
+nixpkgs source. Save the PR's diff into your repo:
+
+```
+curl -L -o patches/pr-12345.diff \
+  https://github.com/NixOS/nixpkgs/pull/12345.diff
+git add patches/
+```
+
+and point the host at it:
+
+```nix
+laptop = {
+  patches = [ ./patches/pr-12345.diff ];
+};
+```
+
+What it costs: the whole nixpkgs tree is copied into the store with
+the patches applied, and that copy must be BUILT before evaluation
+can continue (import-from-derivation) -- the first build pays a
+one-time cost, and eval-only workflows such as
+`nix flake check --no-build` stop working for that host.
+
+When NOT to use it: to change or fix a single package, an overlay
+(`extraOverlays`) is lighter and needs no source copy. Patches are
+for what overlays cannot express: NixOS module fixes and other
+eval-level changes.
+
 ## Gotchas
 
 - **Untracked files are invisible to flakes.** `git add` new user

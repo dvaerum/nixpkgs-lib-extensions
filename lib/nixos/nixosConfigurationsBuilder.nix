@@ -178,18 +178,11 @@ in
     : `nixpkgs.config.cudaSupport`). Default `[ ]`.
 
     patches
-    : Patch files applied to the nixpkgs SOURCE tree itself before the
-    : host is evaluated from it -- for picking up an unmerged nixpkgs fix
-    : (e.g. a `fetchpatch` of a pull request) without waiting for it to
-    : land in your channel. This is heavier than an overlay: the whole
-    : nixpkgs source is copied into the store with the patches applied
-    : (`applyPatches`), and the copy must be BUILT before evaluation can
-    : continue (import-from-derivation), so the first build pays a
-    : noticeable one-time cost and `nix flake check --no-build` style
-    : workflows stop working for that host. Reach for `extraOverlays`
-    : when changing a package suffices; patches are for changes overlays
-    : cannot express (NixOS module fixes, eval-level changes). Default
-    : `[ ]` (no patching, no source copy, no IFD).
+    : Patch files applied to the nixpkgs SOURCE tree (via `applyPatches`)
+    : before the system is evaluated from it. Default `[ ]` (no patching,
+    : no source copy). See
+    : [Patching nixpkgs itself](getting-started.md#patching-nixpkgs-itself)
+    : for an example and the costs involved.
 
     extraOverlays
     : Overlays applied on top of the ones auto-collected from `inputs`.
