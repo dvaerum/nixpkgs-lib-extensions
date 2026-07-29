@@ -197,7 +197,6 @@ let
       permittedInsecurePackages ? [ ],
       specialArgs ? { },
       additionalSpecialArgs ? { },
-      desktopEnvironment ? "plasma",
       systemType ? null,
       rootPath ? (inputs.self or ./.),
       excludeModuleInputs ? [ ],
@@ -402,7 +401,6 @@ let
             inputPkgs
             rootPath
             tags
-            desktopEnvironment
             extLib
             systemType
             ;

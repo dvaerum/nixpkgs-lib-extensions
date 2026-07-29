@@ -81,7 +81,7 @@ in
     so pin it in the user's `home.nix` if you rely on stateVersion
     semantics.
 
-    nixpkgs, systemType, specialArgs, desktopEnvironment, tags, patches,
+    nixpkgs, systemType, specialArgs, tags, patches,
     extraOverlays, allowedUnfreePackages, permittedInsecurePackages, rootPath
     : Shared options (see `nixosConfigurationsBuilder`).
   */

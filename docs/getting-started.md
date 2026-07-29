@@ -356,7 +356,7 @@ Both NixOS modules and home-manager modules get:
 |                       | the host's system                        |
 | `pkgs-<variant>`      | package set per `nixpkgs-*` input        |
 | `extLib`              | this repo's lib (also merged into `lib`) |
-| `hostname`, `rootPath`, `tags`, `systemType`, `desktopEnvironment` | call arguments |
+| `hostname`, `rootPath`, `tags`, `systemType` | call arguments |
 | `listOfUsernames`     | the host's registry-derived users        |
 | `username`            | home-manager configs only: whose home    |
 

@@ -58,8 +58,7 @@
   unfree-predicate-denies = !(custom.pkgs.config.allowUnfreePredicate { pname = "not-allowed"; });
   cuda-tag-sets-pkgs-config = custom.pkgs.config.cudaSupport && !laptop.pkgs.config.cudaSupport;
   system-type-special-arg = custom._module.specialArgs.systemType == "server";
-  desktop-environment-default = laptop._module.specialArgs.desktopEnvironment == "plasma";
-  special-args-override-wins = custom._module.specialArgs.desktopEnvironment == "gnome";
+  special-args-override-wins = custom._module.specialArgs.tags == [ "overridden-tag" ];
   root-path-defaults-to-self = toString laptop._module.specialArgs.rootPath == toString exampleDir;
   additional-modules-applied = custom.config.users.groups ? from-additional-module;
 

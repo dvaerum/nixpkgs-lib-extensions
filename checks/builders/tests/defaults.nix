@@ -20,11 +20,11 @@ let
         fromDefaults = "d";
         layered = "base";
       };
-      desktopEnvironment = "gnome";
+      tags = [ "default-tag" ];
     };
     defhost = { };
     overridehost = {
-      desktopEnvironment = "plasma";
+      tags = [ "host-tag" ];
       additionalModules = [ { users.groups.from-additional-module = { }; } ];
       additionalSpecialArgs = {
         fromHost = "h";
@@ -41,10 +41,10 @@ in
   defaults-applied =
     built.defhost.config.users.groups ? from-defaults-module
     && built.defhost._module.specialArgs.fromDefaults == "d"
-    && built.defhost._module.specialArgs.desktopEnvironment == "gnome";
+    && built.defhost._module.specialArgs.tags == [ "default-tag" ];
 
   # per-argument merge, host wins entirely
-  defaults-host-override-wins = built.overridehost._module.specialArgs.desktopEnvironment == "plasma";
+  defaults-host-override-wins = built.overridehost._module.specialArgs.tags == [ "host-tag" ];
 
   # the layered pair: _defaults.modules plus the host's additionalModules
   # both apply

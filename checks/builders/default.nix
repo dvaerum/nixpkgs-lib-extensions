@@ -211,7 +211,8 @@ let
         )
       ];
       # user-supplied specialArgs override the builder-assembled ones
-      specialArgs.desktopEnvironment = "gnome";
+      # (tags would otherwise be the [] default)
+      specialArgs.tags = [ "overridden-tag" ];
     }).custom;
 
   # A host built from a PATCHED nixpkgs; the marker file proves the system
