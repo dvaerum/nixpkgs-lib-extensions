@@ -36,13 +36,15 @@
     aliceHome.config.home.sessionVariables.FROM_INPUT_HM == "1"
     && aliceHome.config.home.sessionVariables.FROM_INPUT_HOME_MODULES == "1";
 
-  # the `nur` special case normalizes modules.nixos / modules.homeManager ...
-  nur-special-case-nixos-module = laptop.config.users.groups ? from-nur-module;
-  nur-special-case-home-module = aliceHome.config.home.sessionVariables.FROM_NUR_HM == "1";
-  # ... but ONLY for the input named `nur`: the same shape under another
-  # key is not touched
-  nur-special-case-is-name-scoped =
-    !(laptop.config.users.groups ? from-notnur-module)
+  # NUR-shaped `modules.nixos`/`modules.homeManager` exports are NOT a
+  # convention: nothing is imported from them, under the `nur` key or any
+  # other (NUR's contribution is its overlays.default, applied by the
+  # generic overlay collector; its default modules would only inject the
+  # same overlay again, warning under useGlobalPkgs)
+  nur-shaped-modules-not-imported =
+    !(laptop.config.users.groups ? from-nur-module)
+    && !(laptop.config.users.groups ? from-notnur-module)
+    && !(aliceHome.config.home.sessionVariables ? FROM_NUR_HM)
     && !(aliceHome.config.home.sessionVariables ? FROM_NOTNUR_HM);
 
   # the home-manager input's OWN nixosModules must NOT be AUTO-imported

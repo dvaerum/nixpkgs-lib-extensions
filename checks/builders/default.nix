@@ -86,8 +86,8 @@ let
   };
 
   # NUR-shaped: nonstandard `modules.nixos`/`modules.homeManager` exports.
-  # Under the key `nur` the special case normalizes them; under ANY other key
-  # the same shape must be ignored (cases apply strictly by input name).
+  # Ignored under EVERY key, `nur` included: modules.* is not a convention
+  # (NUR contributes via overlays.default like any other input).
   nur-shaped = suffix: {
     outPath = "/nix/store/fake-nur-${suffix}";
     modules.nixos.default = {

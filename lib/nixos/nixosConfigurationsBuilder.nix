@@ -43,10 +43,11 @@ in
     The whole `inputs` set is also passed through as the `inputs` specialArg
     (and home-manager extraSpecialArg), so modules can reach anything not
     covered by those conventions (e.g. `inputs.fenix`) themselves — the
-    builders carry no policy for specific inputs. The only per-input handling
-    is a small normalization table for flakes with nonstandard export names
-    (currently just `nur`, whose `modules.nixos`/`modules.homeManager` are
-    mapped onto the standard conventions); it applies strictly by input name.
+    builders carry no policy for specific inputs. The only per-input hook
+    is a normalization table for flakes with nonstandard export names,
+    applied strictly by input name -- currently empty (NUR, its one
+    former entry, contributes via `overlays.default` like any other
+    input).
     As a convenience, `inputPkgs` holds every input's packages pre-selected
     for the host's system (`inputPkgs.disko.disko-install`); they are
     deliberately not merged into `pkgs`, where input names would shadow

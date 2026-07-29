@@ -455,11 +455,13 @@ modules or overlays). Nixpkgs trees -- anything exposing both
 break a system. Exporting `legacyPackages` alone (sops-nix does, for
 its docs) does not exclude an input.
 
-Inputs with nonstandard export names are normalized by a small table
-keyed by input name -- currently `nur` (`modules.nixos` /
-`modules.homeManager`). The home-manager input itself is detected by
-capability, whatever you named it, and its NixOS module is never
-auto-imported (it is used standalone).
+Inputs with nonstandard export names can be normalized by a small
+table keyed by input name -- currently empty (NUR, its one former
+entry, works via `overlays.default` like any other input; its
+default modules only inject that same overlay again). The
+home-manager input itself is detected by capability, whatever you
+named it, and its NixOS module is never auto-imported (the builder
+wires it in deliberately where system-managed homes need it).
 
 ## What your modules receive (specialArgs)
 

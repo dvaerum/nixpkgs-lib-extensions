@@ -168,11 +168,13 @@ let
   # extendLib); the generic collectors then treat it like any other input.
   # Add further special cases here.
   inputSpecialCases = {
-    # NUR exports its modules under `modules.nixos` / `modules.homeManager`
-    nur = v: {
-      nixosModules = v.modules.nixos or { };
-      homeManagerModules = v.modules.homeManager or { };
-    };
+    # Currently empty. NUR used to be mapped here (`modules.nixos` /
+    # `modules.homeManager`), but modern NUR's default modules do nothing
+    # except inject its overlay via `nixpkgs.overlays` -- which the
+    # generic collector already applies from NUR's `overlays.default`,
+    # and which triggers home-manager's useGlobalPkgs warning in every
+    # home. A future case would look like:
+    #   some-input = v: { nixosModules = v.odd.export.name or { }; };
   };
 
   # The convention-shaped view of an input: its special case applied when
