@@ -37,6 +37,11 @@ in
     }
     ```
 
+    See
+    [The bootstrap without the builders](getting-started.md#the-bootstrap-without-the-builders)
+    for a complete standalone flake, including what this module does
+    NOT do compared to the builder setup.
+
     # Type
 
     ```

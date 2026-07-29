@@ -264,6 +264,90 @@ homeConfigurations =
   };
 ```
 
+### The bootstrap without the builders
+
+`homeManagerBootstrapModule` is a plain NixOS module and can be used
+on its own, for systems built without `nixosConfigurationsBuilder`.
+A complete flake:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url =
+      "github:NixOS/nixpkgs/nixos-unstable";
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixpkgs-lib-extensions = {
+      url =
+        "github:dvaerum/nixpkgs-lib-extensions";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows =
+        "home-manager";
+    };
+  };
+
+  outputs =
+    { nixpkgs, nixpkgs-lib-extensions, ... }@inputs:
+    let
+      extLib = nixpkgs-lib-extensions.lib;
+      system = "x86_64-linux";
+      homeConfigurations = {
+        "alice" = ./users/alice;
+      };
+    in
+    {
+      # a system built WITHOUT the builders
+      nixosConfigurations.laptop =
+        nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [
+            ./configuration.nix
+
+            # accounts are YOUR job here; the
+            # builders would have created them
+            {
+              users.users.alice = {
+                isNormalUser = true;
+              };
+            }
+
+            # installs the login service
+            (extLib.homeManagerBootstrapModule {
+              inherit inputs system
+                homeConfigurations;
+              hostname = "laptop";
+              # reactivateEveryLogin = true;
+              # flakeRef = "/etc/nixos";
+            })
+          ];
+        };
+
+      # the homes the bootstrap activates:
+      # "alice@laptop" MUST exist here
+      homeConfigurations =
+        extLib.homeConfigurationsBuilder {
+          inherit inputs system
+            homeConfigurations;
+          hostname = "laptop";
+        };
+    };
+}
+```
+
+At login the service runs
+`home-manager switch --flake <flakeRef>#alice@laptop` exactly as in
+the builder setup. Two things the standalone module does NOT do
+(they are `nixosConfigurationsBuilder` features): it never creates
+user accounts, and it never imports the registry directories'
+`configuration.nix` files -- only the registry KEYS are read, to
+know which users to bootstrap.
+
+The module is self-gating: with an empty registry, no home-manager
+input, no flake reference, or no user matching the host, it
+evaluates to an empty module -- safe to include unconditionally.
+
 ## What your inputs contribute automatically
 
 For every flake input, by convention:
