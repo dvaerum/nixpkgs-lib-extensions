@@ -80,10 +80,12 @@ normally never run `home-manager` by hand.
 
 ## The registry
 
-The heart of the setup -- one attrset shared by all hosts:
+The heart of the setup -- one attrset shared by all hosts, passed to
+the builders as `userRegistry` (NOT to be confused with the flake's
+`homeConfigurations` OUTPUT, which the builders produce from it):
 
 ```nix
-homeConfigurations = {
+userRegistry = {
   "alice"        = ./users/alice;
   "bob@laptop"   = ./users/bob;
   "frank@*"      = ./users/frank-base;
@@ -141,7 +143,7 @@ hostname. In your flake the full wiring looks like this (the scaffolded
     let
       extLib = nixpkgs-lib-extensions.lib;
       system = "x86_64-linux";
-      homeConfigurations = {
+      userRegistry = {
         # the registry from the previous section
         "alice" = ./users/alice;
       };
@@ -151,13 +153,13 @@ hostname. In your flake the full wiring looks like this (the scaffolded
         # entry overrides per argument
         _defaults = {
           inherit inputs system
-            homeConfigurations;
+            userRegistry;
         };
         laptop = { };
         server = {
           # override: no registry,
           # so no users on server
-          homeConfigurations = { };
+          userRegistry = { };
         };
       };
     in
@@ -287,7 +289,7 @@ A complete flake:
     let
       extLib = nixpkgs-lib-extensions.lib;
       system = "x86_64-linux";
-      homeConfigurations = {
+      userRegistry = {
         "alice" = ./users/alice;
       };
     in
@@ -310,7 +312,7 @@ A complete flake:
             # installs the login service
             (extLib.homeManagerBootstrapModule {
               inherit inputs system
-                homeConfigurations;
+                userRegistry;
               hostname = "laptop";
               # reactivateEveryLogin = true;
               # flakeRef = "/etc/nixos";
@@ -323,7 +325,7 @@ A complete flake:
       homeConfigurations =
         extLib.homeConfigurationsBuilder {
           inherit inputs system
-            homeConfigurations;
+            userRegistry;
           hostname = "laptop";
         };
     };
@@ -494,7 +496,7 @@ Package-set knobs per host (full reference in [lib.md](lib.md)):
 
 ```nix
 laptop = {
-  inherit inputs system homeConfigurations;
+  inherit inputs system userRegistry;
   # reach modules as `tags` and label the
   # boot-menu entries (system.nixos.tags)
   tags = [ "gpu" ];

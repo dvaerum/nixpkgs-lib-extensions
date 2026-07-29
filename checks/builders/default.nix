@@ -245,7 +245,7 @@ let
       {
         inherit inputs system;
         hostname = "laptop";
-        homeConfigurations."alice" = exampleDir + "/users/alice";
+        userRegistry."alice" = exampleDir + "/users/alice";
       }
       // args
     );
@@ -258,7 +258,7 @@ let
       builtins.attrNames (myLib.homeConfigurationsBuilder {
         inherit inputs system;
         hostname = "laptop";
-        homeConfigurations = registry;
+        userRegistry = registry;
       })
     )).success;
 

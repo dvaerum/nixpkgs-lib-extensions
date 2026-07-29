@@ -1,4 +1,4 @@
-# The homeConfigurations registry: user derivation from keys, the
+# The userRegistry registry: user derivation from keys, the
 # "<user>@<host>" / "<user>@*" / "<user>" resolution rules, companion
 # configuration.nix handling and entry validation.
 {
@@ -47,10 +47,10 @@
     builtins.attrNames (myLib.homeConfigurationsBuilder {
       inherit inputs system;
       hostname = "laptop";
-      homeConfigurations."alice" = "${exampleDir + "/users/alice"}";
+      userRegistry."alice" = "${exampleDir + "/users/alice"}";
     }) == [ "alice@laptop" ];
 
-  # eve has no home config -> no homeConfigurations output for her;
+  # eve has no home config -> no userRegistry output for her;
   # frank's and grace's homes come from their wildcard entries
   home-configs-keyed-per-host = builtins.attrNames example.homeConfigurations == [
     "alice@laptop"
@@ -66,7 +66,7 @@
     builtins.attrNames (myLib.homeConfigurationsBuilder {
       inherit inputs system;
       hostname = "server";
-      homeConfigurations = {
+      userRegistry = {
         "alice" = exampleDir + "/users/alice"; # plain -> any host
         "bob@laptop" = exampleDir + "/users/bob"; # laptop only -> NOT on server
         "frank@*" = exampleDir + "/users/frank-base"; # wildcard -> every host
@@ -85,7 +85,7 @@
     builtins.attrNames (myLib.homeConfigurationsBuilder {
       inherit inputs system;
       hostname = "laptop";
-      homeConfigurations = {
+      userRegistry = {
         "helen" = exampleDir + "/users/alice";
         "helen@otherhost" = exampleDir + "/users/bob";
       };
@@ -99,7 +99,7 @@
           inherit inputs system;
           hostname = "nullreg";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-          homeConfigurations = null;
+          userRegistry = null;
         }).nullreg;
     in
     sys._module.specialArgs.listOfUsernames == [ ]

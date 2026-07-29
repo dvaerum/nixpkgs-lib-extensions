@@ -42,7 +42,7 @@
       #   "<user>@<host>"  that host only
       #   "<user>@*"       every host; MERGES with a matching "<user>@<host>"
       #   "<user>"         standalone default, only when NO @-entry matched
-      homeConfigurations = {
+      userRegistry = {
         "alice" = ./users/alice; # plain default: applies (alice has no @-entries)
         "bob@laptop" = ./users/bob; # laptop only
         "carol@otherhost" = ./users/carol; # a different machine: never on laptop
@@ -66,7 +66,7 @@
         # the layered pairs: `modules`/`specialArgs` here,
         # `additionalModules`/`additionalSpecialArgs` on the host.
         _defaults = {
-          inherit inputs system homeConfigurations;
+          inherit inputs system userRegistry;
           # Added to every user's home configuration on every host
           # (asserted by the checks; adjust freely). Ignored by
           # buildNixosConfigurations.
@@ -85,7 +85,7 @@
         # A host without any user registry: no users, no bootstrap, no
         # homes -- the empty registry OVERRIDES the one from `_defaults`.
         server = {
-          homeConfigurations = { };
+          userRegistry = { };
         };
       };
     in

@@ -39,18 +39,18 @@ let
   # never merged with @-entries (import it explicitly from another entry to
   # reuse it). A plain entry shadowed by @-entries triggers a warning.
   matchedEntries =
-    homeConfigurations: hostname: username:
+    userRegistry: hostname: username:
     let
       atTier = builtins.filter (e: e != null) [
-        (homeConfigurations."${username}@*" or null)
-        (homeConfigurations."${username}@${hostname}" or null)
+        (userRegistry."${username}@*" or null)
+        (userRegistry."${username}@${hostname}" or null)
       ];
-      fallback = homeConfigurations.${username} or null;
+      fallback = userRegistry.${username} or null;
     in
     if atTier != [ ] then
       (if fallback != null then
         warn ''
-          homeConfigurations: the plain `${username}` entry is IGNORED on host
+          userRegistry: the plain `${username}` entry is IGNORED on host
           `${hostname}` because `${username}@...` entries exist. Plain entries
           are standalone defaults, never merged with @-entries; import the
           directory explicitly from an @-entry if you want to reuse it.
@@ -78,12 +78,12 @@ let
     in
     if !(isDirEntry entry) then
       throw ''
-        The homeConfigurations entry for `${username}` must be an existing
+        The userRegistry entry for `${username}` must be an existing
         directory (as a path), but got: ${shown}
       ''
     else if !hasHome && !hasConf then
       throw ''
-        The homeConfigurations directory for `${username}` (${shown})
+        The userRegistry directory for `${username}` (${shown})
         contains neither a `home.nix` nor a `configuration.nix`.
       ''
     else
@@ -97,9 +97,9 @@ let
   # whose matched entries only ship configuration.nix is system-only
   # (homeModules == [ ]): no home output, no login bootstrap.
   resolveUser =
-    homeConfigurations: hostname: username:
+    userRegistry: hostname: username:
     let
-      parts = map (entryFiles username) (matchedEntries homeConfigurations hostname username);
+      parts = map (entryFiles username) (matchedEntries userRegistry hostname username);
       nonNull = builtins.filter (x: x != null);
     in
     {
@@ -109,15 +109,15 @@ let
 
   # The subset of `users` that actually have a home configuration.
   usersWithHome =
-    homeConfigurations: hostname: users:
-    builtins.filter (u: (resolveUser homeConfigurations hostname u).homeModules != [ ]) users;
+    userRegistry: hostname: users:
+    builtins.filter (u: (resolveUser userRegistry hostname u).homeModules != [ ]) users;
 
   # The users of a host, derived from the registry keys: "<user>@<host>" entries
   # for this host, "<user>@*" wildcard entries (every host), plus plain
   # "<user>" fallback entries (any host). Deduplicated (and sorted) via the
   # listToAttrs/attrNames round-trip.
   usersFromRegistry =
-    homeConfigurations: hostname:
+    userRegistry: hostname:
     let
       toUser =
         key:
@@ -131,7 +131,7 @@ let
           builtins.head m
         else
           null;
-      names = builtins.filter (u: u != null) (map toUser (builtins.attrNames homeConfigurations));
+      names = builtins.filter (u: u != null) (map toUser (builtins.attrNames userRegistry));
     in
     builtins.attrNames (
       builtins.listToAttrs (
@@ -441,7 +441,7 @@ let
     "modules"
     "userModuleFn"
     "excludeModuleInputs"
-    "homeConfigurations"
+    "userRegistry"
     "homeSharedModules"
     "flakeRef"
     "reactivateEveryLogin"

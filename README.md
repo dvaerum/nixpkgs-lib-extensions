@@ -27,7 +27,7 @@ nix flake init -t github:dvaerum/nixpkgs-lib-extensions
 
 Highlights:
 
-- One `homeConfigurations` registry declares the users: each value is a
+- One `userRegistry` declares the users: each value is a
   directory with `home.nix` (home-manager config) and/or
   `configuration.nix` (NixOS config: account, groups, ...). Keys select
   hosts: `"alice@laptop"`, `"alice@*"` (every host), or plain `"alice"`.

@@ -27,7 +27,7 @@ in
       # Every value is a DIRECTORY with home.nix and/or configuration.nix.
       # "alice@*" applies everywhere and MERGES with "alice@laptop" here;
       # "bob" is a standalone default (used since no bob@... matches).
-      homeConfigurations = {
+      userRegistry = {
         "alice@*"      = ./users/alice;
         "alice@laptop" = ./users/alice-laptop;
         "bob"          = ./users/bob;
@@ -59,7 +59,7 @@ in
     system
     : The system double, e.g. `"x86_64-linux"`.
 
-    homeConfigurations
+    userRegistry
     : Registry of user configuration DIRECTORIES, each containing `home.nix`
     : and/or `configuration.nix`. Key forms: `"<user>@<host>"` (this host),
     : `"<user>@*"` (every host; merges with a matching host entry), and
@@ -90,7 +90,7 @@ in
       inputs,
       hostname,
       system,
-      homeConfigurations ? { },
+      userRegistry ? { },
       homeSharedModules ? [ ],
       ...
     }@args:
@@ -106,7 +106,7 @@ in
 
       # The host's users, derived from the registry keys ("<user>@<host>" for
       # this host plus plain "<user>" fallback entries).
-      users = shared.usersFromRegistry homeConfigurations hostname;
+      users = shared.usersFromRegistry userRegistry hostname;
 
       mkHome =
         username:
@@ -125,7 +125,7 @@ in
             autoHomeModules
             ++ homeSharedModules
             # all matched home.nix files: "<user>@*" and "<user>@<host>" merge
-            ++ (shared.resolveUser homeConfigurations hostname username).homeModules
+            ++ (shared.resolveUser userRegistry hostname username).homeModules
             ++ [
               {
                 _file = ./homeConfigurationsBuilder.nix;
@@ -149,6 +149,6 @@ in
         })
         # only users with an actual home config get an output (a directory
         # entry shipping only a configuration.nix is system-only)
-        (shared.usersWithHome homeConfigurations hostname users)
+        (shared.usersWithHome userRegistry hostname users)
       );
 }

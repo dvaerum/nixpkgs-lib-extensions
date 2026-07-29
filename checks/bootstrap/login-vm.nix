@@ -29,7 +29,7 @@ let
           };
           inherit system;
           hostname = "vmhost";
-          homeConfigurations."alice" = ../example/users/alice;
+          userRegistry."alice" = ../example/users/alice;
         }
         // extraBootstrapArgs
       ))

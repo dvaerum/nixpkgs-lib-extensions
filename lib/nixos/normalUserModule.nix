@@ -7,7 +7,7 @@
     own group.
 
     This is the default `userModuleFn` of `nixosConfigurationsBuilder`, so
-    every user derived from the `homeConfigurations` registry gets a login
+    every user derived from the `userRegistry` gets a login
     account automatically. Pass your own function when accounts need more,
     or `userModuleFn = null` to disable account creation.
 

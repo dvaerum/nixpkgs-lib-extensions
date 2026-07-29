@@ -253,9 +253,9 @@ host, from a single host list:
 ```nix
 let
   hosts = {
-    _defaults = { inherit inputs system homeConfigurations; };
+    _defaults = { inherit inputs system userRegistry; };
     laptop = { };
-    server = { homeConfigurations = { }; };
+    server = { userRegistry = { }; };
   };
 in
 {
@@ -277,7 +277,7 @@ its own `@<hostname>` suffix.
 extLib.buildHomeConfigurations {
   _defaults = {
     inherit inputs system;
-    homeConfigurations."alice" = ./users/alice;
+    userRegistry."alice" = ./users/alice;
   };
   laptop = { };
   desktop = { };
@@ -333,7 +333,7 @@ outputs the login bootstrap needs -- define it once, pass it to both.
 # extLib = inputs.nixpkgs-lib-extensions.lib
 nixosConfigurations = extLib.buildNixosConfigurations {
   _defaults = {
-    inherit inputs system homeConfigurations;
+    inherit inputs system userRegistry;
     modules = [ ./common/base.nix ];
   };
   # each host's config is found by convention:
@@ -345,7 +345,7 @@ nixosConfigurations = extLib.buildNixosConfigurations {
   };
   server = {
     # per-argument override: replaces the registry entirely
-    homeConfigurations = { };
+    userRegistry = { };
   };
 };
 =>
@@ -383,7 +383,7 @@ buildNixosConfigurations ::
   - `modules`
   - `userModuleFn`
   - `excludeModuleInputs`
-  - `homeConfigurations`
+  - `userRegistry`
   - `homeSharedModules` (used by `buildHomeConfigurations`; accepted
     and ignored here, so one hosts attrset can feed both)
   - `flakeRef`
@@ -428,7 +428,7 @@ extLib.homeConfigurationsBuilder {
   # Every value is a DIRECTORY with home.nix and/or configuration.nix.
   # "alice@*" applies everywhere and MERGES with "alice@laptop" here;
   # "bob" is a standalone default (used since no bob@... matches).
-  homeConfigurations = {
+  userRegistry = {
     "alice@*"      = ./users/alice;
     "alice@laptop" = ./users/alice-laptop;
     "bob"          = ./users/bob;
@@ -460,7 +460,7 @@ homeConfigurationsBuilder :: Attribute -> Attribute
 - **system**
   The system double, e.g. `"x86_64-linux"`.
 
-- **homeConfigurations**
+- **userRegistry**
   Registry of user configuration DIRECTORIES, each containing `home.nix`
   and/or `configuration.nix`. Key forms: `"<user>@<host>"` (this host),
   `"<user>@*"` (every host; merges with a matching host entry), and
@@ -496,7 +496,7 @@ login, via a systemd *user* service that runs `home-manager switch` in the
 background (so login is never hard-blocked). First-login-only by default.
 
 `nixosConfigurationsBuilder` includes this module automatically when it is
-given a non-empty `homeConfigurations` registry, so it normally does not need
+given a non-empty `userRegistry`, so it normally does not need
 to be wired up by hand — direct use is for custom setups that build their
 NixOS systems some other way. It is driven by the home-configuration
 *registry* (the same one passed to `homeConfigurationsBuilder`) but is
@@ -515,7 +515,7 @@ user matches, the module is empty.
       inherit inputs;
       hostname = "laptop";
       system   = "x86_64-linux";
-      homeConfigurations = { "alice" = ./users/alice; };
+      userRegistry = { "alice" = ./users/alice; };
     })
   ];
 }
@@ -544,7 +544,7 @@ homeManagerBootstrapModule :: Attribute -> Module
 - **system**
   The system double, e.g. `"x86_64-linux"`.
 
-- **homeConfigurations**
+- **userRegistry**
   The same registry passed to `homeConfigurationsBuilder`; its keys define
   which users are bootstrapped on this host. Default `{ }`.
 
@@ -617,10 +617,10 @@ imported automatically when it exists (both existing is an error).
 Setting `systemType` groups hosts one folder deeper: the lookup then
 happens under `hosts/<systemType>/` instead of `hosts/`.
 
-The host's users are derived from the `homeConfigurations` registry keys —
+The host's users are derived from the `userRegistry` keys —
 there is no separate `users` argument. Home configurations are built
-separately by `homeConfigurationsBuilder`, but when a `homeConfigurations`
-registry is passed here as well, the login bootstrap
+separately by `homeConfigurationsBuilder`, but when a `userRegistry`
+is passed here as well, the login bootstrap
 (`homeManagerBootstrapModule`) is included automatically. Without a registry
 (or without a home-manager input) no bootstrap is added.
 
@@ -639,7 +639,7 @@ extLib.nixosConfigurationsBuilder {
   # Same registry as homeConfigurationsBuilder; defines the host's users
   # and enables the login bootstrap. Every value is a DIRECTORY with
   # home.nix and/or configuration.nix.
-  homeConfigurations = {
+  userRegistry = {
     "alice@*"      = ./users/alice;        # on every host
     "alice@laptop" = ./users/alice-laptop; # merged in on laptop
     "bob"          = ./users/bob;          # only when no bob@... matches
@@ -686,14 +686,14 @@ nixosConfigurationsBuilder :: Attribute -> Attribute
 
 - **userModuleFn**
   A function `username -> NixOS module`, applied for each user derived from
-  `homeConfigurations`. Defaults to `normalUserModule`, which creates a
+  `userRegistry`. Defaults to `normalUserModule`, which creates a
   normal login account per user; pass your own function for richer
   accounts, or `null` to disable account creation entirely.
 
 - **excludeModuleInputs**
   Input names to skip when auto-collecting NixOS modules. Default `[ ]`.
 
-- **homeConfigurations**
+- **userRegistry**
   The registry also passed to `homeConfigurationsBuilder`. Every value
   must be a DIRECTORY containing `home.nix` (the user's home-manager
   config) and/or `configuration.nix` (NixOS config for that user: the
@@ -796,7 +796,7 @@ shared `users` group) -- so by default a user is only a member of their
 own group.
 
 This is the default `userModuleFn` of `nixosConfigurationsBuilder`, so
-every user derived from the `homeConfigurations` registry gets a login
+every user derived from the `userRegistry` gets a login
 account automatically. Pass your own function when accounts need more,
 or `userModuleFn = null` to disable account creation.
 

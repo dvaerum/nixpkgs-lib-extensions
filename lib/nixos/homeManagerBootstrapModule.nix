@@ -12,7 +12,7 @@ in
     background (so login is never hard-blocked). First-login-only by default.
 
     `nixosConfigurationsBuilder` includes this module automatically when it is
-    given a non-empty `homeConfigurations` registry, so it normally does not need
+    given a non-empty `userRegistry`, so it normally does not need
     to be wired up by hand — direct use is for custom setups that build their
     NixOS systems some other way. It is driven by the home-configuration
     *registry* (the same one passed to `homeConfigurationsBuilder`) but is
@@ -31,7 +31,7 @@ in
           inherit inputs;
           hostname = "laptop";
           system   = "x86_64-linux";
-          homeConfigurations = { "alice" = ./users/alice; };
+          userRegistry = { "alice" = ./users/alice; };
         })
       ];
     }
@@ -60,7 +60,7 @@ in
     system
     : The system double, e.g. `"x86_64-linux"`.
 
-    homeConfigurations
+    userRegistry
     : The same registry passed to `homeConfigurationsBuilder`; its keys define
     : which users are bootstrapped on this host. Default `{ }`.
 
@@ -81,7 +81,7 @@ in
       inputs,
       hostname,
       system,
-      homeConfigurations ? { },
+      userRegistry ? { },
       flakeRef ? null,
       reactivateEveryLogin ? false,
     }:
@@ -89,8 +89,8 @@ in
       home-manager = shared.detectHomeManager inputs;
       homeManagerPkg = if home-manager == null then null else home-manager.packages.${system}.home-manager;
       effectiveFlakeRef = if flakeRef != null then flakeRef else (inputs.self or null);
-      usersHome = shared.usersWithHome homeConfigurations hostname (
-        shared.usersFromRegistry homeConfigurations hostname
+      usersHome = shared.usersWithHome userRegistry hostname (
+        shared.usersFromRegistry userRegistry hostname
       );
     in
     # `_file` points eval errors of this generated module at this file

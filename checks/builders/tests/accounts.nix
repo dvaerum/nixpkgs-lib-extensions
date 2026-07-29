@@ -53,7 +53,7 @@ in
           inherit inputs system;
           hostname = "rootentry";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-          homeConfigurations."root" = exampleDir + "/users/alice";
+          userRegistry."root" = exampleDir + "/users/alice";
         }).rootentry.config;
     in
     !cfg.users.users.root.isNormalUser
@@ -80,7 +80,7 @@ in
         inherit inputs system;
         hostname = "noaccounts";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-        homeConfigurations."alice" = exampleDir + "/users/alice";
+        userRegistry."alice" = exampleDir + "/users/alice";
         userModuleFn = null;
       }).noaccounts.config.users.users ? alice
     );

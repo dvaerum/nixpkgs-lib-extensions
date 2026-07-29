@@ -59,10 +59,10 @@ in
     Setting `systemType` groups hosts one folder deeper: the lookup then
     happens under `hosts/<systemType>/` instead of `hosts/`.
 
-    The host's users are derived from the `homeConfigurations` registry keys —
+    The host's users are derived from the `userRegistry` keys —
     there is no separate `users` argument. Home configurations are built
-    separately by `homeConfigurationsBuilder`, but when a `homeConfigurations`
-    registry is passed here as well, the login bootstrap
+    separately by `homeConfigurationsBuilder`, but when a `userRegistry`
+    is passed here as well, the login bootstrap
     (`homeManagerBootstrapModule`) is included automatically. Without a registry
     (or without a home-manager input) no bootstrap is added.
 
@@ -81,7 +81,7 @@ in
       # Same registry as homeConfigurationsBuilder; defines the host's users
       # and enables the login bootstrap. Every value is a DIRECTORY with
       # home.nix and/or configuration.nix.
-      homeConfigurations = {
+      userRegistry = {
         "alice@*"      = ./users/alice;        # on every host
         "alice@laptop" = ./users/alice-laptop; # merged in on laptop
         "bob"          = ./users/bob;          # only when no bob@... matches
@@ -128,14 +128,14 @@ in
 
     userModuleFn
     : A function `username -> NixOS module`, applied for each user derived from
-    : `homeConfigurations`. Defaults to `normalUserModule`, which creates a
+    : `userRegistry`. Defaults to `normalUserModule`, which creates a
     : normal login account per user; pass your own function for richer
     : accounts, or `null` to disable account creation entirely.
 
     excludeModuleInputs
     : Input names to skip when auto-collecting NixOS modules. Default `[ ]`.
 
-    homeConfigurations
+    userRegistry
     : The registry also passed to `homeConfigurationsBuilder`. Every value
     : must be a DIRECTORY containing `home.nix` (the user's home-manager
     : config) and/or `configuration.nix` (NixOS config for that user: the
@@ -234,7 +234,7 @@ in
       modules ? [ ],
       additionalModules ? [ ],
       userModuleFn ? extLib.normalUserModule,
-      homeConfigurations ? { },
+      userRegistry ? { },
       flakeRef ? null,
       reactivateEveryLogin ? false,
       tags ? [ ],
@@ -250,7 +250,7 @@ in
         autoNixosModules
         ;
 
-      registry = if homeConfigurations == null then { } else homeConfigurations;
+      registry = if userRegistry == null then { } else userRegistry;
 
       # The host's users, derived from the registry keys ("<user>@<host>" for
       # this host plus plain "<user>" fallback entries).
@@ -287,7 +287,7 @@ in
           lib.optional fileExists file ++ lib.optional dirExists dir;
 
       # Login bootstrap, reusing the host's arguments. Self-gating: it evaluates
-      # to an empty module when `homeConfigurations` is null/empty or no
+      # to an empty module when `userRegistry` is null/empty or no
       # home-manager input exists.
       bootstrapModule = extLib.homeManagerBootstrapModule {
         inherit
@@ -297,7 +297,7 @@ in
           flakeRef
           reactivateEveryLogin
           ;
-        homeConfigurations = registry;
+        userRegistry = registry;
       };
     in
     # Returned as { <hostname> = <system>; }: assign/merge the result into

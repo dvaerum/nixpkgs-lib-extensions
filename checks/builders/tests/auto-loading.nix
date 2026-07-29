@@ -59,7 +59,7 @@
     (myLib.homeConfigurationsBuilder {
       inherit inputs system;
       hostname = "laptop";
-      homeConfigurations."alice" = exampleDir + "/users/alice";
+      userRegistry."alice" = exampleDir + "/users/alice";
       homeSharedModules = [
         (
           { inputs, ... }:
@@ -98,7 +98,7 @@
     (myLib.homeConfigurationsBuilder {
       inherit inputs system;
       hostname = "laptop";
-      homeConfigurations."alice" = exampleDir + "/users/alice";
+      userRegistry."alice" = exampleDir + "/users/alice";
       homeSharedModules = [
         (
           { lib, ... }:

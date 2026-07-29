@@ -33,7 +33,7 @@ in
     # extLib = inputs.nixpkgs-lib-extensions.lib
     nixosConfigurations = extLib.buildNixosConfigurations {
       _defaults = {
-        inherit inputs system homeConfigurations;
+        inherit inputs system userRegistry;
         modules = [ ./common/base.nix ];
       };
       # each host's config is found by convention:
@@ -45,7 +45,7 @@ in
       };
       server = {
         # per-argument override: replaces the registry entirely
-        homeConfigurations = { };
+        userRegistry = { };
       };
     };
     =>
@@ -83,7 +83,7 @@ in
     : - `modules`
     : - `userModuleFn`
     : - `excludeModuleInputs`
-    : - `homeConfigurations`
+    : - `userRegistry`
     : - `homeSharedModules` (used by `buildHomeConfigurations`; accepted
     :   and ignored here, so one hosts attrset can feed both)
     : - `flakeRef`

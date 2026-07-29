@@ -21,7 +21,7 @@
       };
       inherit system;
       hostname = "laptop";
-      homeConfigurations."alice" = exampleDir + "/users/alice";
+      userRegistry."alice" = exampleDir + "/users/alice";
     } == { };
 
   # the home configurations REALLY evaluate through home-manager's module

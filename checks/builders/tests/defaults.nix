@@ -109,13 +109,13 @@ in
       homes = myLib.buildHomeConfigurations {
         _defaults = {
           inherit inputs system;
-          homeConfigurations."alice" = exampleDir + "/users/alice";
+          userRegistry."alice" = exampleDir + "/users/alice";
           # nixos-only argument: must be accepted and ignored here
           modules = [ ];
         };
         hostA = { };
         hostB = {
-          homeConfigurations."bob@hostB" = exampleDir + "/users/bob";
+          userRegistry."bob@hostB" = exampleDir + "/users/bob";
         };
       };
     in

@@ -20,9 +20,9 @@ in
     ```nix
     let
       hosts = {
-        _defaults = { inherit inputs system homeConfigurations; };
+        _defaults = { inherit inputs system userRegistry; };
         laptop = { };
-        server = { homeConfigurations = { }; };
+        server = { userRegistry = { }; };
       };
     in
     {
@@ -44,7 +44,7 @@ in
     extLib.buildHomeConfigurations {
       _defaults = {
         inherit inputs system;
-        homeConfigurations."alice" = ./users/alice;
+        userRegistry."alice" = ./users/alice;
       };
       laptop = { };
       desktop = { };
