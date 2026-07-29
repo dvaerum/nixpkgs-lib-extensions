@@ -3,7 +3,7 @@
 # service wiring in a real booted system -- the service fires when the
 # user's session starts, the stamp prevents a re-run on the next
 # user-manager instance, and --reactivate-every-login overrides that --
-# without any in-VM nix evaluation (see bootstrap-switch-vm.nix for that).
+# without any in-VM nix evaluation (see switch-vm.nix for that).
 { pkgs, myLib }:
 let
   system = pkgs.stdenv.hostPlatform.system;

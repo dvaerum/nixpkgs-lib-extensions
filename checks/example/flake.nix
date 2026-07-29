@@ -2,9 +2,9 @@
 # builders. Copy this directory (or run `nix flake init -t
 # github:dvaerum/nixpkgs-lib-extensions`) and adjust hosts/ and users/.
 #
-# It is also evaluated by `nix flake check`: ../builders.nix imports this
-# file and calls `outputs` with test inputs (a flake.nix is just a Nix
-# attrset with an `outputs` function), so the example cannot rot.
+# It is also evaluated by `nix flake check`: ../builders/default.nix
+# imports this file and calls `outputs` with test inputs (a flake.nix is
+# just a Nix attrset with an `outputs` function), so the example cannot rot.
 #
 # Because of that double duty, some concrete values here (direnv/git
 # settings, group names) are asserted by the checks. They are realistic

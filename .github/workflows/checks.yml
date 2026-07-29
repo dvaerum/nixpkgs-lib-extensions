@@ -26,12 +26,15 @@ jobs:
           nix --extra-experimental-features 'nix-command flakes' flake check --print-build-logs
 
       # cross-system coverage: evaluate (not build) every check for the
-      # other supported systems. `nix flake check --all-systems --no-build`
-      # cannot be used -- the suite contains IFD steps, which --no-build
-      # refuses to realize.
+      # other supported systems -- the check names are derived from the
+      # flake itself, so a new check is covered by construction.
+      # `nix flake check --all-systems --no-build` cannot be used -- the
+      # suite contains IFD steps, which --no-build refuses to realize.
       - name: Evaluate checks for aarch64-linux
         run: |
-          for check in builders zfs-root-disk bootstrap-script bootstrap-login-vm bootstrap-switch-vm; do
+          checks=$(nix --extra-experimental-features 'nix-command flakes' \
+            eval .#checks.aarch64-linux --apply builtins.attrNames --json)
+          for check in $(echo "$checks" | jq -r '.[]'); do
             nix --extra-experimental-features 'nix-command flakes' \
               eval --raw ".#checks.aarch64-linux.$check.drvPath"
             echo " ok: $check"

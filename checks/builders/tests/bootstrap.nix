@@ -1,6 +1,6 @@
 # The login-bootstrap systemd user service: its ExecStart CLI arguments,
 # self-gating conditions and standalone use. (Runtime behavior is covered
-# by checks/bootstrap-script.nix and the two VM tests.)
+# by checks/bootstrap/script.nix and the VM tests.)
 {
   lib,
   myLib,

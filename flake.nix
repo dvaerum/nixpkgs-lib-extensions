@@ -74,7 +74,8 @@
         gen-docs = genDocsFor system;
       };
     }
-    # bootstrap-script, bootstrap-login-vm, bootstrap-switch-vm
+    # bootstrap-script, bootstrap-login-vm, bootstrap-system-homes-vm,
+    # bootstrap-switch-vm
     // import ./checks/bootstrap {
       pkgs = nixpkgs.legacyPackages.${system};
       inherit nixpkgs home-manager myLib;
