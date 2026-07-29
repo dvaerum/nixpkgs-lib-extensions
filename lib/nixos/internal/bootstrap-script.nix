@@ -8,6 +8,11 @@ pkgs.writeShellApplication {
   runtimeInputs = [
     homeManager
     pkgs.coreutils
+    # the home-manager CLI shells out to `nix`, and a systemd user
+    # service's PATH does not include the system profile -- without this
+    # the service dies with exit 127 (`nix: command not found`) on real
+    # hosts, even though interactive shells would find nix
+    pkgs.nix
   ];
   text = builtins.readFile ../scripts/home-manager-bootstrap.sh;
 }
