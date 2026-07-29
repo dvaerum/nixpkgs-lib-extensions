@@ -263,7 +263,23 @@ in
 
     rootPath
     : The root for the `hosts/<hostname>` convention and the `rootPath`
-    : specialArg. Default `inputs.self` (the consuming flake).
+    : specialArg. Default `inputs.self` (the consuming flake); throws
+    : when neither is available.
+
+    homeManager
+    : Explicit home-manager input, bypassing the capability detection --
+    : use it when several inputs look like home-manager (the detection
+    : warns and picks the alphabetically first otherwise). Default `null`
+    : (detect).
+
+    inputSpecialCases
+    : Per-input normalization table merged over the built-in one, keyed
+    : by input NAME: each case maps the input onto the standard
+    : convention attributes (`nixosModules`/`homeModules`/`overlays`/
+    : `extendLib`/`lib`). Also the per-input OPT-OUT for any
+    : auto-collection channel, e.g.
+    : `{ some-input = _: { homeModules = { }; overlays = { }; }; }`.
+    : Default `{ }`.
 
     `homeConfigurationsBuilder` accepts this same shared set, so both
     builders can be called with one common argument attrset.
@@ -403,6 +419,9 @@ in
           loginReactivateEveryLogin
           ;
         userRegistry = registry;
+        # the context's pick (honoring the homeManager override), so the
+        # bootstrap cannot detect a DIFFERENT input than the system homes
+        homeManager = home-manager;
       };
     in
     # Returned as { <hostname> = <system>; }: assign/merge the result into

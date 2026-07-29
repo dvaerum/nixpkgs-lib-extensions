@@ -79,6 +79,10 @@ in
 
     loginReactivateEveryLogin
     : Re-activate on every login instead of only the first. Default `false`.
+
+    homeManager
+    : Explicit home-manager input, bypassing capability detection.
+    : Default `null` (detect).
   */
   homeManagerBootstrapModule =
     {
@@ -89,9 +93,10 @@ in
       loginUsers ? [ ],
       loginFlakeRef ? null,
       loginReactivateEveryLogin ? false,
+      homeManager ? null,
     }:
     let
-      home-manager = shared.detectHomeManager inputs;
+      home-manager = if homeManager != null then homeManager else shared.detectHomeManager inputs;
       homeManagerPkg = if home-manager == null then null else home-manager.packages.${system}.home-manager;
       effectiveFlakeRef = if loginFlakeRef != null then loginFlakeRef else (inputs.self or null);
       registry = if userRegistry == null then { } else userRegistry;

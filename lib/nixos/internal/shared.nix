@@ -13,14 +13,30 @@ let
   # The home-manager input, detected by capability (its `lib` exposes
   # `homeManagerConfiguration`) rather than by name, so it is found no matter
   # what the consuming flake calls the input. null if none is present.
+  # A throwing `lib` in some unrelated input must not break detection
+  # (tryEval), and ambiguity is surfaced: with several capable inputs the
+  # alphabetically first wins WITH a warning -- pass the `homeManager`
+  # builder argument to choose explicitly.
   detectHomeManager =
     inputs:
     let
-      candidates = builtins.filter (
-        v: builtins.isAttrs v && (v.lib or { }) ? homeManagerConfiguration
-      ) (builtins.attrValues inputs);
+      matches = builtins.filter (
+        n:
+        let
+          v = inputs.${n};
+          probe = builtins.tryEval (builtins.isAttrs v && (v.lib or { }) ? homeManagerConfiguration);
+        in
+        probe.success && probe.value
+      ) (builtins.attrNames inputs);
     in
-    if candidates == [ ] then null else builtins.head candidates;
+    if matches == [ ] then
+      null
+    else if builtins.length matches > 1 then
+      warn ''
+        nixpkgs-lib-extensions: several inputs look like home-manager (${builtins.concatStringsSep ", " matches}); using `${builtins.head matches}`. Pass `homeManager = inputs.<name>;` to the builder to choose explicitly.''
+        inputs.${builtins.head matches}
+    else
+      inputs.${builtins.head matches};
 
   # Registry values must be directories: a path literal or an absolute string
   # pointing at an existing directory.
@@ -151,12 +167,18 @@ let
   # contributes nothing. Reference catalog entries explicitly (e.g.
   # `inputs.nixos-hardware.nixosModules.<profile>`) or add an
   # `inputSpecialCases` entry mapping the input onto the convention.
+  # `what` names the source in the single-entry warning: that branch is
+  # LOCK-FRAGILE -- upstream adding a second export (or a `default`)
+  # silently changes a consumer's next flake update from "the one module"
+  # to "nothing" (catalog treatment), so make the dependence visible.
   pickExported =
-    s:
+    what: s:
     if s ? default then
       [ s.default ]
     else if builtins.length (builtins.attrNames s) == 1 then
-      builtins.attrValues s
+      warn ''
+        nixpkgs-lib-extensions: auto-importing the sole export `${builtins.head (builtins.attrNames s)}` of ${what}. This changes if upstream adds exports -- pin it explicitly (or via inputSpecialCases) if you rely on it.''
+        (builtins.attrValues s)
     else
       [ ];
 
@@ -167,21 +189,30 @@ let
   # attributes (nixosModules / homeManagerModules / homeModules / overlays /
   # extendLib); the generic collectors then treat it like any other input.
   # Add further special cases here.
-  inputSpecialCases = {
+  builtinInputSpecialCases = {
     # Currently empty. NUR used to be mapped here (`modules.nixos` /
     # `modules.homeManager`), but modern NUR's default modules do nothing
     # except inject its overlay via `nixpkgs.overlays` -- which the
     # generic collector already applies from NUR's `overlays.default`,
     # and which triggers home-manager's useGlobalPkgs warning in every
-    # home. A future case would look like:
+    # home. A case would look like:
     #   some-input = v: { nixosModules = v.odd.export.name or { }; };
+    # Consumers extend this table via the `inputSpecialCases` builder
+    # argument (which also serves as the per-input OPT-OUT for any
+    # auto-collection channel: `some-input = _: { homeModules = { }; };`).
   };
 
   # The convention-shaped view of an input: its special case applied when
   # one exists for its name, the input itself otherwise.
   normalizeInput =
-    name: v:
-    if builtins.isAttrs v && inputSpecialCases ? ${name} then v // inputSpecialCases.${name} v else v;
+    cases: name: v:
+    if builtins.isAttrs v && cases ? ${name} then v // cases.${name} v else v;
+
+  # A real nixpkgs source tree (nixpkgs itself or a fork): exports package
+  # sets AND can build NixOS systems. These are never module-imported
+  # (their helper modules would break a system) and never lib-namespaced
+  # (their lib IS the base).
+  isNixpkgsTree = v: v ? legacyPackages && (v.lib or { }) ? nixosSystem;
 
   # Shared context: everything the builders need (lib, pkgs, specialArgs and the
   # auto-collected module/overlay sets). Builder-specific arguments are ignored
@@ -200,8 +231,15 @@ let
       specialArgs ? { },
       additionalSpecialArgs ? { },
       nixpkgsConfig ? { },
+      homeManager ? null,
+      inputSpecialCases ? { },
       systemType ? null,
-      rootPath ? (inputs.self or ./.),
+      # a throw, not a silent nonsense default: without inputs.self the
+      # old `./.` fallback pointed INSIDE this library's own store tree,
+      # so the hosts/<hostname> convention searched the wrong repo
+      rootPath ?
+        (inputs.self or (throw ''
+          nixpkgs-lib-extensions: `rootPath` was not given and `inputs.self` is missing, so the hosts/<hostname> convention and the rootPath specialArg have no root. Pass `rootPath` explicitly or include `self` in `inputs`.'')),
       excludeModuleInputs ? [ ],
       ...
     }:
@@ -226,9 +264,14 @@ let
           raw = baseLib.mapAttrs (_: v: v.lib) (
             baseLib.filterAttrs (
               name: v:
-              baseLib.isAttrs v
-              && baseLib.isAttrs (v.lib or null)
-              && !(v ? legacyPackages && v.lib ? nixosSystem)
+              # tryEval: an input whose `lib` THROWS must not break every
+              # host; it is simply not namespaced
+              let
+                probe = builtins.tryEval (
+                  baseLib.isAttrs v && baseLib.isAttrs (v.lib or null) && !(isNixpkgsTree v)
+                );
+              in
+              probe.success && probe.value
             ) inputs
           );
         in
@@ -311,13 +354,19 @@ let
           };
 
       # The collectors see inputs through their special case (if any); the
-      # `inputs`/`inputPkgs` specialArgs stay raw.
-      conventionInputs = builtins.mapAttrs normalizeInput inputs;
+      # `inputs`/`inputPkgs` specialArgs stay raw. Consumer cases (the
+      # `inputSpecialCases` argument) extend and override the built-ins.
+      conventionInputs = builtins.mapAttrs (
+        normalizeInput (builtinInputSpecialCases // inputSpecialCases)
+      ) inputs;
 
       # Auto-collect overlays (package extensions) from every input exposing `overlays`.
       autoOverlays = lib.unique (
         lib.concatLists (
-          lib.mapAttrsToList (name: v: lib.optionals (lib.isAttrs v && v ? overlays) (pickExported v.overlays)) conventionInputs
+          lib.mapAttrsToList (
+            name: v:
+            lib.optionals (lib.isAttrs v && v ? overlays) (pickExported "input `${name}` (overlays)" v.overlays)
+          ) conventionInputs
         )
       );
 
@@ -336,7 +385,7 @@ let
       selectedSrc = patchSrc nixpkgs;
       pkgs = mkPkgs nixpkgs;
 
-      home-manager = detectHomeManager inputs;
+      home-manager = if homeManager != null then homeManager else detectHomeManager inputs;
 
       # Identity (store path) of the home-manager input, so its NixOS module is
       # kept out of the auto-collected set no matter how the input is named.
@@ -344,16 +393,16 @@ let
 
       # Skip when auto-collecting NixOS modules:
       # - the home-manager input (used standalone; matched by identity, not name)
-      # - nixpkgs trees, identified by `legacyPackages` PLUS `lib.nixosSystem`:
-      #   they export helper modules like `readOnlyPkgs` that would break the
-      #   system when imported blindly. `legacyPackages` alone is not enough
-      #   to skip -- flakes like sops-nix export it (docs/packages) while also
-      #   shipping a real `nixosModules.default` that must be imported.
+      # - nixpkgs trees (isNixpkgsTree): they export helper modules like
+      #   `readOnlyPkgs` that would break the system when imported blindly.
+      #   `legacyPackages` alone is not enough to skip -- flakes like
+      #   sops-nix export it (docs/packages) while also shipping a real
+      #   `nixosModules.default` that must be imported.
       # - anything listed in `excludeModuleInputs`
       skipNixosModule =
         name: v:
         (homeManagerId != null && (v.outPath or null) == homeManagerId)
-        || (v ? legacyPackages && (v.lib or { }) ? nixosSystem)
+        || isNixpkgsTree v
         || lib.elem name excludeModuleInputs;
 
       # Auto-collect NixOS modules from every input exposing `nixosModules`.
@@ -361,7 +410,9 @@ let
         lib.concatLists (
           lib.mapAttrsToList (
             name: v:
-            lib.optionals (lib.isAttrs v && v ? nixosModules && !(skipNixosModule name v)) (pickExported v.nixosModules)
+            lib.optionals (lib.isAttrs v && v ? nixosModules && !(skipNixosModule name v)) (
+              pickExported "input `${name}` (nixosModules)" v.nixosModules
+            )
           ) conventionInputs
         )
       );
@@ -376,7 +427,9 @@ let
         lib.concatLists (
           lib.mapAttrsToList (
             name: v:
-            lib.optionals (lib.isAttrs v) (pickExported (v.homeModules or v.homeManagerModules or { }))
+            lib.optionals (lib.isAttrs v) (
+              pickExported "input `${name}` (home modules)" (v.homeModules or v.homeManagerModules or { })
+            )
           ) conventionInputs
         )
       );
@@ -460,6 +513,8 @@ let
     "permittedInsecurePackages"
     "nixpkgsConfig"
     "specialArgs"
+    "homeManager"
+    "inputSpecialCases"
   ];
   allowedHostArgs = allowedDefaultArgs ++ [
     "hostname"

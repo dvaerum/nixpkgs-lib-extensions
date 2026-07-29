@@ -65,6 +65,20 @@
   system-type-special-arg = custom._module.specialArgs.systemType == "server";
   special-args-override-wins = custom._module.specialArgs.tags == [ "overridden-tag" ];
 
+  # no rootPath and no inputs.self: a clear throw, not a silent search
+  # inside the library's own store tree
+  missing-root-path-throws =
+    !(builtins.tryEval
+      (myLib.nixosConfigurationsBuilder {
+        inputs = {
+          inherit (inputs) nixpkgs home-manager;
+        };
+        inherit system;
+        hostname = "noroot";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+      }).noroot.config.networking.hostName
+    ).success;
+
   # module-level nixpkgs.overlays is INERT (the builder provides pkgs):
   # a NixOS warning must surface it
   inert-nixpkgs-options-warn =

@@ -137,4 +137,40 @@
 
   # auto-collection can be opted out per input name
   exclude-module-inputs-respected = !(custom.config.users.groups ? from-input-module);
+
+  # consumer-provided inputSpecialCases extend the built-in table: the
+  # nur-shaped `not-nur` input can be normalized onto the conventions ...
+  input-special-cases-consumer =
+    (myLib.nixosConfigurationsBuilder {
+      inherit inputs system;
+      hostname = "scprobe";
+      modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+      inputSpecialCases."not-nur" = v: { nixosModules = v.modules.nixos or { }; };
+    }).scprobe.config.users.groups ? from-notnur-module;
+  # ... and double as the per-input opt-out for any channel
+  input-special-cases-opt-out =
+    !(
+      (myLib.nixosConfigurationsBuilder {
+        inherit inputs system;
+        hostname = "scoptout";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        inputSpecialCases."fake-module-input" = _: { nixosModules = { }; };
+      }).scoptout.config.users.groups
+      ? from-input-module
+    );
+
+  # the homeManager argument bypasses capability detection (here with a
+  # second home-manager-shaped input present, which detection would have
+  # had to warn about)
+  home-manager-explicit-override =
+    (myLib.homeConfigurationsBuilder {
+      inputs = inputs // {
+        zz-hm-clone = inputs.home-manager;
+      };
+      inherit system;
+      hostname = "laptop";
+      username = "alice";
+      userRegistry."alice" = exampleDir + "/users/alice";
+      homeManager = inputs.home-manager;
+    }).config.home.username == "alice";
 }

@@ -407,6 +407,8 @@ buildNixosConfigurations ::
   - `permittedInsecurePackages`
   - `nixpkgsConfig`
   - `specialArgs`
+  - `homeManager`
+  - `inputSpecialCases`
   
   This list is an enforced ALLOWLIST: any other key throws, so typos
   (`homeConfiguration`, ...) fail loudly instead of being dropped
@@ -586,6 +588,10 @@ homeManagerBootstrapModule :: Attribute -> Module
 
 - **loginReactivateEveryLogin**
   Re-activate on every login instead of only the first. Default `false`.
+
+- **homeManager**
+  Explicit home-manager input, bypassing capability detection.
+  Default `null` (detect).
 
 
 
@@ -848,7 +854,23 @@ nixosConfigurationsBuilder :: Attribute -> Attribute
 
 - **rootPath**
   The root for the `hosts/<hostname>` convention and the `rootPath`
-  specialArg. Default `inputs.self` (the consuming flake).
+  specialArg. Default `inputs.self` (the consuming flake); throws
+  when neither is available.
+
+- **homeManager**
+  Explicit home-manager input, bypassing the capability detection --
+  use it when several inputs look like home-manager (the detection
+  warns and picks the alphabetically first otherwise). Default `null`
+  (detect).
+
+- **inputSpecialCases**
+  Per-input normalization table merged over the built-in one, keyed
+  by input NAME: each case maps the input onto the standard
+  convention attributes (`nixosModules`/`homeModules`/`overlays`/
+  `extendLib`/`lib`). Also the per-input OPT-OUT for any
+  auto-collection channel, e.g.
+  `{ some-input = _: { homeModules = { }; overlays = { }; }; }`.
+  Default `{ }`.
 
 `homeConfigurationsBuilder` accepts this same shared set, so both
 builders can be called with one common argument attrset.

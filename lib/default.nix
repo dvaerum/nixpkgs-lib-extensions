@@ -52,8 +52,21 @@ in
         )
       ));
 
-      # Merge all for top-level access
-      topLevel = lib.foldl' (acc: m: acc // m) {} (lib.attrValues libraries);
+      # Merge all for top-level access. Collisions THROW instead of
+      # silently last-write-winning: two folders exporting the same name,
+      # or a function named like a folder, would otherwise shadow each
+      # other depending on merge order.
+      topLevel =
+        let
+          perName = lib.zipAttrsWith (name: values: values) (lib.attrValues libraries);
+          duplicates = lib.attrNames (lib.filterAttrs (name: values: lib.length values > 1) perName);
+          folderClashes = lib.filter (name: perName ? ${name}) (lib.attrNames libraries);
+          clashes = duplicates ++ folderClashes;
+        in
+        if clashes == [ ] then
+          lib.foldl' (acc: m: acc // m) { } (lib.attrValues libraries)
+        else
+          throw "lib loader: top-level name collision(s): ${lib.concatStringsSep ", " clashes}";
     in
       # { attrsets = {...}; strings = {...}; <and other folders> } // { func1 = ...; func2 = ...; }
       libraries // topLevel

@@ -97,6 +97,8 @@ in
     : - `permittedInsecurePackages`
     : - `nixpkgsConfig`
     : - `specialArgs`
+    : - `homeManager`
+    : - `inputSpecialCases`
     :
     : This list is an enforced ALLOWLIST: any other key throws, so typos
     : (`homeConfiguration`, ...) fail loudly instead of being dropped
