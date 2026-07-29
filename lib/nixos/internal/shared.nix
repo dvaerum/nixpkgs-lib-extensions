@@ -467,6 +467,26 @@ let
     "additionalSpecialArgs"
   ];
 
+  # Direct-call argument validation for the singular builders: the same
+  # rigor splitHostsArgs applies to hosts attrsets, at the other door --
+  # otherwise the `...` patterns silently swallow typos and stale names.
+  # `extraAllowed` covers builder-specific keys (e.g. `username`);
+  # _-prefixed keys are internal plumbing and always pass.
+  validateBuilderArgs =
+    fnName: extraAllowed: args:
+    let
+      allowed = allowedHostArgs ++ extraAllowed;
+      bad = builtins.filter (k: !(builtins.elem k allowed) && builtins.substring 0 1 k != "_") (
+        builtins.attrNames args
+      );
+    in
+    if bad == [ ] then
+      args
+    else
+      throw ''
+        ${fnName}: unknown argument(s): ${builtins.concatStringsSep ", " bad} (typo?). Accepted: ${builtins.concatStringsSep ", " allowed}.
+      '';
+
   # Validate a hosts attrset (the shared input of both build* functions)
   # and split it into { defaults, hostEntries }. Throws, naming fnName,
   # on: a non-allowlisted `_defaults` key (with special explanations for
@@ -528,6 +548,7 @@ in
     mkContext
     allowedDefaultArgs
     allowedHostArgs
+    validateBuilderArgs
     splitHostsArgs
     ;
 }

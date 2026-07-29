@@ -140,6 +140,27 @@ in
     };
   });
 
+  # DIRECT builder calls are validated too: the `...` patterns no longer
+  # swallow typos or stale argument names
+  direct-nixos-call-typo-throws =
+    !(builtins.tryEval (
+      builtins.seq (myLib.nixosConfigurationsBuilder {
+        inherit inputs system;
+        hostname = "typo";
+        users = [ "root" ];
+      }) true
+    )).success;
+  direct-home-call-typo-throws =
+    !(builtins.tryEval (
+      builtins.seq (myLib.homeConfigurationsBuilder {
+        inherit inputs system;
+        hostname = "laptop";
+        username = "alice";
+        userRegistry."alice" = exampleDir + "/users/alice";
+        homesharedmodules = [ ];
+      }) true
+    )).success;
+
   # the allowlist and its documentation cannot drift: every allowlisted
   # name must appear backtick-quoted in the buildNixosConfigurations doc
   # comment (this is exactly the drift that happened with the loginUsers

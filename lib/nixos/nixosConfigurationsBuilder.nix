@@ -285,7 +285,10 @@ in
       ...
     }@args:
     let
-      ctx = shared.mkContext args;
+      # throws on unknown argument names -- forced via the seq below, so
+      # even a lazy consumer that only lists attrNames hits it
+      validArgs = shared.validateBuilderArgs "nixosConfigurationsBuilder" [ ] args;
+      ctx = shared.mkContext validArgs;
       inherit (ctx)
         lib
         pkgs
@@ -404,7 +407,7 @@ in
     in
     # Returned as { <hostname> = <system>; }: assign/merge the result into
     # your flake's `nixosConfigurations` output yourself.
-    {
+    builtins.seq validArgs {
       ${hostname} = import "${selectedSrc}/nixos/lib/eval-config.nix" {
         inherit system lib pkgs;
         specialArgs = mySpecialArguments // {

@@ -108,7 +108,9 @@ in
       ...
     }@args:
     let
-      ctx = shared.mkContext args;
+      # throws on unknown argument names -- forced via the seq below
+      validArgs = shared.validateBuilderArgs "homeConfigurationsBuilder" [ "username" ] args;
+      ctx = shared.mkContext validArgs;
       inherit (ctx)
         lib
         pkgs
@@ -120,6 +122,7 @@ in
       registry = if userRegistry == null then { } else userRegistry;
       homeModules = (shared.resolveUser registry hostname username).homeModules;
     in
+    builtins.seq validArgs (
     if home-manager == null then
       throw ''
         homeConfigurationsBuilder: no home-manager input found (detected
@@ -156,5 +159,6 @@ in
               home.stateVersion = lib.mkDefault lib.trivial.release;
             }
           ];
-      };
+      }
+    );
 }
