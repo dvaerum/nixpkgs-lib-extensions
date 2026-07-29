@@ -6,6 +6,7 @@
   inputs,
   system,
   laptop,
+  server,
   aliceHome,
   custom,
   exampleDir,
@@ -44,9 +45,12 @@
     !(laptop.config.users.groups ? from-notnur-module)
     && !(aliceHome.config.home.sessionVariables ? FROM_NOTNUR_HM);
 
-  # the home-manager input's OWN nixosModules must NOT be auto-imported
-  # (it is used standalone; excluded by store-path identity)
-  hm-nixos-module-excluded = !(laptop.options ? home-manager);
+  # the home-manager input's OWN nixosModules must NOT be AUTO-imported
+  # (excluded by store-path identity): the server -- no system-managed
+  # homes -- has no home-manager options. The laptop has them, but only
+  # because the builder imports the module DELIBERATELY for its
+  # system-managed homes.
+  hm-nixos-module-excluded = !(server.options ? home-manager) && laptop.options ? home-manager;
 
   # the whole inputs set is exposed (no per-input policy): NixOS modules
   # get it as a specialArg ...
@@ -59,6 +63,7 @@
     (myLib.homeConfigurationsBuilder {
       inherit inputs system;
       hostname = "laptop";
+      username = "alice";
       userRegistry."alice" = exampleDir + "/users/alice";
       homeSharedModules = [
         (
@@ -68,7 +73,7 @@
           }
         )
       ];
-    })."alice@laptop".config.home.sessionVariables.PROBE == "1";
+    }).config.home.sessionVariables.PROBE == "1";
 
   # lib extensions: from an input's extendLib AND this repo's own, both
   # reaching the system `lib` (see the additionalModules of `custom`)
@@ -93,11 +98,12 @@
     laptop.pkgs.lib.fake-module-input.probeGroup == "from-lib-probe"
     && !(laptop.pkgs.lib ? nixpkgs-unstable);
 
-  # ... and home-manager modules see it too (via pkgs.lib)
+  # ... and home-manager modules see it too (via the context lib)
   input-lib-reaches-home-modules =
     (myLib.homeConfigurationsBuilder {
       inherit inputs system;
       hostname = "laptop";
+      username = "alice";
       userRegistry."alice" = exampleDir + "/users/alice";
       homeSharedModules = [
         (
@@ -107,7 +113,7 @@
           }
         )
       ];
-    })."alice@laptop".config.home.sessionVariables.LIB_PROBE == "from-lib-probe";
+    }).config.home.sessionVariables.LIB_PROBE == "from-lib-probe";
 
   # overwrite detection: the input named `strings` collides with
   # lib.strings -- a namespace this repo does NOT own -- so its lib

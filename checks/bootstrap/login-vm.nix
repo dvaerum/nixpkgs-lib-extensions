@@ -30,6 +30,7 @@ let
           inherit system;
           hostname = "vmhost";
           userRegistry."alice" = ../example/users/alice;
+          loginUsers = [ "alice" ];
         }
         // extraBootstrapArgs
       ))
@@ -44,7 +45,7 @@ pkgs.testers.runNixOSTest {
 
   nodes = {
     machine = mkNode { };
-    reactivating = mkNode { reactivateEveryLogin = true; };
+    reactivating = mkNode { loginReactivateEveryLogin = true; };
   };
 
   testScript = ''

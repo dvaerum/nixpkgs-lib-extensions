@@ -44,32 +44,37 @@
   missing-path-throws = homesThrow { "bad" = exampleDir + "/does-not-exist"; };
   # absolute string paths work like path literals
   string-path-entry-works =
-    builtins.attrNames (myLib.homeConfigurationsBuilder {
-      inherit inputs system;
-      hostname = "laptop";
-      userRegistry."alice" = "${exampleDir + "/users/alice"}";
+    builtins.attrNames (myLib.buildHomeConfigurations {
+      laptop = {
+        inherit inputs system;
+        userRegistry."alice" = "${exampleDir + "/users/alice"}";
+        loginUsers = [ "alice" ];
+      };
     }) == [ "alice@laptop" ];
 
-  # eve has no home config -> no userRegistry output for her;
-  # frank's and grace's homes come from their wildcard entries
+  # only loginUsers get homeConfigurations outputs: dave/frank/grace are
+  # system-managed, eve has no home config at all
   home-configs-keyed-per-host = builtins.attrNames example.homeConfigurations == [
     "alice@laptop"
     "bob@laptop"
-    "dave@laptop"
-    "frank@laptop"
-    "grace@laptop"
   ];
 
   # key forms resolved on a second host: wildcard + plain apply, the
   # laptop-only entry does not
   wildcard-applies-on-any-host =
-    builtins.attrNames (myLib.homeConfigurationsBuilder {
-      inherit inputs system;
-      hostname = "server";
-      userRegistry = {
-        "alice" = exampleDir + "/users/alice"; # plain -> any host
-        "bob@laptop" = exampleDir + "/users/bob"; # laptop only -> NOT on server
-        "frank@*" = exampleDir + "/users/frank-base"; # wildcard -> every host
+    builtins.attrNames (myLib.buildHomeConfigurations {
+      server = {
+        inherit inputs system;
+        userRegistry = {
+          "alice" = exampleDir + "/users/alice"; # plain -> any host
+          "bob@laptop" = exampleDir + "/users/bob"; # laptop only -> NOT on server
+          "frank@*" = exampleDir + "/users/frank-base"; # wildcard -> every host
+        };
+        loginUsers = [
+          "alice"
+          "bob"
+          "frank"
+        ];
       };
     }) == [
       "alice@server"
@@ -82,12 +87,14 @@
   # a plain entry still applies when the user's only @-entries target OTHER
   # hosts (shadowing needs a matching @-entry, not any @-entry)
   plain-applies-despite-foreign-host-entry =
-    builtins.attrNames (myLib.homeConfigurationsBuilder {
-      inherit inputs system;
-      hostname = "laptop";
-      userRegistry = {
-        "helen" = exampleDir + "/users/alice";
-        "helen@otherhost" = exampleDir + "/users/bob";
+    builtins.attrNames (myLib.buildHomeConfigurations {
+      laptop = {
+        inherit inputs system;
+        userRegistry = {
+          "helen" = exampleDir + "/users/alice";
+          "helen@otherhost" = exampleDir + "/users/bob";
+        };
+        loginUsers = [ "helen" ];
       };
     }) == [ "helen@laptop" ];
 

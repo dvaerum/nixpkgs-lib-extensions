@@ -67,9 +67,17 @@
         # `additionalModules`/`additionalSpecialArgs` on the host.
         _defaults = {
           inherit inputs system userRegistry;
-          # Added to every user's home configuration on every host
-          # (asserted by the checks; adjust freely). Ignored by
-          # buildNixosConfigurations.
+          # These users' home.nix activates on their FIRST LOGIN (via the
+          # bootstrap and the homeConfigurations outputs below) instead of
+          # with the system. Everyone else's home is built into the
+          # system (home-manager NixOS module) and activates on
+          # nixos-rebuild switch.
+          loginUsers = [
+            "alice"
+            "bob"
+          ];
+          # Added to every user's home configuration on every host, both
+          # mechanisms (asserted by the checks; adjust freely).
           homeSharedModules = [
             { programs.direnv.enable = true; }
           ];
@@ -92,8 +100,8 @@
     {
       nixosConfigurations = extLib.buildNixosConfigurations hosts;
 
-      # The standalone home-manager outputs for EVERY host, "user@host"
-      # keyed -- exactly what the login bootstrap activates.
+      # The standalone home-manager outputs for every host's loginUsers,
+      # "user@host" keyed -- exactly what the login bootstrap activates.
       homeConfigurations = extLib.buildHomeConfigurations hosts;
     };
 }

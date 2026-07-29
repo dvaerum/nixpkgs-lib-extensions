@@ -59,12 +59,21 @@ in
     Setting `systemType` groups hosts one folder deeper: the lookup then
     happens under `hosts/<systemType>/` instead of `hosts/`.
 
-    The host's users are derived from the `userRegistry` keys —
-    there is no separate `users` argument. Home configurations are built
-    separately by `homeConfigurationsBuilder`, but when a `userRegistry`
-    is passed here as well, the login bootstrap
-    (`homeManagerBootstrapModule`) is included automatically. Without a registry
-    (or without a home-manager input) no bootstrap is added.
+    The host's users come from ONE `userRegistry` — every user gets an
+    account and their `configuration.nix` imported into the system. How
+    each user's `home.nix` is activated is selected by `loginUsers`:
+
+    - not listed (the default) — SYSTEM-managed home: wired into the
+      system via home-manager's NixOS module
+      (`home-manager.users.<user>`), activated by `nixos-rebuild
+      switch`. No flake outputs, no bootstrap.
+    - listed in `loginUsers` — LOGIN-managed home: activated on first
+      login by the bootstrap (`homeManagerBootstrapModule`) running
+      `home-manager switch --flake <loginFlakeRef>#<user>@<host>`; the
+      flake must export those `homeConfigurations` outputs (built by
+      `buildHomeConfigurations` from the same hosts attrset).
+
+    A home is managed by exactly one mechanism, by construction.
 
     # Example
 
@@ -78,14 +87,18 @@ in
       # ./hosts/laptop.nix (or ./hosts/laptop/configuration.nix) is
       # imported automatically; `modules` is only for anything extra.
 
-      # Same registry as homeConfigurationsBuilder; defines the host's users
-      # and enables the login bootstrap. Every value is a DIRECTORY with
-      # home.nix and/or configuration.nix.
+      # ALL users: accounts + configuration.nix, and home.nix activated
+      # with the system (home-manager NixOS module) unless listed in
+      # loginUsers. Every value is a DIRECTORY with home.nix and/or
+      # configuration.nix.
       userRegistry = {
         "alice@*"      = ./users/alice;        # on every host
         "alice@laptop" = ./users/alice-laptop; # merged in on laptop
         "bob"          = ./users/bob;          # only when no bob@... matches
       };
+      # bob's home.nix activates on his first login instead (needs the
+      # homeConfigurations outputs from buildHomeConfigurations)
+      loginUsers = [ "bob" ];
     }
     =>
     { laptop = <nixosSystem>; }
@@ -127,22 +140,26 @@ in
     : extras go here.
 
     userModuleFn
-    : A function `username -> NixOS module`, applied for each user derived from
-    : `userRegistry`. Defaults to `normalUserModule`, which creates a
-    : normal login account per user; pass your own function for richer
+    : A function `username -> NixOS module`, applied for each user derived
+    : from BOTH registries. Defaults to `normalUserModule`, which creates
+    : a normal login account per user; pass your own function for richer
     : accounts, or `null` to disable account creation entirely.
 
     excludeModuleInputs
     : Input names to skip when auto-collecting NixOS modules. Default `[ ]`.
 
     userRegistry
-    : The registry also passed to `homeConfigurationsBuilder`. Every value
-    : must be a DIRECTORY containing `home.nix` (the user's home-manager
-    : config) and/or `configuration.nix` (NixOS config for that user: the
-    : account, its groups, ...). Companion `configuration.nix` files are
-    : imported into the system automatically; a directory with only a
-    : `configuration.nix` is a system-only user (no home output, no login
-    : bootstrap). Keys select where an entry applies:
+    : THE user registry: every host user, whatever their home mechanism.
+    : Every value must be a DIRECTORY containing `home.nix` (the user's
+    : home-manager config) and/or `configuration.nix` (NixOS config for
+    : that user: the account, its groups, ...). `configuration.nix` files
+    : are imported into the system automatically. `home.nix` files are
+    : wired into `home-manager.users.<user>` via home-manager's NixOS
+    : module -- built and activated WITH the system on `nixos-rebuild
+    : switch` (`useGlobalPkgs`/`useUserPackages` default to true,
+    : overridable) -- unless the user is listed in `loginUsers`. A
+    : directory with only a `configuration.nix` is a system-only user
+    : (account, no home). Keys select where an entry applies:
     :   `"<user>@<host>"`  this host only
     :   `"<user>@*"`       every host; MERGES with a matching `"<user>@<host>"`
     :   `"<user>"`         standalone default, used only when NO @-entry
@@ -151,26 +168,47 @@ in
     :                      directory explicitly from an @-entry to reuse it)
     : Example: with `"alice@*"` and `"alice@laptop"` both defined, both
     : apply on laptop; a plain `"alice"` would then never be used anywhere.
-    : The keys define the host's users (exposed as `listOfUsernames`); when
-    : the registry is non-empty and a home-manager input exists the login
-    : bootstrap is enabled. `null` or `{ }` disables all of it. Default `{ }`.
+    : The keys define the host's users (exposed as `listOfUsernames`).
+    : `null` or `{ }` disables it. Default `{ }`.
     : WARNING: in a git-backed flake only TRACKED files exist -- `git add` a
     : new home.nix/configuration.nix or it is skipped silently.
 
-    flakeRef
-    : Where the login bootstrap finds the home configurations: on a user's
-    : first login it runs `home-manager switch --flake <flakeRef>#<user>@<hostname>`,
-    : so the flake at this reference must export
-    : `homeConfigurations."<user>@<hostname>"` (see `homeConfigurationsBuilder`).
+    loginUsers
+    : List of usernames (from `userRegistry`) whose `home.nix` is
+    : LOGIN-managed instead of system-managed: not part of the system,
+    : activated on the user's first login by the bootstrap via
+    : `home-manager switch --flake <loginFlakeRef>#<user>@<host>` -- the
+    : flake must export those `homeConfigurations` outputs (built by
+    : `buildHomeConfigurations` from the same hosts attrset). Accounts
+    : and `configuration.nix` handling are unaffected. Names not
+    : matching any of this host's users are ignored (the list is
+    : usually shared through `_defaults` across hosts). Default `[ ]`
+    : (every home is system-managed).
+
+    loginFlakeRef
+    : Where the login bootstrap finds the home configurations of
+    : `loginUserRegistry` users: on first login it runs
+    : `home-manager switch --flake <loginFlakeRef>#<user>@<hostname>`, so the
+    : flake at this reference must export
+    : `homeConfigurations."<user>@<hostname>"`.
     : The default `inputs.self` is the IMMUTABLE store copy of your flake
     : that the running system was built from -- homes then always match
     : the last `nixos-rebuild`, but local edits are invisible until the
     : next rebuild. Point it at a mutable checkout (e.g. `"/etc/nixos"`
     : or `"git+https://..."`) to make the bootstrap build from the live
-    : tree instead. Default `inputs.self`.
+    : tree instead. Irrelevant without `loginUserRegistry` users.
+    : Default `inputs.self`.
 
-    reactivateEveryLogin
-    : Bootstrap re-activates on every login instead of only the first. Default `false`.
+    loginReactivateEveryLogin
+    : Bootstrap re-activates on every login instead of only the first.
+    : Irrelevant without `loginUserRegistry` users. Default `false`.
+
+    homeSharedModules
+    : home-manager modules added to every SYSTEM-managed home (on top of
+    : those auto-collected from `inputs`). The same argument is read by
+    : `homeConfigurationsBuilder`/`buildHomeConfigurations` for the
+    : login-managed homes, so in a shared hosts attrset it applies to
+    : both kinds. Default `[ ]`.
 
     tags
     : List of string tags, passed to modules as the `tags` specialArg and
@@ -235,8 +273,10 @@ in
       additionalModules ? [ ],
       userModuleFn ? extLib.normalUserModule,
       userRegistry ? { },
-      flakeRef ? null,
-      reactivateEveryLogin ? false,
+      loginUsers ? [ ],
+      homeSharedModules ? [ ],
+      loginFlakeRef ? null,
+      loginReactivateEveryLogin ? false,
       tags ? [ ],
       ...
     }@args:
@@ -248,20 +288,67 @@ in
         selectedSrc
         mySpecialArguments
         autoNixosModules
+        autoHomeModules
+        home-manager
         ;
 
       registry = if userRegistry == null then { } else userRegistry;
 
-      # The host's users, derived from the registry keys ("<user>@<host>" for
-      # this host plus plain "<user>" fallback entries).
+      # The host's users, derived from the registry keys ("<user>@<host>"
+      # for this host plus plain "<user>" fallback entries). `loginUsers`
+      # selects a SUBSET of them whose homes are login-managed; everyone
+      # else's home is system-managed. Disjoint by construction.
       users = shared.usersFromRegistry registry hostname;
 
       perUserModules = lib.optionals (userModuleFn != null) (lib.forEach users userModuleFn);
 
       # Every matched registry directory may ship a configuration.nix
       # (e.g. creating the user's account and groups); all of them are
-      # applied to the system automatically.
+      # applied to the system automatically -- for login-managed users too.
       userNixosConfigs = lib.concatMap (u: (shared.resolveUser registry hostname u).nixosModules) users;
+
+      # SYSTEM-MANAGED HOMES: the home.nix of every user NOT in
+      # `loginUsers` is wired into the system via home-manager's NixOS
+      # module -- homes ship with the system and activate on
+      # nixos-rebuild switch. No flake outputs, no bootstrap involved.
+      systemUsersWithHome = builtins.filter (u: !(builtins.elem u loginUsers)) (
+        shared.usersWithHome registry hostname users
+      );
+      hmNixosModule =
+        if home-manager == null then
+          null
+        else
+          home-manager.nixosModules.default or home-manager.nixosModules.home-manager or null;
+      systemHomesModule = {
+        _file = ./nixosConfigurationsBuilder.nix;
+        imports = lib.optional (systemUsersWithHome != [ ] && hmNixosModule != null) (
+          { ... }:
+          {
+            imports = [ hmNixosModule ];
+            home-manager = {
+              # the system's package set, not a second nixpkgs eval;
+              # both mkDefault: override in your own modules if needed
+              useGlobalPkgs = lib.mkDefault true;
+              useUserPackages = lib.mkDefault true;
+              extraSpecialArgs = mySpecialArguments // {
+                listOfUsernames = users;
+              };
+              sharedModules = autoHomeModules ++ homeSharedModules ++ [
+                {
+                  _file = ./nixosConfigurationsBuilder.nix;
+                  home.stateVersion = lib.mkDefault lib.trivial.release;
+                }
+              ];
+              users = lib.genAttrs systemUsersWithHome (u: {
+                # `username` as a module arg (extraSpecialArgs cannot
+                # vary per user)
+                _module.args.username = u;
+                imports = (shared.resolveUser registry hostname u).homeModules;
+              });
+            };
+          }
+        );
+      };
 
       # The host's own configuration, by convention relative to `rootPath`
       # (default: the consuming flake, `inputs.self`): either
@@ -286,16 +373,19 @@ in
         else
           lib.optional fileExists file ++ lib.optional dirExists dir;
 
-      # Login bootstrap, reusing the host's arguments. Self-gating: it evaluates
-      # to an empty module when `userRegistry` is null/empty or no
-      # home-manager input exists.
+      # LOGIN-MANAGED HOMES: for `loginUsers` the bootstrap runs
+      # `home-manager switch --flake <loginFlakeRef>#<user>@<host>` on
+      # first login -- the flake must export those homeConfigurations
+      # outputs (see buildHomeConfigurations). Self-gating: empty module
+      # when no login user matches or no home-manager input exists.
       bootstrapModule = extLib.homeManagerBootstrapModule {
         inherit
           inputs
           hostname
           system
-          flakeRef
-          reactivateEveryLogin
+          loginUsers
+          loginFlakeRef
+          loginReactivateEveryLogin
           ;
         userRegistry = registry;
       };
@@ -318,6 +408,7 @@ in
               system.nixos.tags = lib.mkDefault tags;
             }
             bootstrapModule
+            systemHomesModule
           ]
           ++ autoNixosModules
           ++ autoHostModules

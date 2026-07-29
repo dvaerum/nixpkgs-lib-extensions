@@ -73,7 +73,9 @@ in
   user-default-shell-preserved =
     laptop.config.users.users.dave.shell == laptop.config.users.defaultUserShell;
 
-  # userModuleFn = null disables account creation
+  # userModuleFn = null disables account creation (alice as a login user:
+  # a system-managed home would add a users.users.alice entry itself via
+  # home-manager's useUserPackages)
   user-module-fn-null-disables =
     !(
       (myLib.nixosConfigurationsBuilder {
@@ -81,6 +83,7 @@ in
         hostname = "noaccounts";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         userRegistry."alice" = exampleDir + "/users/alice";
+        loginUsers = [ "alice" ];
         userModuleFn = null;
       }).noaccounts.config.users.users ? alice
     );

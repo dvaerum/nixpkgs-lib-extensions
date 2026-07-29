@@ -11,14 +11,13 @@ in
     login, via a systemd *user* service that runs `home-manager switch` in the
     background (so login is never hard-blocked). First-login-only by default.
 
-    `nixosConfigurationsBuilder` includes this module automatically when it is
-    given a non-empty `userRegistry`, so it normally does not need
-    to be wired up by hand — direct use is for custom setups that build their
-    NixOS systems some other way. It is driven by the home-configuration
-    *registry* (the same one passed to `homeConfigurationsBuilder`) but is
-    otherwise independent of the builders. Self-gating: when the registry is
-    empty, the home-manager input is missing, the flake reference is unset or no
-    user matches, the module is empty.
+    `nixosConfigurationsBuilder` includes this module automatically when it
+    has `loginUsers`, so it normally does not need to be wired up by hand —
+    direct use is for custom setups that build their NixOS systems some
+    other way. It is driven by the `userRegistry` filtered by `loginUsers`
+    (the same arguments the builders take) but is otherwise independent of
+    the builders. Self-gating: when no login user matches, the home-manager
+    input is missing or the flake reference is unset, the module is empty.
 
     # Example
 
@@ -32,6 +31,7 @@ in
           hostname = "laptop";
           system   = "x86_64-linux";
           userRegistry = { "alice" = ./users/alice; };
+          loginUsers = [ "alice" ];
         })
       ];
     }
@@ -61,10 +61,14 @@ in
     : The system double, e.g. `"x86_64-linux"`.
 
     userRegistry
-    : The same registry passed to `homeConfigurationsBuilder`; its keys define
-    : which users are bootstrapped on this host. Default `{ }`.
+    : The user registry (as in `nixosConfigurationsBuilder`). Default `{ }`.
 
-    flakeRef
+    loginUsers
+    : The usernames whose homes are login-managed; only these are
+    : bootstrapped (and only when the registry gives them a `home.nix`
+    : on this host). Default `[ ]` (module is empty).
+
+    loginFlakeRef
     : Flake reference for `home-manager switch --flake <ref>#<user>@<host>`;
     : the flake at this reference must export those
     : `homeConfigurations."<user>@<host>"` outputs. The default
@@ -73,7 +77,7 @@ in
     : reference like `"/etc/nixos"` to build homes from a live checkout.
     : Default `inputs.self`.
 
-    reactivateEveryLogin
+    loginReactivateEveryLogin
     : Re-activate on every login instead of only the first. Default `false`.
   */
   homeManagerBootstrapModule =
@@ -82,15 +86,18 @@ in
       hostname,
       system,
       userRegistry ? { },
-      flakeRef ? null,
-      reactivateEveryLogin ? false,
+      loginUsers ? [ ],
+      loginFlakeRef ? null,
+      loginReactivateEveryLogin ? false,
     }:
     let
       home-manager = shared.detectHomeManager inputs;
       homeManagerPkg = if home-manager == null then null else home-manager.packages.${system}.home-manager;
-      effectiveFlakeRef = if flakeRef != null then flakeRef else (inputs.self or null);
-      usersHome = shared.usersWithHome userRegistry hostname (
-        shared.usersFromRegistry userRegistry hostname
+      effectiveFlakeRef = if loginFlakeRef != null then loginFlakeRef else (inputs.self or null);
+      registry = if userRegistry == null then { } else userRegistry;
+      # login-managed users with an actual home.nix on this host
+      usersHome = builtins.filter (u: builtins.elem u loginUsers) (
+        shared.usersWithHome registry hostname (shared.usersFromRegistry registry hostname)
       );
     in
     # `_file` points eval errors of this generated module at this file
@@ -127,7 +134,7 @@ in
                     "--hostname"
                     hostname
                   ]
-                  ++ lib.optional reactivateEveryLogin "--reactivate-every-login"
+                  ++ lib.optional loginReactivateEveryLogin "--reactivate-every-login"
                   ++ [ "--users" ]
                   ++ usersHome
                 );

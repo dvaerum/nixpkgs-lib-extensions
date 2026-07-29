@@ -14,8 +14,11 @@ and the workflow.
   file convention.
 - Login accounts are **created automatically**, each with a private
   primary group.
-- On first login, a systemd user service runs `home-manager switch`
-  for the user in the background -- no manual bootstrap.
+- Each user's home is activated by ONE of two mechanisms, chosen per
+  user: **with the system** (default -- home-manager's NixOS module,
+  applied by `nixos-rebuild switch`) or **on first login** (users
+  listed in `loginUsers` -- a systemd user service runs
+  `home-manager switch` in the background).
 - NixOS modules, home-manager modules, overlays and lib extensions
   exported by your flake inputs are **wired in automatically**.
 
@@ -73,10 +76,12 @@ Then build and activate the host:
 nixos-rebuild switch --flake .#laptop
 ```
 
-This builds the SYSTEM only. The home configurations are exported per
-user and host (e.g. `homeConfigurations."alice@laptop"`) and applied
-later: on each user's first login, by the bootstrap service -- you
-normally never run `home-manager` by hand.
+This builds the system INCLUDING the homes of every user not listed
+in `loginUsers` -- those activate right there, with the switch. Homes
+of `loginUsers` are exported per user and host instead
+(e.g. `homeConfigurations."alice@laptop"`) and applied later: on each
+user's first login, by the bootstrap service. Either way you normally
+never run `home-manager` by hand.
 
 ## The registry
 
@@ -154,6 +159,10 @@ hostname. In your flake the full wiring looks like this (the scaffolded
         _defaults = {
           inherit inputs system
             userRegistry;
+          # alice's home activates on
+          # her first login; all other
+          # homes ship with the system
+          loginUsers = [ "alice" ];
         };
         laptop = { };
         server = {
@@ -168,8 +177,9 @@ hostname. In your flake the full wiring looks like this (the scaffolded
         extLib.buildNixosConfigurations
           hosts;
 
-      # "user@host" outputs for every
-      # host: what the bootstrap runs
+      # "user@host" outputs for the
+      # loginUsers: what the
+      # bootstrap activates
       homeConfigurations =
         extLib.buildHomeConfigurations
           hosts;
@@ -234,31 +244,54 @@ Disable account creation entirely with `userModuleFn = null;`
 (accounts must then come from your host config or the users'
 `configuration.nix` files).
 
-## The login bootstrap
+## Two home mechanisms
 
-When a host gets a non-empty registry, a systemd *user* service is
-installed automatically. On a user's first login it runs
+Every registry user's `home.nix` is activated by exactly one of two
+mechanisms; `loginUsers` selects which:
 
 ```
-home-manager switch --flake <flakeRef>#<user>@<host>
+                     home.nix of a user
+                             |
+              in loginUsers? |
+             no              |             yes
+              v                             v
+  built INTO the system         built as the flake output
+  (home-manager NixOS           homeConfigurations
+   module); activates on         ."user@host" (by
+  nixos-rebuild switch          buildHomeConfigurations);
+                                activated on FIRST LOGIN
+                                by the bootstrap service
+```
+
+System-managed (the default) means the home is part of the system
+closure: `useGlobalPkgs`/`useUserPackages` are enabled (both
+`mkDefault`), a broken home config fails the system build, and no
+flake outputs are involved.
+
+Login-managed exists for homes that should update independently of
+system rebuilds. On the user's first login a systemd *user* service
+runs
+
+```
+home-manager switch --flake <loginFlakeRef>#<user>@<host>
 ```
 
 in the background (login is never blocked). A stamp file in
 `$XDG_STATE_HOME` (default `~/.local/state`) prevents re-runs; pass
-`reactivateEveryLogin = true;` to re-apply on every new session
-instead. `flakeRef` defaults to your flake (`inputs.self`) -- the
-pinned copy from the last `nixos-rebuild`; point it at a mutable
+`loginReactivateEveryLogin = true;` to re-apply on every new session
+instead. `loginFlakeRef` defaults to your flake (`inputs.self`) --
+the pinned copy from the last `nixos-rebuild`; point it at a mutable
 checkout (e.g. `"/etc/nixos"`) if users should build from a live
 tree.
 
-For this to work your flake must export the home configurations for
-EVERY host that has users -- the bootstrap on host X activates
-`<flakeRef>#<user>@X`, which must exist. If that output is missing,
-the service fails with "flake ... does not provide attribute
+For login users your flake must export the home configurations for
+EVERY host where they appear -- the bootstrap on host X activates
+`<loginFlakeRef>#<user>@X`, which must exist. If that output is
+missing, the service fails with "flake ... does not provide attribute
 homeConfigurations..." on first login. The skeleton above covers it:
-`buildHomeConfigurations hosts` produces the homes for every host in
-the same list. (The underlying per-host function is
-`homeConfigurationsBuilder`, if you need a single host's homes.)
+`buildHomeConfigurations hosts` produces them from the same host
+list. (The underlying single-user function is
+`homeConfigurationsBuilder`, if you need one specific home.)
 
 ### The bootstrap without the builders
 
@@ -314,35 +347,38 @@ A complete flake:
               inherit inputs system
                 userRegistry;
               hostname = "laptop";
-              # reactivateEveryLogin = true;
-              # flakeRef = "/etc/nixos";
+              loginUsers = [ "alice" ];
+              # loginReactivateEveryLogin =
+              #   true;
+              # loginFlakeRef = "/etc/nixos";
             })
           ];
         };
 
       # the homes the bootstrap activates:
       # "alice@laptop" MUST exist here
-      homeConfigurations =
+      homeConfigurations."alice@laptop" =
         extLib.homeConfigurationsBuilder {
           inherit inputs system
             userRegistry;
           hostname = "laptop";
+          username = "alice";
         };
     };
 }
 ```
 
 At login the service runs
-`home-manager switch --flake <flakeRef>#alice@laptop` exactly as in
-the builder setup. Two things the standalone module does NOT do
+`home-manager switch --flake <loginFlakeRef>#alice@laptop` exactly as
+in the builder setup. Two things the standalone module does NOT do
 (they are `nixosConfigurationsBuilder` features): it never creates
 user accounts, and it never imports the registry directories'
 `configuration.nix` files -- only the registry KEYS are read, to
 know which users to bootstrap.
 
-The module is self-gating: with an empty registry, no home-manager
-input, no flake reference, or no user matching the host, it
-evaluates to an empty module -- safe to include unconditionally.
+The module is self-gating: with no matching login user, no
+home-manager input, or no flake reference, it evaluates to an empty
+module -- safe to include unconditionally.
 
 ## What your inputs contribute automatically
 
@@ -552,11 +588,12 @@ eval-level changes.
 - "Every login" means every systemd user-manager instance: the
   bootstrap re-runs when the user's first session starts, not on
   each additional terminal login.
-- If the bootstrap seems to do nothing: the registry must be
-  non-empty, a home-manager input must exist, `inputs.self` (or
-  `flakeRef`) must be set, and at least one matched user must ship a
-  `home.nix` -- all four are required, and the service is simply
-  absent otherwise.
+- If the bootstrap seems to do nothing: at least one `loginUsers`
+  name must match a registry user shipping a `home.nix` on this host,
+  a home-manager input must exist, and `inputs.self` (or
+  `loginFlakeRef`) must be set -- all are required, and the service
+  is simply absent otherwise. Users NOT in `loginUsers` never touch
+  the bootstrap: their homes activate with `nixos-rebuild switch`.
 
 ## Verifying your setup
 

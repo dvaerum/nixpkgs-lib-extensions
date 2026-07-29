@@ -103,23 +103,33 @@ in
   });
 
   # buildHomeConfigurations: the SAME hosts attrset produces the merged
-  # "user@host" set across all hosts, with per-host registry overrides
+  # "user@host" set across all hosts, with per-host registry overrides;
+  # only loginUsers get outputs
   build-home-configurations =
     let
       homes = myLib.buildHomeConfigurations {
         _defaults = {
           inherit inputs system;
           userRegistry."alice" = exampleDir + "/users/alice";
+          loginUsers = [
+            "alice"
+            "bob"
+          ];
           # nixos-only argument: must be accepted and ignored here
           modules = [ ];
         };
         hostA = { };
         hostB = {
-          userRegistry."bob@hostB" = exampleDir + "/users/bob";
+          userRegistry = {
+            "bob@hostB" = exampleDir + "/users/bob";
+            # present but NOT a login user on hostB: no output
+            "dave" = exampleDir + "/users/dave";
+          };
+          loginUsers = [ "bob" ];
         };
       };
     in
-    homes ? "alice@hostA" && homes ? "bob@hostB" && !(homes ? "alice@hostB");
+    homes ? "alice@hostA" && homes ? "bob@hostB" && !(homes ? "alice@hostB") && !(homes ? "dave@hostB");
 
   # ... and shares the validation: the same typo throws there too
   build-home-configurations-allowlisted = throws (myLib.buildHomeConfigurations {

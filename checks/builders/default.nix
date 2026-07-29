@@ -246,6 +246,7 @@ let
         inherit inputs system;
         hostname = "laptop";
         userRegistry."alice" = exampleDir + "/users/alice";
+        loginUsers = [ "alice" ];
       }
       // args
     );
@@ -255,10 +256,11 @@ let
   homesThrow =
     registry:
     !(builtins.tryEval (
-      builtins.attrNames (myLib.homeConfigurationsBuilder {
-        inherit inputs system;
-        hostname = "laptop";
-        userRegistry = registry;
+      builtins.attrNames (myLib.buildHomeConfigurations {
+        laptop = {
+          inherit inputs system;
+          userRegistry = registry;
+        };
       })
     )).success;
 

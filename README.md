@@ -36,9 +36,10 @@ Highlights:
 - Arguments shared by every host go in one `_defaults` entry; host
   entries override per argument, and unknown keys throw instead of
   being silently ignored.
-- User accounts are created automatically (`normalUserModule`), and a
-  systemd user service provisions each user's home-manager profile on
-  first login.
+- User accounts are created automatically (`normalUserModule`). Homes
+  are built into the system by default (home-manager NixOS module);
+  users listed in `loginUsers` get theirs provisioned on first login
+  instead, by a systemd user service.
 - NixOS modules, overlays, home-manager modules and lib extensions
   exported by your flake inputs are wired in automatically; each
   input's own `lib` is namespaced as `lib.<inputName>`, and your
