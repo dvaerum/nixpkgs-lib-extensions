@@ -101,9 +101,7 @@ in
       effectiveFlakeRef = if loginFlakeRef != null then loginFlakeRef else (inputs.self or null);
       registry = if userRegistry == null then { } else userRegistry;
       # login-managed users with an actual home.nix on this host
-      usersHome = builtins.filter (u: builtins.elem u loginUsers) (
-        shared.usersWithHome registry hostname (shared.usersFromRegistry registry hostname)
-      );
+      usersHome = shared.loginUsersWithHome registry hostname loginUsers;
     in
     # `_file` points eval errors of this generated module at this file
     # instead of an anonymous <unknown-file> location.

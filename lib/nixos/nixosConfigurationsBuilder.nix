@@ -335,7 +335,7 @@ in
       # module -- homes ship with the system and activate on
       # nixos-rebuild switch. No flake outputs, no bootstrap involved.
       systemUsersWithHome = builtins.filter (u: !(builtins.elem u loginUsers)) (
-        shared.usersWithHome registry hostname users
+        shared.usersWithHome registry hostname
       );
       hmNixosModule =
         if home-manager == null then

@@ -89,9 +89,8 @@ in
           rawRegistry = merged.userRegistry or { };
           registry = if rawRegistry == null then { } else rawRegistry;
           loginUsers = merged.loginUsers or [ ];
-          usersHome = builtins.filter (u: builtins.elem u loginUsers) (
-            shared.usersWithHome registry hostname (shared.usersFromRegistry registry hostname)
-          );
+          # login-managed users with an actual home.nix on this host
+          usersHome = shared.loginUsersWithHome registry hostname loginUsers;
         in
         # a host with no login-managed users (or no home-manager input)
         # simply contributes nothing
