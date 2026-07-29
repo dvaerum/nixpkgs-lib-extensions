@@ -501,9 +501,11 @@ Package-set knobs per host (full reference in [lib.md](lib.md)):
 ```nix
 laptop = {
   inherit inputs system homeConfigurations;
-  # cudaSupport is the one tag with package-set
-  # effect; all tags reach modules as `tags`
-  tags = [ "cudaSupport" ];
+  # reach modules as `tags` and label the
+  # boot-menu entries (system.nixos.tags)
+  tags = [ "gpu" ];
+  # merged into nixpkgs.config
+  nixpkgsConfig = { cudaSupport = true; };
   # unfree package names to allow
   allowedUnfreePackages = [ "steam" ];
   # applied to the nixpkgs SOURCE via applyPatches

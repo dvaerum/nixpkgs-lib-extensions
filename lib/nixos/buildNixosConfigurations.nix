@@ -85,6 +85,7 @@ extLib:
     : - `extraOverlays`
     : - `allowedUnfreePackages`
     : - `permittedInsecurePackages`
+    : - `nixpkgsConfig`
     : - `specialArgs`
     :
     : This list is an enforced ALLOWLIST: any other key throws, so typos
@@ -120,6 +121,7 @@ extLib:
         "extraOverlays"
         "allowedUnfreePackages"
         "permittedInsecurePackages"
+        "nixpkgsConfig"
         "specialArgs"
       ];
       complaint =

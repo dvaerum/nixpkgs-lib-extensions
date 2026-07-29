@@ -321,6 +321,7 @@ buildNixosConfigurations ::
   - `extraOverlays`
   - `allowedUnfreePackages`
   - `permittedInsecurePackages`
+  - `nixpkgsConfig`
   - `specialArgs`
   
   This list is an enforced ALLOWLIST: any other key throws, so typos
@@ -408,7 +409,7 @@ Each home configuration gets overridable (`mkDefault`) values for
 so pin it in the user's `home.nix` if you rely on stateVersion
 semantics.
 
-nixpkgs, systemType, specialArgs, tags, patches,
+nixpkgs, systemType, specialArgs, tags, patches, nixpkgsConfig,
 - **extraOverlays, allowedUnfreePackages, permittedInsecurePackages, rootPath**
   Shared options (see `nixosConfigurationsBuilder`).
 
@@ -660,8 +661,13 @@ nixosConfigurationsBuilder :: Attribute -> Attribute
   List of string tags, passed to modules as the `tags` specialArg and
   set as `system.nixos.tags` (mkDefault) so they label the host's
   boot-menu entries; a host defining that option itself overrides
-  this. `"cudaSupport"` is the one tag with package-set effect (it
-  enables `nixpkgs.config.cudaSupport`). Default `[ ]`.
+  this. Tags carry no other behavior. Default `[ ]`.
+
+- **nixpkgsConfig**
+  Attribute set merged into `nixpkgs.config` for the host's package
+  set -- e.g. `{ cudaSupport = true; }`. Merged last, so it can also
+  override what `allowedUnfreePackages`/`permittedInsecurePackages`
+  produced. Default `{ }`.
 
 - **patches**
   Patch files applied to the nixpkgs SOURCE tree (via `applyPatches`)

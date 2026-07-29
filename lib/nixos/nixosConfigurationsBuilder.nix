@@ -176,8 +176,13 @@ in
     : List of string tags, passed to modules as the `tags` specialArg and
     : set as `system.nixos.tags` (mkDefault) so they label the host's
     : boot-menu entries; a host defining that option itself overrides
-    : this. `"cudaSupport"` is the one tag with package-set effect (it
-    : enables `nixpkgs.config.cudaSupport`). Default `[ ]`.
+    : this. Tags carry no other behavior. Default `[ ]`.
+
+    nixpkgsConfig
+    : Attribute set merged into `nixpkgs.config` for the host's package
+    : set -- e.g. `{ cudaSupport = true; }`. Merged last, so it can also
+    : override what `allowedUnfreePackages`/`permittedInsecurePackages`
+    : produced. Default `{ }`.
 
     patches
     : Patch files applied to the nixpkgs SOURCE tree (via `applyPatches`)

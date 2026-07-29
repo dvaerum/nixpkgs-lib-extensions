@@ -196,7 +196,8 @@ let
       excludeModuleInputs = [ "fake-module-input" ];
       extraOverlays = [ (final: prev: { from-extra-overlay = "yes"; }) ];
       allowedUnfreePackages = [ "allowed-unfree" ];
-      tags = [ "cudaSupport" ];
+      tags = [ "kitchen-sink" ];
+      nixpkgsConfig.cudaSupport = true;
       systemType = "server";
       additionalModules = [
         { users.groups.from-additional-module = { }; }

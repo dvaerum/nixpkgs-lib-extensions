@@ -197,6 +197,7 @@ let
       permittedInsecurePackages ? [ ],
       specialArgs ? { },
       additionalSpecialArgs ? { },
+      nixpkgsConfig ? { },
       systemType ? null,
       rootPath ? (inputs.self or ./.),
       excludeModuleInputs ? [ ],
@@ -285,11 +286,15 @@ let
       # outside it would be invisible as the module-arg `lib`.
       lib = extendedLib.extend (final: prev: inputLibAdditions);
 
+      # allowedUnfreePackages / permittedInsecurePackages are the ergonomic
+      # shorthands; nixpkgsConfig is the general escape hatch into
+      # `nixpkgs.config` (cudaSupport = true; ...) and is merged last, so
+      # it can also override what the shorthands produced.
       pkgsConfig = {
-        cudaSupport = builtins.elem "cudaSupport" tags;
         allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) allowedUnfreePackages;
         inherit permittedInsecurePackages;
-      };
+      }
+      // nixpkgsConfig;
 
       # Optionally apply patches to a nixpkgs source tree.
       patchSrc =
