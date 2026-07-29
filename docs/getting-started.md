@@ -266,7 +266,10 @@ mechanisms; `loginUsers` selects which:
 System-managed (the default) means the home is part of the system
 closure: `useGlobalPkgs`/`useUserPackages` are enabled (both
 `mkDefault`), a broken home config fails the system build, and no
-flake outputs are involved.
+flake outputs are involved. Each home receives `username` as a
+module argument and gets `home.stateVersion` defaulted to the
+CURRENT nixpkgs release -- pin it in the user's `home.nix` if you
+rely on stateVersion semantics.
 
 Login-managed exists for homes that should update independently of
 system rebuilds. On the user's first login a systemd *user* service
@@ -478,8 +481,9 @@ Both NixOS modules and home-manager modules get:
 | `listOfUsernames`     | the host's registry-derived users        |
 | `username`            | home-manager configs only: whose home    |
 
-Anything you pass as `specialArgs = { ... };` is merged LAST and can
-override all of the above. `pkgs` is deliberately not a specialArg --
+Anything you pass as `specialArgs = { ... };` is merged after
+everything the builder assembled and overrides it (only
+`additionalSpecialArgs` and `listOfUsernames` layer later still). `pkgs` is deliberately not a specialArg --
 modules receive it from the module system.
 
 Example -- use a package from an input without any wiring:
@@ -520,21 +524,19 @@ Give a user extra groups on one host only: create
 "carol@work" = ./users/carol-work; # extra config on work
 ```
 
-Rename or add a host -- four places move together:
+Rename or add a host -- three places move together:
 
-1. the attrset key in `buildNixosConfigurations` (also becomes
-   `networking.hostName` by default)
+1. the attrset key in the hosts attrset (also becomes
+   `networking.hostName` by default; with the shared attrset,
+   `buildHomeConfigurations` follows automatically)
 2. the host file: `hosts/<name>.nix` or
    `hosts/<name>/configuration.nix`
-3. a `homeConfigurationsBuilder` call with `hostname = "<name>";`
-   (only if the host has users)
-4. any `"user@<name>"` registry keys
+3. any `"user@<name>"` registry keys
 
 Package-set knobs per host (full reference in [lib.md](lib.md)):
 
 ```nix
 laptop = {
-  inherit inputs system userRegistry;
   # reach modules as `tags` and label the
   # boot-menu entries (system.nixos.tags)
   tags = [ "gpu" ];

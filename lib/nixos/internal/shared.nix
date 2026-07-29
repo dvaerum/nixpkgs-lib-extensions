@@ -434,9 +434,11 @@ let
     };
   # ONE hosts attrset is meant to feed BOTH buildNixosConfigurations and
   # buildHomeConfigurations, so both validate against the same allowlists:
-  # arguments only one side uses (modules, userModuleFn, homeSharedModules,
-  # ...) are accepted everywhere and ignored by the other side.
-  # Keep in sync with the documented argument lists.
+  # arguments only one side uses (modules, userModuleFn, ...) are accepted
+  # everywhere and ignored by the other side; homeSharedModules is used by
+  # BOTH (system-managed and login-managed homes).
+  # Keep in sync with the documented argument lists (tested by
+  # checks/builders/tests/defaults.nix).
   allowedDefaultArgs = [
     "inputs"
     "system"

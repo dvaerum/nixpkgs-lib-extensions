@@ -84,10 +84,11 @@ in
     : - `userModuleFn`
     : - `excludeModuleInputs`
     : - `userRegistry`
-    : - `homeSharedModules` (used by `buildHomeConfigurations`; accepted
-    :   and ignored here, so one hosts attrset can feed both)
-    : - `flakeRef`
-    : - `reactivateEveryLogin`
+    : - `loginUsers`
+    : - `homeSharedModules` (applies to BOTH mechanisms: system-managed
+    :   homes here, login-managed homes in `buildHomeConfigurations`)
+    : - `loginFlakeRef`
+    : - `loginReactivateEveryLogin`
     : - `tags`
     : - `systemType`
     : - `patches`

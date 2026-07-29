@@ -14,6 +14,13 @@
 # resulting store path already exists. `homeModule` is defined once and
 # rendered into the flake text, so host and guest provably build the same
 # configuration.
+#
+# What this test does NOT prove (known fidelity limits): production
+# bootstraps from `inputs.self` -- a store-path flake whose lock points at
+# remote inputs -- while this VM switches a generated flake with `path:`
+# inputs and a pre-seeded closure, so lock resolution/fetching of the
+# production shape is never exercised. Keep such limits in mind before
+# concluding "the VM passed, so production works".
 {
   pkgs,
   nixpkgs,
@@ -133,7 +140,12 @@ pkgs.testers.runNixOSTest {
         "nix-command"
         "flakes"
       ];
-      systemd.user.services.home-manager-bootstrap.path = [ config.nix.package ];
+      # deliberately NO extra PATH for the service: the bootstrap wrapper
+      # must be self-contained (pkgs.nix in its runtimeInputs). A real
+      # host's systemd user service has no system profile on PATH -- that
+      # exact gap once broke production with exit 127 while this test,
+      # then carrying a `path = [ config.nix.package ]` workaround,
+      # stayed green. Do not add PATH entries here.
       virtualisation.useNixStoreImage = true;
       virtualisation.writableStore = true;
       virtualisation.additionalPaths = [

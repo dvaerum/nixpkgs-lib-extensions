@@ -14,9 +14,9 @@ Some I wrote myself and some I found on the internet.
 The main feature of this repo: build your `nixosConfigurations` and
 standalone `homeConfigurations` from one per-user directory convention.
 See [docs/lib.md](docs/lib.md) for the full reference of
-`buildNixosConfigurations`, `nixosConfigurationsBuilder`,
-`homeConfigurationsBuilder`, `homeManagerBootstrapModule` and
-`normalUserModule`.
+`buildNixosConfigurations`, `buildHomeConfigurations`,
+`nixosConfigurationsBuilder`, `homeConfigurationsBuilder`,
+`homeManagerBootstrapModule` and `normalUserModule`.
 
 The quickest start is the flake template — a complete, working example
 (it is evaluated by this repo's own `nix flake check`, so it cannot rot):

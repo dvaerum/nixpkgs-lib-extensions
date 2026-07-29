@@ -37,10 +37,11 @@ in
     ```
 
     NixOS-only arguments in the attrset (`modules`, `userModuleFn`, ...)
-    are accepted and ignored here, just as the home-only
-    `homeSharedModules` is ignored by `buildNixosConfigurations`. Key
-    collisions between hosts are impossible: every produced key carries
-    its own `@<hostname>` suffix.
+    are accepted and ignored here, so one hosts attrset can feed both
+    build functions (`homeSharedModules` applies on BOTH sides: to the
+    login homes built here and to the system-managed homes in
+    `buildNixosConfigurations`). Key collisions between hosts are
+    impossible: every produced key carries its own `@<hostname>` suffix.
 
     # Example
 

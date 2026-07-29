@@ -52,7 +52,7 @@
     # The same files are evaluated by the checks, so the template cannot rot.
     templates.default = {
       path = ./checks/example;
-      description = "Hosts + per-user directories built with nixosConfigurationsBuilder / homeConfigurationsBuilder";
+      description = "Hosts + per-user directories built with buildNixosConfigurations / buildHomeConfigurations";
     };
 
     checks = eachSupportedSystem (system: {

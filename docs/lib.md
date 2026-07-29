@@ -270,10 +270,11 @@ in
 ```
 
 NixOS-only arguments in the attrset (`modules`, `userModuleFn`, ...)
-are accepted and ignored here, just as the home-only
-`homeSharedModules` is ignored by `buildNixosConfigurations`. Key
-collisions between hosts are impossible: every produced key carries
-its own `@<hostname>` suffix.
+are accepted and ignored here, so one hosts attrset can feed both
+build functions (`homeSharedModules` applies on BOTH sides: to the
+login homes built here and to the system-managed homes in
+`buildNixosConfigurations`). Key collisions between hosts are
+impossible: every produced key carries its own `@<hostname>` suffix.
 
 ### Example
 
@@ -393,10 +394,11 @@ buildNixosConfigurations ::
   - `userModuleFn`
   - `excludeModuleInputs`
   - `userRegistry`
-  - `homeSharedModules` (used by `buildHomeConfigurations`; accepted
-    and ignored here, so one hosts attrset can feed both)
-  - `flakeRef`
-  - `reactivateEveryLogin`
+  - `loginUsers`
+  - `homeSharedModules` (applies to BOTH mechanisms: system-managed
+    homes here, login-managed homes in `buildHomeConfigurations`)
+  - `loginFlakeRef`
+  - `loginReactivateEveryLogin`
   - `tags`
   - `systemType`
   - `patches`
@@ -502,8 +504,9 @@ The home configuration gets overridable (`mkDefault`) values for
 so pin it in the user's `home.nix` if you rely on stateVersion
 semantics.
 
-nixpkgs, systemType, specialArgs, tags, patches, nixpkgsConfig,
-- **extraOverlays, allowedUnfreePackages, permittedInsecurePackages, rootPath**
+nixpkgs, systemType, specialArgs, additionalSpecialArgs, tags, patches,
+nixpkgsConfig, extraOverlays, allowedUnfreePackages,
+- **permittedInsecurePackages, rootPath**
   Shared options (see `nixosConfigurationsBuilder`).
 
 
@@ -724,7 +727,7 @@ nixosConfigurationsBuilder :: Attribute -> Attribute
 
 - **userModuleFn**
   A function `username -> NixOS module`, applied for each user derived
-  from BOTH registries. Defaults to `normalUserModule`, which creates
+  from the `userRegistry`. Defaults to `normalUserModule`, which creates
   a normal login account per user; pass your own function for richer
   accounts, or `null` to disable account creation entirely.
 
@@ -740,7 +743,10 @@ nixosConfigurationsBuilder :: Attribute -> Attribute
   wired into `home-manager.users.<user>` via home-manager's NixOS
   module -- built and activated WITH the system on `nixos-rebuild
   switch` (`useGlobalPkgs`/`useUserPackages` default to true,
-  overridable) -- unless the user is listed in `loginUsers`. A
+  overridable; each home gets `home.stateVersion` defaulted to the
+  CURRENT nixpkgs release, so pin it in the user's `home.nix` if you
+  rely on stateVersion semantics, and receives `username` as a module
+  argument) -- unless the user is listed in `loginUsers`. A
   directory with only a `configuration.nix` is a system-only user
   (account, no home). Keys select where an entry applies:
     `"<user>@<host>"`  this host only
@@ -770,7 +776,7 @@ nixosConfigurationsBuilder :: Attribute -> Attribute
 
 - **loginFlakeRef**
   Where the login bootstrap finds the home configurations of
-  `loginUserRegistry` users: on first login it runs
+  `loginUsers` users: on first login it runs
   `home-manager switch --flake <loginFlakeRef>#<user>@<hostname>`, so the
   flake at this reference must export
   `homeConfigurations."<user>@<hostname>"`.
@@ -779,12 +785,12 @@ nixosConfigurationsBuilder :: Attribute -> Attribute
   the last `nixos-rebuild`, but local edits are invisible until the
   next rebuild. Point it at a mutable checkout (e.g. `"/etc/nixos"`
   or `"git+https://..."`) to make the bootstrap build from the live
-  tree instead. Irrelevant without `loginUserRegistry` users.
+  tree instead. Irrelevant without `loginUsers` users.
   Default `inputs.self`.
 
 - **loginReactivateEveryLogin**
   Bootstrap re-activates on every login instead of only the first.
-  Irrelevant without `loginUserRegistry` users. Default `false`.
+  Irrelevant without `loginUsers` users. Default `false`.
 
 - **homeSharedModules**
   home-manager modules added to every SYSTEM-managed home (on top of

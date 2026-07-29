@@ -2,10 +2,12 @@
 # per-argument host override, the layered pairs (modules/additionalModules,
 # specialArgs/additionalSpecialArgs) and the forbidden-key throws.
 {
+  lib,
   myLib,
   inputs,
   system,
   exampleDir,
+  repoDir,
   ...
 }:
 let
@@ -137,4 +139,15 @@ in
       users = [ "root" ];
     };
   });
+
+  # the allowlist and its documentation cannot drift: every allowlisted
+  # name must appear backtick-quoted in the buildNixosConfigurations doc
+  # comment (this is exactly the drift that happened with the loginUsers
+  # renames)
+  allowlist-documented =
+    let
+      doc = builtins.readFile (repoDir + "/lib/nixos/buildNixosConfigurations.nix");
+      shared = import (repoDir + "/lib/nixos/internal/shared.nix") myLib;
+    in
+    builtins.all (n: lib.hasInfix "`${n}`" doc) shared.allowedDefaultArgs;
 }
