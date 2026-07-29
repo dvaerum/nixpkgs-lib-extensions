@@ -158,7 +158,16 @@ in
     : new home.nix/configuration.nix or it is skipped silently.
 
     flakeRef
-    : Flake reference used by the login bootstrap. Default `inputs.self`.
+    : Where the login bootstrap finds the home configurations: on a user's
+    : first login it runs `home-manager switch --flake <flakeRef>#<user>@<hostname>`,
+    : so the flake at this reference must export
+    : `homeConfigurations."<user>@<hostname>"` (see `homeConfigurationsBuilder`).
+    : The default `inputs.self` is the IMMUTABLE store copy of your flake
+    : that the running system was built from -- homes then always match
+    : the last `nixos-rebuild`, but local edits are invisible until the
+    : next rebuild. Point it at a mutable checkout (e.g. `"/etc/nixos"`
+    : or `"git+https://..."`) to make the bootstrap build from the live
+    : tree instead. Default `inputs.self`.
 
     reactivateEveryLogin
     : Bootstrap re-activates on every login instead of only the first. Default `false`.
@@ -169,9 +178,18 @@ in
     : `nixpkgs.config.cudaSupport`). Default `[ ]`.
 
     patches
-    : Patch files applied to the nixpkgs SOURCE tree (via `applyPatches`)
-    : before the system is evaluated from it. Default `[ ]` (no patching,
-    : no source copy).
+    : Patch files applied to the nixpkgs SOURCE tree itself before the
+    : host is evaluated from it -- for picking up an unmerged nixpkgs fix
+    : (e.g. a `fetchpatch` of a pull request) without waiting for it to
+    : land in your channel. This is heavier than an overlay: the whole
+    : nixpkgs source is copied into the store with the patches applied
+    : (`applyPatches`), and the copy must be BUILT before evaluation can
+    : continue (import-from-derivation), so the first build pays a
+    : noticeable one-time cost and `nix flake check --no-build` style
+    : workflows stop working for that host. Reach for `extraOverlays`
+    : when changing a package suffices; patches are for changes overlays
+    : cannot express (NixOS module fixes, eval-level changes). Default
+    : `[ ]` (no patching, no source copy, no IFD).
 
     extraOverlays
     : Overlays applied on top of the ones auto-collected from `inputs`.
@@ -200,10 +218,6 @@ in
     : modules as the `systemType` specialArg, and when non-null the host
     : config convention looks under `hosts/<systemType>/` instead of
     : `hosts/`. Default `null` (no grouping folder).
-
-    desktopEnvironment
-    : Passed to modules as the `desktopEnvironment` specialArg; has no
-    : effect beyond that. Default `"plasma"`.
 
     rootPath
     : The root for the `hosts/<hostname>` convention and the `rootPath`

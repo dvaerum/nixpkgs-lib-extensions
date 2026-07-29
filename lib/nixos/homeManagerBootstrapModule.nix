@@ -60,7 +60,12 @@ in
     : which users are bootstrapped on this host. Default `{ }`.
 
     flakeRef
-    : Flake reference for `home-manager switch --flake <ref>#<user>@<host>`.
+    : Flake reference for `home-manager switch --flake <ref>#<user>@<host>`;
+    : the flake at this reference must export those
+    : `homeConfigurations."<user>@<host>"` outputs. The default
+    : `inputs.self` is the immutable store copy of your flake the system
+    : was built from (homes match the last `nixos-rebuild`); use a mutable
+    : reference like `"/etc/nixos"` to build homes from a live checkout.
     : Default `inputs.self`.
 
     reactivateEveryLogin
