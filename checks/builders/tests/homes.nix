@@ -66,4 +66,22 @@
       "frank"
       "grace"
     ];
+
+  # a home.nix user without any home-manager input: the system still
+  # evaluates (with a warning) but carries no home-manager wiring --
+  # homes are dropped LOUDLY, not silently
+  system-homes-dropped-without-home-manager-warns =
+    !(
+      (myLib.nixosConfigurationsBuilder {
+        inputs = {
+          inherit nixpkgs;
+          self = inputs.self;
+        };
+        inherit system;
+        hostname = "nohm";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        userRegistry."alice" = exampleDir + "/users/alice";
+      }).nohm.options
+      ? home-manager
+    );
 }

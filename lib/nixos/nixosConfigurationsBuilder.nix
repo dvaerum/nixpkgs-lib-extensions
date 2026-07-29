@@ -323,9 +323,17 @@ in
           null
         else
           home-manager.nixosModules.default or home-manager.nixosModules.home-manager or null;
+      # Users would be getting NOTHING for their home.nix -- fail loudly
+      # instead of silently building a homeless system.
+      wantSystemHomes =
+        if systemUsersWithHome != [ ] && hmNixosModule == null then
+          lib.warn ''
+            nixosConfigurationsBuilder: host `${hostname}`: user(s) ${builtins.concatStringsSep ", " systemUsersWithHome} have a home.nix, but no home-manager input (or none exposing a NixOS module) exists -- their SYSTEM-managed homes are NOT built. Add a home-manager input, or move them to loginUsers.'' false
+        else
+          systemUsersWithHome != [ ] && hmNixosModule != null;
       systemHomesModule = {
         _file = ./nixosConfigurationsBuilder.nix;
-        imports = lib.optional (systemUsersWithHome != [ ] && hmNixosModule != null) (
+        imports = lib.optional wantSystemHomes (
           { ... }:
           {
             imports = [ hmNixosModule ];
@@ -404,13 +412,24 @@ in
         };
         modules =
           [
-            {
-              _file = ./nixosConfigurationsBuilder.nix;
-              networking.hostName = lib.mkDefault hostname;
-              # host tags label the boot entry too; a host setting the
-              # option itself overrides this
-              system.nixos.tags = lib.mkDefault tags;
-            }
+            (
+              { config, ... }:
+              {
+                _file = ./nixosConfigurationsBuilder.nix;
+                networking.hostName = lib.mkDefault hostname;
+                # host tags label the boot entry too; a host setting the
+                # option itself overrides this
+                system.nixos.tags = lib.mkDefault tags;
+                # The builder provides `pkgs`, so module-level
+                # nixpkgs.overlays / nixpkgs.config never take effect --
+                # a completely idiomatic NixOS pattern silently doing
+                # nothing (third-party default modules do this too).
+                # Surface it instead of staying quiet.
+                warnings =
+                  lib.optional (config.nixpkgs.overlays != [ ] || config.nixpkgs.config != { })
+                    "nixpkgs-lib-extensions: a module on host `${hostname}` sets nixpkgs.overlays or nixpkgs.config, but the builder provides the package set -- those options are INERT here. Use the extraOverlays / nixpkgsConfig builder arguments instead.";
+              }
+            )
             bootstrapModule
             systemHomesModule
           ]

@@ -2,6 +2,7 @@
 # knobs exercised by the kitchen-sink `custom` host, buildNixosConfigurations
 # key handling, and nixpkgs patching.
 {
+  lib,
   myLib,
   inputs,
   system,
@@ -63,6 +64,19 @@
     custom.config.system.nixos.tags == [ "kitchen-sink" ] && laptop.config.system.nixos.tags == [ ];
   system-type-special-arg = custom._module.specialArgs.systemType == "server";
   special-args-override-wins = custom._module.specialArgs.tags == [ "overridden-tag" ];
+
+  # module-level nixpkgs.overlays is INERT (the builder provides pkgs):
+  # a NixOS warning must surface it
+  inert-nixpkgs-options-warn =
+    builtins.any (w: lib.hasInfix "INERT" w)
+      (myLib.nixosConfigurationsBuilder {
+        inherit inputs system;
+        hostname = "inertprobe";
+        modules = [
+          (exampleDir + "/hosts/server/configuration.nix")
+          { nixpkgs.overlays = [ (final: prev: { }) ]; }
+        ];
+      }).inertprobe.config.warnings;
   root-path-defaults-to-self = toString laptop._module.specialArgs.rootPath == toString exampleDir;
   additional-modules-applied = custom.config.users.groups ? from-additional-module;
 
