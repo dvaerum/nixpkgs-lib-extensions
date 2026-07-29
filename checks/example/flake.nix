@@ -53,13 +53,13 @@
         "grace@*" = ./users/grace-base; # on every host
         "grace" = ./users/grace-plain; # IGNORED: shadowed by grace@* (warns)
       };
-    in
-    {
-      # The attribute keys are the hostnames. Each host's own configuration
-      # is found by convention: ./hosts/<hostname>.nix (laptop) or
-      # ./hosts/<hostname>/configuration.nix (server) -- `modules` is only
-      # needed for anything beyond that.
-      nixosConfigurations = extLib.buildNixosConfigurations {
+
+      # ONE host list feeds both builders below. The attribute keys are
+      # the hostnames; each host's own configuration is found by
+      # convention: ./hosts/<hostname>.nix (laptop) or
+      # ./hosts/<hostname>/configuration.nix (server) -- `modules` is
+      # only needed for anything beyond that.
+      hosts = {
         # Arguments shared by every host. `_defaults` can never be a
         # hostname (hostnames cannot contain `_`). A host entry overrides
         # per argument -- and for "shared base plus per-host extras" use
@@ -67,6 +67,12 @@
         # `additionalModules`/`additionalSpecialArgs` on the host.
         _defaults = {
           inherit inputs system homeConfigurations;
+          # Added to every user's home configuration on every host
+          # (asserted by the checks; adjust freely). Ignored by
+          # buildNixosConfigurations.
+          homeSharedModules = [
+            { programs.direnv.enable = true; }
+          ];
         };
 
         # A host with users, home configurations and the login bootstrap.
@@ -82,16 +88,12 @@
           homeConfigurations = { };
         };
       };
+    in
+    {
+      nixosConfigurations = extLib.buildNixosConfigurations hosts;
 
-      # The standalone home-manager outputs for laptop, from the same registry.
-      homeConfigurations = extLib.homeConfigurationsBuilder {
-        inherit inputs system homeConfigurations;
-        hostname = "laptop";
-        # Added to every user's home configuration on this host
-        # (asserted by the checks; adjust freely).
-        homeSharedModules = [
-          { programs.direnv.enable = true; }
-        ];
-      };
+      # The standalone home-manager outputs for EVERY host, "user@host"
+      # keyed -- exactly what the login bootstrap activates.
+      homeConfigurations = extLib.buildHomeConfigurations hosts;
     };
 }

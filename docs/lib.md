@@ -237,6 +237,73 @@ importIfNixOr :: pkgs -> Path -> Any -> Any
 # nixos
 
 
+## `lib.nixos.buildHomeConfigurations`
+
+Build the standalone home-manager configurations for ALL hosts in one
+call: applies `homeConfigurationsBuilder` to every entry of the SAME
+hosts attrset `buildNixosConfigurations` takes (including `_defaults`
+and the allowlist validation) and merges the results into one
+`{ "<user>@<hostname>" = ...; }` set — assignable to a flake's
+`homeConfigurations` output directly.
+
+This produces exactly the outputs the login bootstrap activates
+(`home-manager switch --flake <flakeRef>#<user>@<host>`), for every
+host, from a single host list:
+
+```nix
+let
+  hosts = {
+    _defaults = { inherit inputs system homeConfigurations; };
+    laptop = { };
+    server = { homeConfigurations = { }; };
+  };
+in
+{
+  nixosConfigurations = extLib.buildNixosConfigurations hosts;
+  homeConfigurations = extLib.buildHomeConfigurations hosts;
+}
+```
+
+NixOS-only arguments in the attrset (`modules`, `userModuleFn`, ...)
+are accepted and ignored here, just as the home-only
+`homeSharedModules` is ignored by `buildNixosConfigurations`. Key
+collisions between hosts are impossible: every produced key carries
+its own `@<hostname>` suffix.
+
+### Example
+
+```nix
+# extLib = inputs.nixpkgs-lib-extensions.lib
+extLib.buildHomeConfigurations {
+  _defaults = {
+    inherit inputs system;
+    homeConfigurations."alice" = ./users/alice;
+  };
+  laptop = { };
+  desktop = { };
+}
+=>
+{ "alice@laptop" = <homeManagerConfiguration>;
+  "alice@desktop" = <homeManagerConfiguration>; }
+```
+
+### Type
+
+```
+buildHomeConfigurations ::
+  { <hostname> = Attribute; } -> { "<user>@<hostname>" = HomeManagerConfiguration; }
+```
+
+### Arguments
+
+- **hosts**
+  The same attrset accepted by `buildNixosConfigurations` (same
+  allowlists, same `_defaults` semantics); see there for the full
+  key reference.
+
+
+
+
 ## `lib.nixos.buildNixosConfigurations`
 
 Build several NixOS systems in one call: applies
@@ -254,6 +321,10 @@ or attrsets. For "shared base plus per-host extras" use the layered
 argument pairs instead -- `modules` (in `_defaults`) with
 `additionalModules` (per host), and `specialArgs` with
 `additionalSpecialArgs`; the pairs concatenate/merge by design.
+
+The same hosts attrset is designed to also feed
+`buildHomeConfigurations`, producing the matching `homeConfigurations`
+outputs the login bootstrap needs -- define it once, pass it to both.
 
 ### Example
 
@@ -313,6 +384,8 @@ buildNixosConfigurations ::
   - `userModuleFn`
   - `excludeModuleInputs`
   - `homeConfigurations`
+  - `homeSharedModules` (used by `buildHomeConfigurations`; accepted
+    and ignored here, so one hosts attrset can feed both)
   - `flakeRef`
   - `reactivateEveryLogin`
   - `tags`

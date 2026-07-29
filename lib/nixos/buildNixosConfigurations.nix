@@ -1,6 +1,9 @@
 # This file is a function-file: the lib loader (lib/default.nix) applies it to
 # `extLib` — the fully assembled nixpkgs-lib-extensions lib.
 extLib:
+let
+  shared = import ./internal/shared.nix extLib;
+in
 {
   /**
     Build several NixOS systems in one call: applies
@@ -18,6 +21,10 @@ extLib:
     argument pairs instead -- `modules` (in `_defaults`) with
     `additionalModules` (per host), and `specialArgs` with
     `additionalSpecialArgs`; the pairs concatenate/merge by design.
+
+    The same hosts attrset is designed to also feed
+    `buildHomeConfigurations`, producing the matching `homeConfigurations`
+    outputs the login bootstrap needs -- define it once, pass it to both.
 
     # Example
 
@@ -77,6 +84,8 @@ extLib:
     : - `userModuleFn`
     : - `excludeModuleInputs`
     : - `homeConfigurations`
+    : - `homeSharedModules` (used by `buildHomeConfigurations`; accepted
+    :   and ignored here, so one hosts attrset can feed both)
     : - `flakeRef`
     : - `reactivateEveryLogin`
     : - `tags`
@@ -96,87 +105,14 @@ extLib:
   */
   buildNixosConfigurations =
     hosts:
+    # validation (allowlists, hostname conflicts) is shared with
+    # buildHomeConfigurations: one hosts attrset feeds both
     let
-      defaults = hosts._defaults or { };
-      # ALLOWLIST: every nixosConfigurationsBuilder argument that may be
-      # defaulted. A key outside this list throws -- the builder itself
-      # ignores unknown arguments (its pattern ends in `...`), so a typo
-      # like `homeConfiguration` would otherwise be dropped silently.
-      # Keep in sync with the argument list in the doc comment above and
-      # in nixosConfigurationsBuilder.
-      allowedDefaults = [
-        "inputs"
-        "system"
-        "nixpkgs"
-        "rootPath"
-        "modules"
-        "userModuleFn"
-        "excludeModuleInputs"
-        "homeConfigurations"
-        "flakeRef"
-        "reactivateEveryLogin"
-        "tags"
-        "systemType"
-        "patches"
-        "extraOverlays"
-        "allowedUnfreePackages"
-        "permittedInsecurePackages"
-        "nixpkgsConfig"
-        "specialArgs"
-      ];
-      complaint =
-        name:
-        if name == "hostname" then
-          "- `hostname`: never a default -- it comes from each attribute key. Drop it."
-        else if builtins.substring 0 10 name == "additional" then
-          "- `${name}`: the `additional*` arguments are the per-host halves of the layered pairs (modules/additionalModules, specialArgs/additionalSpecialArgs). Set the base half in `_defaults`, the additional half on the host entry."
-        else
-          "- `${name}`: not a nixosConfigurationsBuilder argument (typo?). `_defaults` accepts: ${builtins.concatStringsSep ", " allowedDefaults}.";
-      badDefaults = builtins.filter (k: !(builtins.elem k allowedDefaults)) (
-        builtins.attrNames defaults
-      );
-
-      # Host entries share the allowlist, extended by the per-host-only
-      # keys: the additional* halves of the layered pairs, and a redundant
-      # `hostname` (tolerated when equal to the key, checked below).
-      allowedHostArgs = allowedDefaults ++ [
-        "hostname"
-        "additionalModules"
-        "additionalSpecialArgs"
-      ];
-      hostEntries = builtins.removeAttrs hosts [ "_defaults" ];
-      badHostKeys = builtins.concatLists (
-        builtins.attrValues (
-          builtins.mapAttrs (
-            hostname: args:
-            map (
-              k:
-              "- `${hostname}`: `${k}` is not a nixosConfigurationsBuilder argument (typo?). Host entries accept: ${builtins.concatStringsSep ", " allowedHostArgs}."
-            ) (builtins.filter (k: !(builtins.elem k allowedHostArgs)) (builtins.attrNames args))
-          ) hostEntries
-        )
-      );
+      split = shared.splitHostsArgs "buildNixosConfigurations" hosts;
     in
-    if badDefaults != [ ] then
-      throw ''
-        buildNixosConfigurations: invalid `_defaults` key(s):
-        ${builtins.concatStringsSep "\n" (map complaint badDefaults)}
-      ''
-    else if badHostKeys != [ ] then
-      throw ''
-        buildNixosConfigurations: invalid host entry key(s):
-        ${builtins.concatStringsSep "\n" badHostKeys}
-      ''
-    else
-      builtins.mapAttrs (
-        hostname: args:
-        if args ? hostname && args.hostname != hostname then
-          throw ''
-            buildNixosConfigurations: the entry `${hostname}` also sets
-            `hostname = "${args.hostname}"`. The attribute key is the
-            hostname; drop the inner one.
-          ''
-        else
-          (extLib.nixosConfigurationsBuilder (defaults // args // { inherit hostname; })).${hostname}
-      ) hostEntries;
+    builtins.mapAttrs (
+      hostname: args:
+      (extLib.nixosConfigurationsBuilder (split.defaults // args // { inherit hostname; }))
+      .${hostname}
+    ) split.hostEntries;
 }

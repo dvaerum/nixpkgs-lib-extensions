@@ -428,6 +428,88 @@ let
         autoHomeModules
         ;
     };
+  # ONE hosts attrset is meant to feed BOTH buildNixosConfigurations and
+  # buildHomeConfigurations, so both validate against the same allowlists:
+  # arguments only one side uses (modules, userModuleFn, homeSharedModules,
+  # ...) are accepted everywhere and ignored by the other side.
+  # Keep in sync with the documented argument lists.
+  allowedDefaultArgs = [
+    "inputs"
+    "system"
+    "nixpkgs"
+    "rootPath"
+    "modules"
+    "userModuleFn"
+    "excludeModuleInputs"
+    "homeConfigurations"
+    "homeSharedModules"
+    "flakeRef"
+    "reactivateEveryLogin"
+    "tags"
+    "systemType"
+    "patches"
+    "extraOverlays"
+    "allowedUnfreePackages"
+    "permittedInsecurePackages"
+    "nixpkgsConfig"
+    "specialArgs"
+  ];
+  allowedHostArgs = allowedDefaultArgs ++ [
+    "hostname"
+    "additionalModules"
+    "additionalSpecialArgs"
+  ];
+
+  # Validate a hosts attrset (the shared input of both build* functions)
+  # and split it into { defaults, hostEntries }. Throws, naming fnName,
+  # on: a non-allowlisted `_defaults` key (with special explanations for
+  # `hostname` and the `additional*` per-host halves), a non-allowlisted
+  # host entry key, or a host entry whose inner `hostname` conflicts
+  # with its attribute key (a redundant EQUAL one is tolerated).
+  splitHostsArgs =
+    fnName: hosts:
+    let
+      defaults = hosts._defaults or { };
+      defaultComplaint =
+        name:
+        if name == "hostname" then
+          "- `hostname`: never a default -- it comes from each attribute key. Drop it."
+        else if builtins.substring 0 10 name == "additional" then
+          "- `${name}`: the `additional*` arguments are the per-host halves of the layered pairs (modules/additionalModules, specialArgs/additionalSpecialArgs). Set the base half in `_defaults`, the additional half on the host entry."
+        else
+          "- `${name}`: not a builder argument (typo?). `_defaults` accepts: ${builtins.concatStringsSep ", " allowedDefaultArgs}.";
+      badDefaults = map defaultComplaint (
+        builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames defaults)
+      );
+      hostEntries = builtins.removeAttrs hosts [ "_defaults" ];
+      badHostKeys = builtins.concatLists (
+        builtins.attrValues (
+          builtins.mapAttrs (
+            hostname: args:
+            map (
+              k:
+              "- `${hostname}`: `${k}` is not a builder argument (typo?). Host entries accept: ${builtins.concatStringsSep ", " allowedHostArgs}."
+            ) (builtins.filter (k: !(builtins.elem k allowedHostArgs)) (builtins.attrNames args))
+            ++ (
+              if args ? hostname && args.hostname != hostname then
+                [
+                  "- `${hostname}`: also sets `hostname = \"${args.hostname}\"`. The attribute key is the hostname; drop the inner one."
+                ]
+              else
+                [ ]
+            )
+          ) hostEntries
+        )
+      );
+      problems = badDefaults ++ badHostKeys;
+    in
+    if problems != [ ] then
+      throw ''
+        ${fnName}: invalid hosts attrset:
+        ${builtins.concatStringsSep "\n" problems}
+      ''
+    else
+      { inherit defaults hostEntries; };
 in
 {
   inherit
@@ -437,5 +519,8 @@ in
     usersWithHome
     pickExported
     mkContext
+    allowedDefaultArgs
+    allowedHostArgs
+    splitHostsArgs
     ;
 }

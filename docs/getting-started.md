@@ -145,30 +145,32 @@ hostname. In your flake the full wiring looks like this (the scaffolded
         # the registry from the previous section
         "alice" = ./users/alice;
       };
+      # ONE host list for both outputs
+      hosts = {
+        # shared by every host; a host
+        # entry overrides per argument
+        _defaults = {
+          inherit inputs system
+            homeConfigurations;
+        };
+        laptop = { };
+        server = {
+          # override: no registry,
+          # so no users on server
+          homeConfigurations = { };
+        };
+      };
     in
     {
       nixosConfigurations =
-        extLib.buildNixosConfigurations {
-          # shared by every host; a host
-          # entry overrides per argument
-          _defaults = {
-            inherit inputs system
-              homeConfigurations;
-          };
-          laptop = { };
-          server = {
-            # override: no registry,
-            # so no users on server
-            homeConfigurations = { };
-          };
-        };
+        extLib.buildNixosConfigurations
+          hosts;
 
+      # "user@host" outputs for every
+      # host: what the bootstrap runs
       homeConfigurations =
-        extLib.homeConfigurationsBuilder {
-          inherit inputs system
-            homeConfigurations;
-          hostname = "laptop";
-        };
+        extLib.buildHomeConfigurations
+          hosts;
     };
 }
 ```
@@ -249,20 +251,12 @@ tree.
 
 For this to work your flake must export the home configurations for
 EVERY host that has users -- the bootstrap on host X activates
-`<flakeRef>#<user>@X`, which must exist. One builder call per host,
-merged:
-
-```nix
-homeConfigurations =
-  extLib.homeConfigurationsBuilder {
-    inherit inputs system homeConfigurations;
-    hostname = "laptop";
-  }
-  // extLib.homeConfigurationsBuilder {
-    inherit inputs system homeConfigurations;
-    hostname = "desktop";
-  };
-```
+`<flakeRef>#<user>@X`, which must exist. If that output is missing,
+the service fails with "flake ... does not provide attribute
+homeConfigurations..." on first login. The skeleton above covers it:
+`buildHomeConfigurations hosts` produces the homes for every host in
+the same list. (The underlying per-host function is
+`homeConfigurationsBuilder`, if you need a single host's homes.)
 
 ### The bootstrap without the builders
 

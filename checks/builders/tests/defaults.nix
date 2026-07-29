@@ -101,4 +101,30 @@ in
       users = [ "root" ];
     };
   });
+
+  # buildHomeConfigurations: the SAME hosts attrset produces the merged
+  # "user@host" set across all hosts, with per-host registry overrides
+  build-home-configurations =
+    let
+      homes = myLib.buildHomeConfigurations {
+        _defaults = {
+          inherit inputs system;
+          homeConfigurations."alice" = exampleDir + "/users/alice";
+          # nixos-only argument: must be accepted and ignored here
+          modules = [ ];
+        };
+        hostA = { };
+        hostB = {
+          homeConfigurations."bob@hostB" = exampleDir + "/users/bob";
+        };
+      };
+    in
+    homes ? "alice@hostA" && homes ? "bob@hostB" && !(homes ? "alice@hostB");
+
+  # ... and shares the validation: the same typo throws there too
+  build-home-configurations-allowlisted = throws (myLib.buildHomeConfigurations {
+    h = {
+      users = [ "root" ];
+    };
+  });
 }
