@@ -129,11 +129,11 @@ in
     in
     builtins.mapAttrs (
       hostname: args:
-      (extLib.nixosConfigurationsBuilder (
+      extLib.nixosConfigurationsBuilder (
         split.defaults
         // args
         // { inherit hostname; }
         // (if builtins.intersectAttrs coreArgSet args == { } then { _core = defaultsCore; } else { })
-      )).${hostname}
+      )
     ) split.hostEntries;
 }

@@ -693,17 +693,20 @@ extLib.nixosConfigurationsBuilder {
   loginUsers = [ "bob" ];
 }
 =>
-{ laptop = <nixosSystem>; }
+<nixosSystem>
 ```
 
-Assign the result to your flake's `nixosConfigurations` output, merging
-several hosts with `//` — or use `buildNixosConfigurations` to build a
-whole set of hosts in one call.
+The system is returned BARE (like `homeConfigurationsBuilder`), so
+assign it to your flake's `nixosConfigurations` output under an
+explicit key, e.g.
+`nixosConfigurations.laptop = extLib.nixosConfigurationsBuilder { ... }`
+— or use `buildNixosConfigurations` to build a whole keyed set of
+hosts in one call.
 
 ### Type
 
 ```
-nixosConfigurationsBuilder :: Attribute -> Attribute
+nixosConfigurationsBuilder :: Attribute -> NixosSystem
 ```
 
 ### Arguments
@@ -713,7 +716,7 @@ nixosConfigurationsBuilder :: Attribute -> Attribute
   extensions and `nixpkgs-*` variants.
 
 - **hostname**
-  The host name; also the key of the returned attrset.
+  The host name.
 
 - **system**
   The system double, e.g. `"x86_64-linux"`.

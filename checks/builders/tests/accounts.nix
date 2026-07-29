@@ -54,7 +54,7 @@ in
           hostname = "rootentry";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
           userRegistry."root" = exampleDir + "/users/alice";
-        }).rootentry.config;
+        }).config;
     in
     !cfg.users.users.root.isNormalUser
     && cfg.users.users.root.home == "/root"
@@ -85,6 +85,6 @@ in
         userRegistry."alice" = exampleDir + "/users/alice";
         loginUsers = [ "alice" ];
         userModuleFn = null;
-      }).noaccounts.config.users.users ? alice
+      }).config.users.users ? alice
     );
 }

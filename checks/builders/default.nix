@@ -193,7 +193,7 @@ let
 
   # A kitchen-sink host covering the config knobs the example doesn't use.
   custom =
-    (myLib.nixosConfigurationsBuilder {
+    myLib.nixosConfigurationsBuilder {
       inherit inputs system;
       hostname = "custom";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -218,7 +218,7 @@ let
       # user-supplied specialArgs override the builder-assembled ones
       # (tags would otherwise be the [] default)
       specialArgs.tags = [ "overridden-tag" ];
-    }).custom;
+    };
 
   # A host built from a PATCHED nixpkgs; the marker file proves the system
   # was evaluated from the patched tree (forces building the patched source).
@@ -232,14 +232,13 @@ let
   # nixpkgs tree during evaluation (IFD), which must happen on the machine
   # running the checks -- a floating system would break `--all-systems`
   # evaluation for platforms this machine cannot build.
-  patched =
-    (myLib.nixosConfigurationsBuilder {
-      inherit inputs;
-      system = "x86_64-linux";
-      hostname = "patched";
-      modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-      patches = [ markerPatch ];
-    }).patched;
+  patched = myLib.nixosConfigurationsBuilder {
+    inherit inputs;
+    system = "x86_64-linux";
+    hostname = "patched";
+    modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+    patches = [ markerPatch ];
+  };
 
   # The bootstrap module used directly (without nixosConfigurationsBuilder);
   # `args` overrides the defaults below.

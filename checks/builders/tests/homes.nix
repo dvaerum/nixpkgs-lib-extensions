@@ -81,7 +81,7 @@
         hostname = "nohm";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         userRegistry."alice" = exampleDir + "/users/alice";
-      }).nohm.options
+      }).options
       ? home-manager
     );
 }

@@ -107,7 +107,7 @@
           hostname = "nullreg";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
           userRegistry = null;
-        }).nullreg;
+        });
     in
     sys._module.specialArgs.listOfUsernames == [ ]
     && !(sys.config.systemd.user.services ? home-manager-bootstrap);

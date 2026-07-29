@@ -31,7 +31,7 @@
       hostname = "typedhost";
       systemType = "vm";
       rootPath = fixturesDir + "/typed-root";
-    }).typedhost.config.users.groups ? typed-host-marker;
+    }).config.users.groups ? typed-host-marker;
   # ... and without it the type folders are NOT searched (the same host
   # name resolves to nothing under the plain hosts/ of that root)
   untyped-ignores-type-folders =
@@ -40,7 +40,7 @@
         inherit inputs system;
         hostname = "typedhost";
         rootPath = fixturesDir + "/typed-root";
-      }).typedhost.config.users.groups ? typed-host-marker
+      }).config.users.groups ? typed-host-marker
     );
 
   # both forms existing for one host is ambiguous -> throw
@@ -50,7 +50,7 @@
         inherit inputs system;
         hostname = "both";
         rootPath = invalidFixturesDir + "/root-both";
-      }).both.config.networking.hostName
+      }).config.networking.hostName
     ).success;
 
   # ── kitchen-sink host: the remaining config knobs ──
@@ -76,7 +76,7 @@
         inherit system;
         hostname = "noroot";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-      }).noroot.config.networking.hostName
+      }).config.networking.hostName
     ).success;
 
   # module-level nixpkgs.overlays is INERT (the builder provides pkgs):
@@ -90,7 +90,7 @@
           (exampleDir + "/hosts/server/configuration.nix")
           { nixpkgs.overlays = [ (final: prev: { }) ]; }
         ];
-      }).inertprobe.config.warnings;
+      }).config.warnings;
   root-path-defaults-to-self = toString laptop._module.specialArgs.rootPath == toString exampleDir;
   additional-modules-applied = custom.config.users.groups ? from-additional-module;
 

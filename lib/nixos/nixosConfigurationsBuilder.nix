@@ -102,17 +102,20 @@ in
       loginUsers = [ "bob" ];
     }
     =>
-    { laptop = <nixosSystem>; }
+    <nixosSystem>
     ```
 
-    Assign the result to your flake's `nixosConfigurations` output, merging
-    several hosts with `//` — or use `buildNixosConfigurations` to build a
-    whole set of hosts in one call.
+    The system is returned BARE (like `homeConfigurationsBuilder`), so
+    assign it to your flake's `nixosConfigurations` output under an
+    explicit key, e.g.
+    `nixosConfigurations.laptop = extLib.nixosConfigurationsBuilder { ... }`
+    — or use `buildNixosConfigurations` to build a whole keyed set of
+    hosts in one call.
 
     # Type
 
     ```
-    nixosConfigurationsBuilder :: Attribute -> Attribute
+    nixosConfigurationsBuilder :: Attribute -> NixosSystem
     ```
 
     # Arguments
@@ -122,7 +125,7 @@ in
     : extensions and `nixpkgs-*` variants.
 
     hostname
-    : The host name; also the key of the returned attrset.
+    : The host name.
 
     system
     : The system double, e.g. `"x86_64-linux"`.
@@ -424,43 +427,42 @@ in
         homeManager = home-manager;
       };
     in
-    # Returned as { <hostname> = <system>; }: assign/merge the result into
-    # your flake's `nixosConfigurations` output yourself.
-    builtins.seq validArgs {
-      ${hostname} = import "${selectedSrc}/nixos/lib/eval-config.nix" {
-        inherit system lib pkgs;
-        specialArgs = mySpecialArguments // {
-          listOfUsernames = users;
-        };
-        modules =
-          [
-            (
-              { config, ... }:
-              {
-                _file = ./nixosConfigurationsBuilder.nix;
-                networking.hostName = lib.mkDefault hostname;
-                # host tags label the boot entry too; a host setting the
-                # option itself overrides this
-                system.nixos.tags = lib.mkDefault tags;
-                # The builder provides `pkgs`, so module-level
-                # nixpkgs.overlays / nixpkgs.config never take effect --
-                # a completely idiomatic NixOS pattern silently doing
-                # nothing (third-party default modules do this too).
-                # Surface it instead of staying quiet.
-                warnings =
-                  lib.optional (config.nixpkgs.overlays != [ ] || config.nixpkgs.config != { })
-                    "nixpkgs-lib-extensions: a module on host `${hostname}` sets nixpkgs.overlays or nixpkgs.config, but the builder provides the package set -- those options are INERT here. Use the extraOverlays / nixpkgsConfig builder arguments instead.";
-              }
-            )
-            bootstrapModule
-            systemHomesModule
-          ]
-          ++ autoNixosModules
-          ++ autoHostModules
-          ++ modules
-          ++ perUserModules
-          ++ userNixosConfigs
-          ++ additionalModules;
+    # Returned BARE (like homeConfigurationsBuilder): assign it to
+    # `nixosConfigurations.<hostname>` yourself, or let
+    # buildNixosConfigurations key a whole set of hosts.
+    builtins.seq validArgs (import "${selectedSrc}/nixos/lib/eval-config.nix" {
+      inherit system lib pkgs;
+      specialArgs = mySpecialArguments // {
+        listOfUsernames = users;
       };
-    };
+      modules =
+        [
+          (
+            { config, ... }:
+            {
+              _file = ./nixosConfigurationsBuilder.nix;
+              networking.hostName = lib.mkDefault hostname;
+              # host tags label the boot entry too; a host setting the
+              # option itself overrides this
+              system.nixos.tags = lib.mkDefault tags;
+              # The builder provides `pkgs`, so module-level
+              # nixpkgs.overlays / nixpkgs.config never take effect --
+              # a completely idiomatic NixOS pattern silently doing
+              # nothing (third-party default modules do this too).
+              # Surface it instead of staying quiet.
+              warnings =
+                lib.optional (config.nixpkgs.overlays != [ ] || config.nixpkgs.config != { })
+                  "nixpkgs-lib-extensions: a module on host `${hostname}` sets nixpkgs.overlays or nixpkgs.config, but the builder provides the package set -- those options are INERT here. Use the extraOverlays / nixpkgsConfig builder arguments instead.";
+            }
+          )
+          bootstrapModule
+          systemHomesModule
+        ]
+        ++ autoNixosModules
+        ++ autoHostModules
+        ++ modules
+        ++ perUserModules
+        ++ userNixosConfigs
+        ++ additionalModules;
+    });
 }

@@ -181,12 +181,11 @@ in
           nixpkgsConfig.cudaSupport = true;
         };
       };
-      reference =
-        (myLib.nixosConfigurationsBuilder {
-          inherit inputs system;
-          hostname = "plainhost";
-          tags = [ "shared-core" ];
-        }).plainhost;
+      reference = myLib.nixosConfigurationsBuilder {
+        inherit inputs system;
+        hostname = "plainhost";
+        tags = [ "shared-core" ];
+      };
     in
     built.cudahost.pkgs.config.cudaSupport
     && !built.plainhost.pkgs.config.cudaSupport

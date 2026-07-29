@@ -92,7 +92,7 @@
         (exampleDir + "/hosts/server/configuration.nix")
         ({ lib, ... }: { users.groups.${lib.fake-module-input.probeGroup} = { }; })
       ];
-    }).libprobe.config.users.groups ? from-lib-probe;
+    }).config.users.groups ? from-lib-probe;
 
   # ... and into pkgs.lib; nixpkgs trees are NOT namespaced (their lib
   # IS the base)
@@ -146,7 +146,7 @@
       hostname = "scprobe";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
       inputSpecialCases."not-nur" = v: { nixosModules = v.modules.nixos or { }; };
-    }).scprobe.config.users.groups ? from-notnur-module;
+    }).config.users.groups ? from-notnur-module;
   # ... and double as the per-input opt-out for any channel
   input-special-cases-opt-out =
     !(
@@ -155,7 +155,7 @@
         hostname = "scoptout";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         inputSpecialCases."fake-module-input" = _: { nixosModules = { }; };
-      }).scoptout.config.users.groups
+      }).config.users.groups
       ? from-input-module
     );
 
