@@ -196,6 +196,7 @@ let
       allowedUnfreePackages ? [ ],
       permittedInsecurePackages ? [ ],
       specialArgs ? { },
+      additionalSpecialArgs ? { },
       desktopEnvironment ? "plasma",
       systemType ? null,
       rootPath ? (inputs.self or ./.),
@@ -392,7 +393,11 @@ let
             ;
         }
         // pkgsFromInputs
-        // specialArgs;
+        // specialArgs
+        # the per-host extension slot: layered after specialArgs so that
+        # `_defaults.specialArgs` and a host's additionalSpecialArgs combine
+        # (mirroring modules/additionalModules)
+        // additionalSpecialArgs;
     in
     {
       inherit

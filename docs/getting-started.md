@@ -149,13 +149,17 @@ hostname. In your flake the full wiring looks like this (the scaffolded
     {
       nixosConfigurations =
         extLib.buildNixosConfigurations {
-          laptop = {
+          # shared by every host; a host
+          # entry overrides per argument
+          _defaults = {
             inherit inputs system
               homeConfigurations;
           };
+          laptop = { };
           server = {
-            # no registry: no users
-            inherit inputs system;
+            # override: no registry,
+            # so no users on server
+            homeConfigurations = { };
           };
         };
 
@@ -171,6 +175,15 @@ hostname. In your flake the full wiring looks like this (the scaffolded
 
 Later snippets in this guide assume these bindings (`extLib`,
 `inputs`, `system`, the registry) from this skeleton.
+
+The reserved `_defaults` entry (never a valid hostname -- hostnames
+cannot contain `_`) supplies arguments to every host. Merging is per
+argument and the host entry wins entirely -- lists and attrsets are
+NOT deep-merged. For "shared base plus per-host extras" use the
+layered pairs instead: `modules` and `specialArgs` in `_defaults`,
+`additionalModules` and `additionalSpecialArgs` on the host -- the
+pairs combine by design. `_defaults` must not set `hostname` or the
+`additional*` arguments (it throws).
 
 The host's own configuration is imported by convention, relative to
 your flake root:

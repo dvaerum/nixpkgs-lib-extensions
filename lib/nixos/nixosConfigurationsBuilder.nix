@@ -119,6 +119,9 @@ in
 
     additionalModules
     : Further NixOS modules, appended after `modules`. Default `[ ]`.
+    : With `buildNixosConfigurations` this is the per-host half of the
+    : layered pair: shared modules go in `_defaults.modules`, a host's
+    : extras go here.
 
     userModuleFn
     : A function `username -> NixOS module`, applied for each user derived from
@@ -180,8 +183,14 @@ in
     : Default `[ ]`.
 
     specialArgs
-    : Extra specialArgs merged LAST, overriding anything the builder
-    : assembled (including `inputs`, `rootPath`, ...). Default `{ }`.
+    : Extra specialArgs merged after everything the builder assembled
+    : (including `inputs`, `rootPath`, ...), overriding it. Default `{ }`.
+
+    additionalSpecialArgs
+    : Further specialArgs merged after `specialArgs`, overriding it on
+    : conflicts. Default `{ }`. With `buildNixosConfigurations` this is
+    : the per-host half of the layered pair: shared specialArgs go in
+    : `_defaults.specialArgs`, a host's extras go here.
 
     systemType
     : Free-form host classification, e.g. `"vm"` or `"server"`. Passed to

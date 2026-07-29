@@ -11,20 +11,36 @@ extLib:
     unique); an entry that also sets a *conflicting* inner `hostname`
     throws.
 
+    The reserved key `_defaults` (never a hostname -- hostnames cannot
+    contain `_`) provides arguments for every host. Merging is
+    per-argument and a host entry wins entirely: no deep-merging of lists
+    or attrsets. For "shared base plus per-host extras" use the layered
+    argument pairs instead -- `modules` (in `_defaults`) with
+    `additionalModules` (per host), and `specialArgs` with
+    `additionalSpecialArgs`; the pairs concatenate/merge by design.
+    `_defaults` must therefore not set `hostname`, `additionalModules` or
+    `additionalSpecialArgs` (throws) -- those belong to host entries.
+
     # Example
 
     ```nix
     # in your flake:
     # extLib = inputs.nixpkgs-lib-extensions.lib
     nixosConfigurations = extLib.buildNixosConfigurations {
+      _defaults = {
+        inherit inputs system homeConfigurations;
+        modules = [ ./common/base.nix ];
+      };
       # each host's config is found by convention:
       # ./hosts/<hostname>.nix or
       # ./hosts/<hostname>/configuration.nix
       laptop = {
-        inherit inputs system homeConfigurations;
+        # extends _defaults.modules
+        additionalModules = [ ./common/laptop-extras.nix ];
       };
       server = {
-        inherit inputs system;
+        # per-argument override: replaces the registry entirely
+        homeConfigurations = { };
       };
     };
     =>
@@ -43,19 +59,33 @@ extLib:
     hosts
     : Attribute set mapping hostnames to `nixosConfigurationsBuilder`
     : argument sets. The key provides `hostname`, so entries do not set
-    : it themselves.
+    : it themselves. The reserved `_defaults` entry is merged under every
+    : host's arguments (host wins per argument).
   */
   buildNixosConfigurations =
     hosts:
-    builtins.mapAttrs (
-      hostname: args:
-      if args ? hostname && args.hostname != hostname then
-        throw ''
-          buildNixosConfigurations: the entry `${hostname}` also sets
-          `hostname = "${args.hostname}"`. The attribute key is the
-          hostname; drop the inner one.
-        ''
-      else
-        (extLib.nixosConfigurationsBuilder (args // { inherit hostname; })).${hostname}
-    ) hosts;
+    let
+      defaults = hosts._defaults or { };
+      forbidden = builtins.filter (k: defaults ? ${k}) [
+        "hostname"
+        "additionalModules"
+        "additionalSpecialArgs"
+      ];
+    in
+    if forbidden != [ ] then
+      throw ''
+        buildNixosConfigurations: `_defaults` must not set ${builtins.concatStringsSep ", " forbidden}. `hostname` comes from each attribute key; the `additional*` arguments are the per-host extension slots for the layered pairs (modules/additionalModules, specialArgs/additionalSpecialArgs) -- set the base half in `_defaults` instead.
+      ''
+    else
+      builtins.mapAttrs (
+        hostname: args:
+        if args ? hostname && args.hostname != hostname then
+          throw ''
+            buildNixosConfigurations: the entry `${hostname}` also sets
+            `hostname = "${args.hostname}"`. The attribute key is the
+            hostname; drop the inner one.
+          ''
+        else
+          (extLib.nixosConfigurationsBuilder (defaults // args // { inherit hostname; })).${hostname}
+      ) (builtins.removeAttrs hosts [ "_defaults" ]);
 }

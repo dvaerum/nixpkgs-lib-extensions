@@ -60,17 +60,26 @@
       # ./hosts/<hostname>/configuration.nix (server) -- `modules` is only
       # needed for anything beyond that.
       nixosConfigurations = extLib.buildNixosConfigurations {
+        # Arguments shared by every host. `_defaults` can never be a
+        # hostname (hostnames cannot contain `_`). A host entry overrides
+        # per argument -- and for "shared base plus per-host extras" use
+        # the layered pairs: `modules`/`specialArgs` here,
+        # `additionalModules`/`additionalSpecialArgs` on the host.
+        _defaults = {
+          inherit inputs system homeConfigurations;
+        };
+
         # A host with users, home configurations and the login bootstrap.
         # Accounts for the registry users are created automatically:
         # `userModuleFn` defaults to `extLib.normalUserModule`. Pass your own
         # `username -> module` function for richer accounts, or `null` to
         # disable account creation.
-        laptop = {
-          inherit inputs system homeConfigurations;
-        };
-        # A host without any user registry: no users, no bootstrap, no homes.
+        laptop = { };
+
+        # A host without any user registry: no users, no bootstrap, no
+        # homes -- the empty registry OVERRIDES the one from `_defaults`.
         server = {
-          inherit inputs system;
+          homeConfigurations = { };
         };
       };
 

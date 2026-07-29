@@ -247,20 +247,36 @@ Duplicate hostnames are impossible by construction (attrset keys are
 unique); an entry that also sets a *conflicting* inner `hostname`
 throws.
 
+The reserved key `_defaults` (never a hostname -- hostnames cannot
+contain `_`) provides arguments for every host. Merging is
+per-argument and a host entry wins entirely: no deep-merging of lists
+or attrsets. For "shared base plus per-host extras" use the layered
+argument pairs instead -- `modules` (in `_defaults`) with
+`additionalModules` (per host), and `specialArgs` with
+`additionalSpecialArgs`; the pairs concatenate/merge by design.
+`_defaults` must therefore not set `hostname`, `additionalModules` or
+`additionalSpecialArgs` (throws) -- those belong to host entries.
+
 ### Example
 
 ```nix
 # in your flake:
 # extLib = inputs.nixpkgs-lib-extensions.lib
 nixosConfigurations = extLib.buildNixosConfigurations {
+  _defaults = {
+    inherit inputs system homeConfigurations;
+    modules = [ ./common/base.nix ];
+  };
   # each host's config is found by convention:
   # ./hosts/<hostname>.nix or
   # ./hosts/<hostname>/configuration.nix
   laptop = {
-    inherit inputs system homeConfigurations;
+    # extends _defaults.modules
+    additionalModules = [ ./common/laptop-extras.nix ];
   };
   server = {
-    inherit inputs system;
+    # per-argument override: replaces the registry entirely
+    homeConfigurations = { };
   };
 };
 =>
@@ -279,7 +295,8 @@ buildNixosConfigurations ::
 - **hosts**
   Attribute set mapping hostnames to `nixosConfigurationsBuilder`
   argument sets. The key provides `hostname`, so entries do not set
-  it themselves.
+  it themselves. The reserved `_defaults` entry is merged under every
+  host's arguments (host wins per argument).
 
 
 
@@ -545,6 +562,9 @@ nixosConfigurationsBuilder :: Attribute -> Attribute
 
 - **additionalModules**
   Further NixOS modules, appended after `modules`. Default `[ ]`.
+  With `buildNixosConfigurations` this is the per-host half of the
+  layered pair: shared modules go in `_defaults.modules`, a host's
+  extras go here.
 
 - **userModuleFn**
   A function `username -> NixOS module`, applied for each user derived from
@@ -606,8 +626,14 @@ nixosConfigurationsBuilder :: Attribute -> Attribute
   Default `[ ]`.
 
 - **specialArgs**
-  Extra specialArgs merged LAST, overriding anything the builder
-  assembled (including `inputs`, `rootPath`, ...). Default `{ }`.
+  Extra specialArgs merged after everything the builder assembled
+  (including `inputs`, `rootPath`, ...), overriding it. Default `{ }`.
+
+- **additionalSpecialArgs**
+  Further specialArgs merged after `specialArgs`, overriding it on
+  conflicts. Default `{ }`. With `buildNixosConfigurations` this is
+  the per-host half of the layered pair: shared specialArgs go in
+  `_defaults.specialArgs`, a host's extras go here.
 
 - **systemType**
   Free-form host classification, e.g. `"vm"` or `"server"`. Passed to
