@@ -255,7 +255,10 @@ let
     );
   applyBootstrap = args: (builtins.head (bootstrapModuleFor args).imports) { inherit pkgs lib; };
 
-  # Helper: does building home configs with this registry throw?
+  # Helper: does building home configs with this registry throw? The
+  # entry under test is keyed `bad` and listed in loginUsers, so the
+  # throw path (resolving `bad`'s home.nix) is reached by intent, not
+  # by incidental strictness of the hosts-level plumbing.
   homesThrow =
     registry:
     !(builtins.tryEval (
@@ -263,6 +266,7 @@ let
         laptop = {
           inherit inputs system;
           userRegistry = registry;
+          loginUsers = [ "bad" ];
         };
       })
     )).success;

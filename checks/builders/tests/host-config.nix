@@ -59,6 +59,17 @@
   unfree-predicate-denies = !(custom.pkgs.config.allowUnfreePredicate { pname = "not-allowed"; });
   # nixpkgsConfig is the escape hatch into nixpkgs.config
   nixpkgs-config-reaches-pkgs = custom.pkgs.config.cudaSupport && !laptop.pkgs.config.cudaSupport;
+  # ... merged LAST: it can override what the allowedUnfreePackages
+  # shorthand produced
+  nixpkgs-config-overrides-unfree-shorthand =
+    (myLib.nixosConfigurationsBuilder {
+      inherit inputs system;
+      hostname = "unfreeoverride";
+      modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+      allowedUnfreePackages = [ ];
+      nixpkgsConfig.allowUnfreePredicate = _: true;
+    }).pkgs.config.allowUnfreePredicate
+      { pname = "anything"; };
   # tags also label the boot entry (mkDefault); no tags -> NixOS default []
   tags-set-as-system-nixos-tags =
     custom.config.system.nixos.tags == [ "kitchen-sink" ] && laptop.config.system.nixos.tags == [ ];

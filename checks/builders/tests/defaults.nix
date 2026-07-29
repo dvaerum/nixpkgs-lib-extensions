@@ -133,6 +133,31 @@ in
     in
     homes ? "alice@hostA" && homes ? "bob@hostB" && !(homes ? "alice@hostB") && !(homes ? "dave@hostB");
 
+  # cross-mechanism partition: ONE hosts attrset feeds BOTH build
+  # functions -- where alice is a login user (hostA) she gets the flake
+  # output and NO system home; where she is not (hostB) she gets the
+  # system home and no output
+  cross-mechanism-partition =
+    let
+      hosts = {
+        _defaults = {
+          inherit inputs system;
+          userRegistry."alice" = exampleDir + "/users/alice";
+        };
+        hostA = {
+          loginUsers = [ "alice" ];
+        };
+        hostB = { };
+      };
+      homes = myLib.buildHomeConfigurations hosts;
+      systems = myLib.buildNixosConfigurations hosts;
+    in
+    builtins.attrNames homes == [ "alice@hostA" ]
+    && systems.hostB.config.home-manager.users ? alice
+    # hostA has no system-managed homes at all, so the builder never even
+    # imports home-manager's NixOS module there
+    && !(systems.hostA.options ? home-manager);
+
   # ... and shares the validation: the same typo throws there too
   build-home-configurations-allowlisted = throws (myLib.buildHomeConfigurations {
     h = {

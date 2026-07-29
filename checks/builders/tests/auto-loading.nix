@@ -135,6 +135,25 @@
   self-lib-renamed-to-flake =
     laptop.pkgs.lib.flake.selfHelper == "from-self-lib" && !(laptop.pkgs.lib ? self);
 
+  # ... but an explicit input actually NAMED `flake` claims the name:
+  # its lib wins, self's lib is dropped (with a warning), never merged
+  explicit-flake-input-wins-over-self-lib =
+    let
+      pkgsLib =
+        (myLib.nixosConfigurationsBuilder {
+          inherit system;
+          inputs = inputs // {
+            flake = {
+              outPath = "/nix/store/fake-flake-input";
+              lib.marker = "explicit";
+            };
+          };
+          hostname = "flakeclaim";
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        }).pkgs.lib;
+    in
+    pkgsLib.flake.marker == "explicit" && !(pkgsLib.flake ? selfHelper);
+
   # auto-collection can be opted out per input name
   exclude-module-inputs-respected = !(custom.config.users.groups ? from-input-module);
 
