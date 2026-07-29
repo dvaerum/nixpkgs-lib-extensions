@@ -23,6 +23,8 @@
 
     # Used both as the `gen-docs` package and by the docs-up-to-date check
     # (which runs this exact generator and diffs against docs/lib.md).
+    # The script itself lives in scripts/gen-docs.sh;
+    # writeShellApplication shellcheck-verifies it at build time.
     genDocsFor = system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -31,71 +33,7 @@
         name = "gen-docs";
         bashOptions = [ "errexit" "nounset" ];
         runtimeInputs = [ pkgs.coreutils pkgs.gawk pkgs.nixdoc ];
-        text = /* bash */ ''
-          set -x
-
-          function de_dub_sec_func_lib {
-            awk '!/^# [^{]+{#sec-functions-library[^}]+}/ || !a[$0]++'
-          }
-
-          # nixdoc emits definition lists ("term" line + ": ..." lines) which
-          # only the NixOS manual toolchain understands; plain-markdown
-          # viewers (GitHub included) render the colons literally. Convert
-          # them to bulleted terms with indented descriptions instead.
-          function def_lists_to_bullets {
-            awk '
-              /^```/ { fenced = !fenced }
-              { lines[NR] = $0 }
-              END {
-                for (i = 1; i <= NR; i++) {
-                  in_fence = 0
-                  for (j = 1; j <= i; j++) if (lines[j] ~ /^```/) in_fence = !in_fence
-                  if (lines[i] ~ /^```/) { print lines[i]; continue }
-                  if (in_fence) { print lines[i]; continue }
-                  if (i < NR && lines[i] != "" && lines[i] != ":" && lines[i] !~ /^: / && lines[i+1] ~ /^: /) {
-                    print "- **" lines[i] "**"
-                  } else if (lines[i] ~ /^: ?/) {
-                    t = lines[i]; sub(/^: ?/, "", t); print "  " t
-                  } else {
-                    print lines[i]
-                  }
-                }
-              }
-            '
-          }
-
-          # nixdoc's {#anchor} heading attributes are NixOS-manual syntax;
-          # GitHub renders them literally, so drop them (GitHub derives its
-          # own anchors from the heading text). Runs AFTER de_dub_sec_func_lib,
-          # which matches on the anchor.
-          function strip_heading_anchors {
-            sed -E 's/^(#+ .*[^ ]) \{#[^}]+\}$/\1/'
-          }
-
-          {
-            cat <<'EOF'
-          # Library reference
-
-          Generated from the doc comments in `lib/` -- do not edit by hand;
-          run `nix run .#gen-docs` after changing a doc comment. New to the
-          builders? Start with the
-          [getting-started guide](getting-started.md).
-
-          EOF
-            find lib -iname "*.nix" -type f  | sort -V | while read -r nix_file; do
-              [[ "$nix_file" == "lib/default.nix" ]] && continue
-              # internal helper files are not part of the public lib
-              [[ "$nix_file" == */internal/* ]] && continue
-
-              folder_name="$(basename "$(dirname "$nix_file")")"
-              nixdoc --category "$folder_name" \
-                     --description "$folder_name" \
-                     --anchor-prefix "" \
-                     --file "$nix_file"
-
-            done | de_dub_sec_func_lib | def_lists_to_bullets | strip_heading_anchors
-          } > docs/lib.md
-        '';
+        text = builtins.readFile ./scripts/gen-docs.sh;
       };
 
   in {
