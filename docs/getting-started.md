@@ -282,10 +282,17 @@ modules = [
 An input's standalone `lib` export is added under its own name --
 `lib.NixVirt.domain` in any module (and `pkgs.lib.NixVirt` too), no
 wiring needed. It is namespaced, never merged flat: `extendLib` is
-the convention for extending the flat lib. Overwrite detection
-protects the base: an input whose name collides with an existing
-`lib` attribute (an input named `strings`, say) is skipped with a
-warning, and nixpkgs trees are not namespaced at all.
+the convention for extending the flat lib. Collisions are handled by
+who owns the name:
+
+- a namespace this repo owns (`disko`, ...): the input's lib is
+  MERGED into it, and the existing side wins every conflict -- an
+  input can only add, never change. With the disko flake as input,
+  `lib.disko` holds `declareZfsRootDisk` AND disko's own helpers.
+- any other existing `lib` attribute (an input named `strings`
+  would hit nixpkgs' own namespace): skipped with a warning --
+  such an input name is almost always an accident; rename it.
+- nixpkgs trees are not namespaced at all (their lib IS the base).
 
 Opt an input out of the NixOS-module auto-import with
 `excludeModuleInputs = [ "name" ];` (it does not affect home-manager

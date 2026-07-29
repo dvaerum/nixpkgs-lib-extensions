@@ -48,12 +48,24 @@ let
     lib.probeGroup = "from-lib-probe";
   };
 
-  # An input named after an existing lib attribute: overwrite detection
-  # must SKIP namespacing its `lib` export (with a warning) so nothing in
-  # the base lib is ever shadowed.
+  # An input named after a lib attribute this repo does NOT own (nixpkgs'
+  # `strings`): overwrite detection must SKIP namespacing its `lib` export
+  # (with a warning) so nothing in the base lib is ever touched.
   fake-strings-collision = {
     outPath = "/nix/store/fake-strings-collision";
     lib.hijacked = true;
+  };
+
+  # An input named after a namespace this repo OWNS (`disko`, like the
+  # real disko flake): its lib export MERGES into the namespace -- our
+  # functions win every conflict, the input only adds what is new.
+  fake-disko-input = {
+    outPath = "/nix/store/fake-disko-input";
+    lib = {
+      probeHelper = "disko-lib-helper";
+      # same name as our function: the existing side must win
+      declareZfsRootDisk = "hijack-attempt";
+    };
   };
 
   # An input matching NO generic convention (like fenix): it must ride along
@@ -139,6 +151,7 @@ let
     nixpkgs-unstable = nixpkgs;
     inherit fake-module-input fake-multi-module-input fake-single-module-input fake-sops-shaped-input;
     strings = fake-strings-collision;
+    disko = fake-disko-input;
     fenix = fake-fenix;
     nur = nur-shaped "nur";
     not-nur = nur-shaped "notnur";

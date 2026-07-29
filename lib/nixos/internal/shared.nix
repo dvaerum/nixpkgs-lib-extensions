@@ -227,28 +227,48 @@ let
         ) inputs
       );
 
-      # Overwrite detection: an input whose name collides with an existing
-      # `lib` attribute (e.g. an input named `strings`) is NOT namespaced --
-      # nothing in the base lib is ever shadowed -- and a warning names it.
-      # Returns only the additions, for merging onto `base` by the caller.
+      # Namespaces this repo OWNS: extLib's folder namespaces that nixpkgs'
+      # lib does not also define (e.g. `disko`, `nixos`, `imports` -- but
+      # not `strings` or `attrsets`, which exist in nixpkgs too). These are
+      # the only legitimate merge targets for an input's lib export.
+      ownedNamespaces = builtins.filter (n: baseLib.isAttrs extLib.${n} && !(baseLib ? ${n})) (
+        builtins.attrNames extLib
+      );
+
+      # Overwrite detection, per collision class:
+      # - name unused              -> input lib added as `lib.<name>`
+      # - name is an OWNED namespace -> recursive merge, the existing side
+      #   wins every conflict: an input can only ADD, never change (so a
+      #   `disko` input's helpers join declareZfsRootDisk under lib.disko)
+      # - any other existing name (nixpkgs's `strings`, ...) -> skipped
+      #   with a warning; such an input name is almost always an accident
+      # Computed ONCE per context and shared by the module lib, pkgs.lib
+      # and every pkgs-* variant, so a warning fires once per host, not
+      # once per lib construction.
       inputLibAdditions =
-        base:
         let
-          clashes = builtins.attrNames (builtins.intersectAttrs base libsFromInputs);
+          existing = builtins.intersectAttrs extendedLib libsFromInputs;
+          owned = builtins.intersectAttrs (baseLib.genAttrs ownedNamespaces (_: null)) existing;
+          skipped = builtins.attrNames (
+            builtins.removeAttrs existing (builtins.attrNames owned)
+          );
         in
         (
-          if clashes == [ ] then
+          if skipped == [ ] then
             x: x
           else
             warn ''
-              nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " clashes}: the name collides with an existing `lib` attribute. Rename the input to expose its lib as `lib.<name>`.''
+              nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`.''
         )
-          (builtins.removeAttrs libsFromInputs clashes);
+          (
+            builtins.removeAttrs libsFromInputs (builtins.attrNames existing)
+            // builtins.mapAttrs (n: inputLib: baseLib.recursiveUpdate inputLib extendedLib.${n}) owned
+          );
 
       # Through the fixed point (`extend`), NOT a plain `//`: evalModules
       # hands modules the lib from its own fixed point, so additions merged
       # outside it would be invisible as the module-arg `lib`.
-      lib = extendedLib.extend (final: prev: inputLibAdditions prev);
+      lib = extendedLib.extend (final: prev: inputLibAdditions);
 
       pkgsConfig = {
         cudaSupport = builtins.elem "cudaSupport" tags;
@@ -287,9 +307,7 @@ let
           # input overlays and the caller's extraOverlays, so extraOverlays
           # can still override pkgs.lib entirely
           overlays =
-            autoOverlays
-            ++ [ (final: prev: { lib = prev.lib // inputLibAdditions prev.lib; }) ]
-            ++ extraOverlays;
+            autoOverlays ++ [ (final: prev: { lib = prev.lib // inputLibAdditions; }) ] ++ extraOverlays;
           config = pkgsConfig;
         };
 

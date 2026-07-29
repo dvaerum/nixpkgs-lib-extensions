@@ -110,10 +110,17 @@
     })."alice@laptop".config.home.sessionVariables.LIB_PROBE == "from-lib-probe";
 
   # overwrite detection: the input named `strings` collides with
-  # lib.strings, so its lib export is skipped (warning) and the base
-  # lib attribute survives untouched
+  # lib.strings -- a namespace this repo does NOT own -- so its lib
+  # export is skipped (warning) and the base lib survives untouched
   input-lib-collision-skipped =
     laptop.pkgs.lib.strings ? concatStringsSep && !(laptop.pkgs.lib.strings ? hijacked);
+
+  # ... but the input named `disko` hits a namespace this repo OWNS:
+  # its lib MERGES in -- our declareZfsRootDisk wins the key conflict,
+  # the input's own helper is added next to it
+  input-lib-owned-namespace-merged =
+    builtins.isFunction laptop.pkgs.lib.disko.declareZfsRootDisk
+    && laptop.pkgs.lib.disko.probeHelper == "disko-lib-helper";
 
   # auto-collection can be opted out per input name
   exclude-module-inputs-respected = !(custom.config.users.groups ? from-input-module);

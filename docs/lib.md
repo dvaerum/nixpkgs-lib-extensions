@@ -454,10 +454,12 @@ automatically when the matching input exists:
 - each input's standalone `lib` export, namespaced by input name:
   `lib.<inputName>` in modules and `pkgs.lib.<inputName>` (e.g.
   `lib.NixVirt.domain`). Never merged flat -- `extendLib` is the
-  composable way into the flat lib -- and never overwriting: an input
-  whose name collides with an existing `lib` attribute is skipped with
-  a warning, and nixpkgs trees are not namespaced (their lib is the
-  base).
+  composable way into the flat lib -- and never overwriting: if the
+  name is a namespace this repo owns (`disko`, ...) the input's lib is
+  MERGED into it with the existing side winning every conflict (so a
+  `disko` input's helpers join `declareZfsRootDisk` under `lib.disko`);
+  any other existing name is skipped with a warning, and nixpkgs trees
+  are not namespaced at all (their lib is the base).
 - every `nixpkgs-*` input as a `pkgs-*` specialArg (e.g. `inputs.nixpkgs-unstable`
   becomes the `pkgs-unstable` specialArg).
 
