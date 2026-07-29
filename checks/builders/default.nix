@@ -117,6 +117,10 @@ let
     homeModules.default = {
       home.sessionVariables.FROM_INPUT_HOME_MODULES = "1";
     };
+    # a plasma-manager-style deprecation alias: flakes make accessing the
+    # OLD name warn (here: throw, to prove the collector never touches it
+    # when homeModules exists)
+    homeManagerModules = throw "deprecated homeManagerModules alias must not be accessed when homeModules exists";
   };
 
   # An input exporting `legacyPackages` (sops-nix publishes docs/packages

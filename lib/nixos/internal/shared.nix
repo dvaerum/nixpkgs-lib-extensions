@@ -365,14 +365,16 @@ let
       );
 
       # Auto-collect home-manager modules from inputs exposing them under the
-      # `homeManagerModules` or `homeModules` convention.
+      # `homeModules` convention, falling back to the older
+      # `homeManagerModules` name only when `homeModules` is absent --
+      # flakes like plasma-manager keep `homeManagerModules` as a
+      # deprecation alias that WARNS on access, so it must not be touched
+      # when the new name exists.
       autoHomeModules = lib.unique (
         lib.concatLists (
           lib.mapAttrsToList (
             name: v:
-            lib.optionals (lib.isAttrs v) (
-              pickExported (v.homeManagerModules or { }) ++ pickExported (v.homeModules or { })
-            )
+            lib.optionals (lib.isAttrs v) (pickExported (v.homeModules or v.homeManagerModules or { }))
           ) conventionInputs
         )
       );
