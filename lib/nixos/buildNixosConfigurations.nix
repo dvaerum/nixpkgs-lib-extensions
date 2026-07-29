@@ -63,11 +63,26 @@ extLib:
     : Optional reserved entry of `hosts` (never a hostname): arguments
     : merged under every host entry, the host winning per argument. Can
     : provide a default for every `nixosConfigurationsBuilder` argument
-    : except the per-host ones: `inputs`, `system`, `nixpkgs`, `rootPath`,
-    : `modules`, `userModuleFn`, `excludeModuleInputs`,
-    : `homeConfigurations`, `flakeRef`, `reactivateEveryLogin`, `tags`,
-    : `systemType`, `patches`, `extraOverlays`, `allowedUnfreePackages`,
-    : `permittedInsecurePackages` and `specialArgs`.
+    : except the per-host ones:
+    :
+    : - `inputs`
+    : - `system`
+    : - `nixpkgs`
+    : - `rootPath`
+    : - `modules`
+    : - `userModuleFn`
+    : - `excludeModuleInputs`
+    : - `homeConfigurations`
+    : - `flakeRef`
+    : - `reactivateEveryLogin`
+    : - `tags`
+    : - `systemType`
+    : - `patches`
+    : - `extraOverlays`
+    : - `allowedUnfreePackages`
+    : - `permittedInsecurePackages`
+    : - `specialArgs`
+    :
     : Not allowed (throws): `hostname` (it comes from each attribute key)
     : and `additionalModules`/`additionalSpecialArgs` (the per-host halves
     : of the layered pairs).

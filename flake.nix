@@ -52,7 +52,7 @@
                   for (j = 1; j <= i; j++) if (lines[j] ~ /^```/) in_fence = !in_fence
                   if (lines[i] ~ /^```/) { print lines[i]; continue }
                   if (in_fence) { print lines[i]; continue }
-                  if (i < NR && lines[i] != "" && lines[i] !~ /^: / && lines[i+1] ~ /^: /) {
+                  if (i < NR && lines[i] != "" && lines[i] != ":" && lines[i] !~ /^: / && lines[i+1] ~ /^: /) {
                     print "- **" lines[i] "**"
                   } else if (lines[i] ~ /^: ?/) {
                     t = lines[i]; sub(/^: ?/, "", t); print "  " t
