@@ -57,6 +57,9 @@
   unfree-predicate-allows = custom.pkgs.config.allowUnfreePredicate { pname = "allowed-unfree"; };
   unfree-predicate-denies = !(custom.pkgs.config.allowUnfreePredicate { pname = "not-allowed"; });
   cuda-tag-sets-pkgs-config = custom.pkgs.config.cudaSupport && !laptop.pkgs.config.cudaSupport;
+  # tags also label the boot entry (mkDefault); no tags -> NixOS default []
+  tags-set-as-system-nixos-tags =
+    custom.config.system.nixos.tags == [ "cudaSupport" ] && laptop.config.system.nixos.tags == [ ];
   system-type-special-arg = custom._module.specialArgs.systemType == "server";
   special-args-override-wins = custom._module.specialArgs.tags == [ "overridden-tag" ];
   root-path-defaults-to-self = toString laptop._module.specialArgs.rootPath == toString exampleDir;

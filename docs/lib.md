@@ -634,9 +634,11 @@ nixosConfigurationsBuilder :: Attribute -> Attribute
   Bootstrap re-activates on every login instead of only the first. Default `false`.
 
 - **tags**
-  List of string tags, passed to modules as the `tags` specialArg.
-  `"cudaSupport"` is the one tag with package-set effect (it enables
-  `nixpkgs.config.cudaSupport`). Default `[ ]`.
+  List of string tags, passed to modules as the `tags` specialArg and
+  set as `system.nixos.tags` (mkDefault) so they label the host's
+  boot-menu entries; a host defining that option itself overrides
+  this. `"cudaSupport"` is the one tag with package-set effect (it
+  enables `nixpkgs.config.cudaSupport`). Default `[ ]`.
 
 - **patches**
   Patch files applied to the nixpkgs SOURCE tree (via `applyPatches`)
