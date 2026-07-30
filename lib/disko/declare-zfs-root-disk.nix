@@ -111,14 +111,15 @@
           throw "The argument `enableEncryption` must be of type `boolean`";
 
       # The encryption key file is written in THREE places -- at pool
-      # creation (preCreateHook) and at boot by either initrd flavor -- and
-      # all three must produce the exact same bytes: the passphrase that
-      # `zpool create` stores is what `zfs load-key` has to reproduce, so a
-      # trailing newline in one of them and not the others means the pool
-      # cannot be unlocked. They used to be three copies, and they had
-      # already drifted (`cat <<<` appends a newline, `echo -n` does not),
-      # so there is now ONE definition, used by all three. It expects `KEY`
-      # to be set by the caller.
+      # creation (preCreateHook) and at boot by either initrd flavor. They
+      # used to be three copies and had drifted: `cat <<<` appends a trailing
+      # newline where `echo -n` does not. That turned out to be harmless,
+      # because ZFS strips a single trailing newline from a
+      # `keyformat=passphrase` key file (verified in a VM by
+      # checks/zfs-passphrase-newline.nix), but resting the ability to unlock
+      # a pool on that detail is not a plan. Hence ONE definition producing
+      # deterministic bytes, used by all three. It expects `KEY` to be set by
+      # the caller.
       write_key_file = ''
         SECRET_FOLDER_PATH="/tmp/secrets"
         KEY_FILE_PATH="$SECRET_FOLDER_PATH/zpool.key"

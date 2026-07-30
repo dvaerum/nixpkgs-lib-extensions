@@ -402,8 +402,9 @@ plasma-manager export their single module under a name, not
 `default`). A set with SEVERAL entries and no `default` is ambiguous
 -- nixos-hardware, for example, ships hundreds of mutually exclusive
 hardware profiles -- and the builder refuses to guess: evaluation
-throws, listing the exported entries and pointing at
-`inputSpecialCases`, where you say which of them you want.
+throws and points at `inputSpecialCases`, where you say which of them
+you want. (It does not list the entries; a catalog has hundreds. Name
+one that does not exist and *that* error lists them.)
 
 ### Selecting what an input contributes
 

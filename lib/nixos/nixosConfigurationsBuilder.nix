@@ -19,9 +19,9 @@ in
       without one, a set with exactly one entry is used as-is (sops-nix
       style), while a multi-entry set with no `default` is ambiguous
       (nixos-hardware style catalogs) and the builder THROWS rather than
-      guess, listing the exported entries and the selections that resolve
-      it -- see `inputSpecialCases`, which also narrows a channel to named
-      entries or switches it off.
+      guess, naming the selections that resolve it -- see
+      `inputSpecialCases`, which also narrows a channel to named entries or
+      switches it off.
     - overlays from any input exposing `overlays.default` (same rule).
     - lib extensions from any input exposing an `extendLib` function; this repo's
       own extensions are always applied to the system `lib` and also passed as the
@@ -286,7 +286,10 @@ in
     : given), `"*"` (every entry, alphabetically), or `null`/`[ ]` (none).
     : The selectable channels are `nixosModules`, `homeModules` and
     : `overlays`; `extendLib` and `lib` hold a single value, so for them only
-    : `null`/`[ ]` (off) and `"*"` (on) apply. Naming entries is how you take
+    : `null`/`[ ]` (off) and `"*"` (on) apply. A `homeModules` selection also
+    : covers an input that only exports the older `homeManagerModules` name:
+    : that alias is read when `homeModules` is absent, and never touched when
+    : it is present (flakes deprecating it warn on access). Naming entries is how you take
     : SEVERAL of a catalog's exports -- and it is validated: an unknown
     : channel key, an unknown entry name, or a case keyed by an input that is
     : not in `inputs` all throw, listing the valid options. An explicit

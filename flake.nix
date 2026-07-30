@@ -123,6 +123,9 @@
             pkgs = nixpkgs.legacyPackages.${system};
             inherit myLib;
           };
+          zfs-passphrase-newline = import ./checks/zfs-passphrase-newline.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+          };
           lib-functions = import ./checks/lib-functions.nix {
             pkgs = nixpkgs.legacyPackages.${system};
             inherit nixpkgs myLib;

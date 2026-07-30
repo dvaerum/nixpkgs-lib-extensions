@@ -13,9 +13,11 @@
 # hard-coded /tmp/secrets is moved into $TMPDIR so the test cannot touch a
 # real /tmp on a machine that builds without the sandbox.
 #
-# What this does NOT prove: whether ZFS itself tolerates a trailing newline
-# in a `keyformat=passphrase` key file. Only creating and re-importing a real
-# encrypted pool answers that, which needs a VM with the ZFS kernel module.
+# Whether ZFS itself tolerates a trailing newline in a
+# `keyformat=passphrase` key file is a separate question, answered in a VM by
+# checks/zfs-passphrase-newline.nix: it does (a single trailing newline is
+# stripped). So this check is about determinism, not about rescuing a broken
+# pool -- it keeps the three writers from depending on that ZFS detail.
 { pkgs, myLib }:
 let
   lib = pkgs.lib;

@@ -50,6 +50,9 @@ Highlights:
 - `declareZfsRootDisk` (disko): a complete ZFS root disk as one call —
   GPT partitions, pool, standard datasets plus one per user, optional
   encryption and extra datasets.
+  [lib/disko/README.md](lib/disko/README.md) collects the operational
+  notes that go with it, such as the hybrid-MBR step a Raspberry Pi 3
+  bootrom needs after disko has formatted the disk.
 - `importIfNix` / `importIfNixOr`: git-crypt-friendly imports. A
   `private.nix` that is an encrypted blob in the checkout (CI without
   the git-crypt key) evaluates to a default value with a warning

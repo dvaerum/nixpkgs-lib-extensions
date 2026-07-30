@@ -63,8 +63,11 @@ let
   # used. A set with SEVERAL entries and no `default` is ambiguous
   # (nixos-hardware ships hundreds of mutually exclusive profiles, some of
   # them `throw` tombstones) -- importing them all is never right and
-  # silently skipping would hide functionality, so it THROWS, listing the
-  # exported names next to the three selections that resolve it. `name` is
+  # silently skipping would hide functionality, so it THROWS with the three
+  # selections that resolve it. It does NOT list the exported names: a real
+  # catalog has hundreds, and a wall of them helps nobody who has not asked
+  # for a specific one. That listing belongs to the error you get when you
+  # DO name an entry and it does not exist (see resolveEntrySet). `name` is
   # the input's key in `inputs`, `channel` the convention attribute; both
   # only render the message. LAZINESS: the decision looks at
   # builtins.attrNames / length ONLY -- export VALUES are never forced here,
@@ -85,8 +88,7 @@ let
         nixpkgs-lib-extensions: input `${name}` exports ${toString (builtins.length names)} ${channel} entries and no `default` -- auto-import will not guess. Select what you want via the builder's inputSpecialCases argument:
           inputSpecialCases."${name}".${channel} = [ "<entry>" ]; # these entries, in this order
           inputSpecialCases."${name}".${channel} = "*";           # all of them
-          inputSpecialCases."${name}".${channel} = null;          # none -- select per host instead
-        Exported ${channel}: ${shownList names}.'';
+          inputSpecialCases."${name}".${channel} = null;          # none -- select per host instead'';
 
   # A consumer's `inputSpecialCases.<input>` entry comes in three forms:
   #
