@@ -276,9 +276,9 @@ let
         }
       )
     ];
-    # user-supplied specialArgs override the builder-assembled ones
-    # (tags would otherwise be the [] default)
-    specialArgs.tags = [ "overridden-tag" ];
+    # user-supplied specialArgs ride alongside the builder-assembled ones;
+    # a builder-OWNED name throws instead (special-args-shadow-throws)
+    specialArgs.probeArg = "from-special-args";
   };
 
   # A host built from a PATCHED nixpkgs; the marker file proves the system

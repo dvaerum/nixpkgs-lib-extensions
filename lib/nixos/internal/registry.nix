@@ -137,6 +137,68 @@ let
   loginUsersWithHome =
     userRegistry: hostname: loginUsers:
     builtins.filter (u: builtins.elem u loginUsers) (usersWithHome userRegistry hostname);
+
+  # Every user NAME these registries mention, taken from the keys and
+  # ignoring which host each key targets. Deliberately not
+  # `usersFromRegistry`: a `"bob@laptop"` entry means the registry knows
+  # bob, even in a call that only builds `server`. The question this
+  # answers is "is this a user at all", not "does it apply here".
+  registryUserNames =
+    registries:
+    builtins.attrNames (
+      builtins.listToAttrs (
+        map
+          (u: {
+            name = u;
+            value = null;
+          })
+          (
+            builtins.concatMap (
+              r:
+              map (
+                key:
+                let
+                  m = builtins.match "(.*)@(.*)" key;
+                in
+                if m == null then key else builtins.head m
+              ) (builtins.attrNames r)
+            ) registries
+          )
+      )
+    );
+
+  # `loginUsers` was the only name surface in this library that matched
+  # SILENTLY: every other unknown name throws. A typo there does not fail,
+  # it flips the user's home to the OPPOSITE mechanism -- no flake output,
+  # silently system-managed, and the system still builds and boots, so
+  # nothing ever tells you.
+  #
+  # A name is only an error when NO registry mentions it at all: a name
+  # that simply does not apply to a given host stays legal, because one
+  # shared `loginUsers` in `_defaults` across a fleet -- and per-host
+  # `"<user>@<host>"` keys -- are the documented way to use it.
+  validateLoginUsers =
+    fnName: perHost:
+    let
+      known = registryUserNames (map ({ registry, ... }: registry) perHost);
+      wanted = builtins.attrNames (
+        builtins.listToAttrs (
+          map (u: {
+            name = u;
+            value = null;
+          }) (builtins.concatLists (map ({ loginUsers, ... }: loginUsers) perHost))
+        )
+      );
+      unknown = builtins.filter (u: !(builtins.elem u known)) wanted;
+    in
+    if unknown == [ ] then
+      null
+    else
+      throw ''
+        ${fnName}: loginUsers names ${builtins.concatStringsSep ", " unknown}, which is not a userRegistry user on any host (typo?). A login user must exist in the registry; registry users across all hosts: ${
+          if known == [ ] then "(none)" else builtins.concatStringsSep ", " known
+        }.
+      '';
 in
 {
   inherit
@@ -144,5 +206,6 @@ in
     usersFromRegistry
     usersWithHome
     loginUsersWithHome
+    validateLoginUsers
     ;
 }

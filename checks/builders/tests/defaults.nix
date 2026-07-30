@@ -259,6 +259,18 @@ in
     && built.cudahost._module.specialArgs.hostname == "cudahost"
     && built.plainhost._module.specialArgs.tags == reference._module.specialArgs.tags;
 
+  # the core-sharing decision is driven by mkContextCore's own formals, so
+  # a parameter added there can never be missing from the list -- which
+  # would have made hosts overriding it silently share a core built without
+  # it. Pinned here because the derivation is the whole point.
+  core-arg-names-cover-context-core =
+    let
+      shared = import (repoDir + "/lib/nixos/internal/shared.nix") myLib;
+    in
+    builtins.sort builtins.lessThan shared.coreArgNames == builtins.sort builtins.lessThan (
+      builtins.attrNames (builtins.functionArgs shared.mkContextCore)
+    );
+
   # the allowlist and its documentation cannot drift: every allowlisted
   # name must appear backtick-quoted in the buildNixosConfigurations doc
   # comment (this is exactly the drift that happened with the loginUsers

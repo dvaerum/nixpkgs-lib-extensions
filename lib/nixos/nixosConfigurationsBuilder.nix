@@ -261,8 +261,13 @@ in
     : Default `[ ]`.
 
     specialArgs
-    : Extra specialArgs merged after everything the builder assembled
-    : (including `inputs`, `rootPath`, ...), overriding it. Default `{ }`.
+    : Extra specialArgs, merged alongside the ones the builder assembles.
+    : Redefining a builder-OWNED name (`hostname`, `inputs`, `rootPath`,
+    : `tags`, `extLib`, `systemType`, `inputPkgs`, any `pkgs-*`) THROWS:
+    : overriding one changed only what modules see, not what the builder
+    : did, so `specialArgs.hostname` gave modules one name while
+    : `networking.hostName` and the `hosts/<hostname>` lookup kept another.
+    : Set the corresponding builder argument instead. Default `{ }`.
 
     additionalSpecialArgs
     : Further specialArgs merged after `specialArgs`, overriding it on

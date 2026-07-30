@@ -556,11 +556,14 @@ Both NixOS modules and home-manager modules get:
 | `listOfUsernames` | the host's registry-derived users |
 | `username` | home-manager configs only: whose home |
 
-Anything you pass as `specialArgs = { ... };` is merged after
-everything the builder assembled and overrides it (only
-`additionalSpecialArgs`, `listOfUsernames` and (for homes) `username`
-layer later still). `pkgs` is deliberately not a specialArg --
-modules receive it from the module system.
+Anything you pass as `specialArgs = { ... };` is merged alongside these,
+with `additionalSpecialArgs` layering after it. The names in the table
+above are **builder-owned**: redefining one throws, because overriding
+it would change only what modules see and not what the builder did --
+a `hostname` specialArg used to give modules one name while
+`networking.hostName` and the `hosts/<hostname>` lookup kept another.
+Set the corresponding builder argument instead. `pkgs` is deliberately
+not a specialArg -- modules receive it from the module system.
 
 Example -- use a package from an input without any wiring:
 

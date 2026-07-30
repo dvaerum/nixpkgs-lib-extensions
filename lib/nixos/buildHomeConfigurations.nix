@@ -88,6 +88,18 @@ in
       # none of the core arguments (shared.coreArgNames); otherwise the
       # host's homes get their own context from the merged arguments.
       defaultsCore = shared.mkContextCore split.defaults;
+      # Same check as buildNixosConfigurations: a loginUsers typo yields no
+      # output here and a silently system-managed home there, and neither
+      # says anything. Both doors validate, since either may be called alone.
+      loginUsersChecked = shared.validateLoginUsers "buildHomeConfigurations" (
+        builtins.attrValues (
+          builtins.mapAttrs (hostname: args: {
+            inherit hostname;
+            registry = (split.defaults // args).userRegistry or { };
+            loginUsers = (split.defaults // args).loginUsers or [ ];
+          }) split.hostEntries
+        )
+      );
       coreArgSet = builtins.listToAttrs (
         map (n: {
           name = n;
@@ -125,7 +137,9 @@ in
             }) usersHome
           );
     in
-    builtins.foldl' (acc: hostname: acc // hostHomes hostname) { } (
-      builtins.attrNames split.hostEntries
+    builtins.seq loginUsersChecked (
+      builtins.foldl' (acc: hostname: acc // hostHomes hostname) { } (
+        builtins.attrNames split.hostEntries
+      )
     );
 }

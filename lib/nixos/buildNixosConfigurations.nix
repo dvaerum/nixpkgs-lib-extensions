@@ -119,6 +119,20 @@ in
       # context from its merged arguments, exactly as before. Lazy, so it
       # is never forced when every host overrides a core argument.
       defaultsCore = shared.mkContextCore split.defaults;
+      # A loginUsers typo is otherwise silent: the home flips to the
+      # system-managed mechanism and everything still builds. Only checkable
+      # HERE, where every host's registry is in view -- a name that matches
+      # no user on one host is legal (one shared list across a fleet), a
+      # name matching none anywhere is a typo.
+      loginUsersChecked = shared.validateLoginUsers "buildNixosConfigurations" (
+        builtins.attrValues (
+          builtins.mapAttrs (hostname: args: {
+            inherit hostname;
+            registry = (split.defaults // args).userRegistry or { };
+            loginUsers = (split.defaults // args).loginUsers or [ ];
+          }) split.hostEntries
+        )
+      );
       coreArgSet = builtins.listToAttrs (
         map (n: {
           name = n;
@@ -126,15 +140,17 @@ in
         }) shared.coreArgNames
       );
     in
-    builtins.mapAttrs (
-      hostname: args:
-      extLib.nixosConfigurationsBuilder (
-        split.defaults
-        // args
-        // {
-          inherit hostname;
-        }
-        // (if builtins.intersectAttrs coreArgSet args == { } then { _core = defaultsCore; } else { })
-      )
-    ) split.hostEntries;
+    builtins.seq loginUsersChecked (
+      builtins.mapAttrs (
+        hostname: args:
+        extLib.nixosConfigurationsBuilder (
+          split.defaults
+          // args
+          // {
+            inherit hostname;
+          }
+          // (if builtins.intersectAttrs coreArgSet args == { } then { _core = defaultsCore; } else { })
+        )
+      ) split.hostEntries
+    );
 }

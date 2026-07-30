@@ -62,18 +62,14 @@ let
   # host-independent part of the context depends on. The build* functions
   # use this list to decide whether a host entry may share the defaults'
   # core: only when it overrides NONE of these.
-  coreArgNames = [
-    "inputs"
-    "system"
-    "nixpkgs"
-    "patches"
-    "extraOverlays"
-    "allowedUnfreePackages"
-    "permittedInsecurePackages"
-    "nixpkgsConfig"
-    "homeManager"
-    "inputSpecialCases"
-  ];
+  #
+  # DERIVED, not transcribed. As a hand-written list it was a silent
+  # correctness hazard: add a parameter to mkContextCore below, forget the
+  # list, and every host overriding that parameter quietly shares a core
+  # built WITHOUT it -- the argument looks applied and is not. `functionArgs`
+  # reads the formals of the lambda without forcing its body, so this cannot
+  # drift.
+  coreArgNames = builtins.attrNames (builtins.functionArgs mkContextCore);
 
   # The host-independent context core: lib, pkgs, the auto-collected
   # module/overlay sets and the derived package sets -- everything that
@@ -413,7 +409,7 @@ let
       # Note: `pkgs` deliberately not included — modules already receive it from
       # the module system, and `specialArgs.pkgs` would override that wiring
       # (nixpkgs warns about it).
-      mySpecialArguments = {
+      builderOwned = {
         inherit
           hostname
           inputs
@@ -424,12 +420,34 @@ let
           ;
         inherit (core) inputPkgs;
       }
-      // core.pkgsFromInputs
-      // specialArgs
-      # the per-host extension slot: layered after specialArgs so that
-      # `_defaults.specialArgs` and a host's additionalSpecialArgs combine
-      # (mirroring modules/additionalModules)
-      // additionalSpecialArgs;
+      // core.pkgsFromInputs;
+
+      # Shadowing a builder-owned name used to "work" and produce a
+      # split-brain host: `specialArgs.hostname = "other"` reached modules
+      # while networking.hostName kept the real one, and `rootPath` /
+      # `systemType` silently moved the hosts/<host> file lookup. The
+      # override promise was never true anyway -- `listOfUsernames` and
+      # `username` are layered after specialArgs and cannot be overridden.
+      # So: say so. Everything NOT owned here still passes through freely.
+      shadowed = builtins.attrNames (
+        builtins.intersectAttrs builderOwned (specialArgs // additionalSpecialArgs)
+      );
+      shadowCheck =
+        if shadowed == [ ] then
+          null
+        else
+          throw ''
+            nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the builder-owned name(s) ${builtins.concatStringsSep ", " shadowed}. They are derived from the builder's own arguments, and overriding them here changes what MODULES see without changing what the builder did -- e.g. a `hostname` specialArg leaves networking.hostName and the hosts/<hostname> lookup on the real name. Set the corresponding builder argument instead, or pick a different specialArg name.
+          '';
+
+      mySpecialArguments = builtins.seq shadowCheck (
+        builderOwned
+        // specialArgs
+        # the per-host extension slot: layered after specialArgs so that
+        # `_defaults.specialArgs` and a host's additionalSpecialArgs combine
+        # (mirroring modules/additionalModules)
+        // additionalSpecialArgs
+      );
     in
     {
       inherit (core)

@@ -28,6 +28,7 @@ extLib: {
     usersFromRegistry
     usersWithHome
     loginUsersWithHome
+    validateLoginUsers
     ;
   inherit (import ./context.nix extLib) coreArgNames mkContextCore mkContext;
   inherit (import ./hosts-args.nix extLib)

@@ -74,7 +74,42 @@
   tags-set-as-system-nixos-tags =
     custom.config.system.nixos.tags == [ "kitchen-sink" ] && laptop.config.system.nixos.tags == [ ];
   system-type-special-arg = custom._module.specialArgs.systemType == "server";
-  special-args-override-wins = custom._module.specialArgs.tags == [ "overridden-tag" ];
+  # a specialArg the builder does not own passes through untouched
+  special-args-passed-through = custom._module.specialArgs.probeArg == "from-special-args";
+
+  # ... but redefining a builder-OWNED name throws. It used to "work" and
+  # produce a split-brain host: `specialArgs.hostname` reached modules while
+  # networking.hostName and the hosts/<hostname> lookup kept the real name,
+  # and `rootPath`/`systemType` silently moved that lookup. The override
+  # promise was never true anyway -- listOfUsernames and username are
+  # layered afterwards and were never overridable.
+  special-args-shadow-throws =
+    let
+      shadows =
+        name: value:
+        !(builtins.tryEval (
+          builtins.attrNames
+            (myLib.nixosConfigurationsBuilder {
+              inherit inputs system;
+              hostname = "shadowprobe";
+              modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+              specialArgs.${name} = value;
+            })._module.specialArgs
+        )).success;
+    in
+    shadows "hostname" "not-shadowprobe" && shadows "rootPath" "/tmp" && shadows "extLib" { };
+
+  # the same check covers the per-host half of the pair
+  additional-special-args-shadow-throws =
+    !(builtins.tryEval (
+      builtins.attrNames
+        (myLib.nixosConfigurationsBuilder {
+          inherit inputs system;
+          hostname = "shadowprobe2";
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+          additionalSpecialArgs.tags = [ "nope" ];
+        })._module.specialArgs
+    )).success;
 
   # no rootPath and no inputs.self: a clear throw, not a silent search
   # inside the library's own store tree

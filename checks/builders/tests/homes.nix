@@ -29,6 +29,52 @@
       };
     } == { };
 
+  # a loginUsers TYPO used to be silent: no flake output, the home quietly
+  # system-managed instead, and the system still built and booted. The
+  # hosts-level builders see every host's registry, so a name matching no
+  # user anywhere is a typo and throws.
+  login-users-typo-throws =
+    !(builtins.tryEval (
+      builtins.attrNames (
+        myLib.buildHomeConfigurations {
+          laptop = {
+            inherit inputs system;
+            userRegistry."alice" = exampleDir + "/users/alice";
+            loginUsers = [ "alicce" ];
+          };
+        }
+      )
+    )).success;
+
+  # ... while a name that simply does not apply to THIS host stays legal:
+  # one shared loginUsers in _defaults across a fleet is the documented way
+  # to use it, so bob (a user on laptop only) must not break server
+  login-users-unmatched-on-one-host-ok =
+    builtins.attrNames (
+      myLib.buildHomeConfigurations {
+        _defaults = {
+          inherit inputs system;
+          loginUsers = [
+            "alice"
+            "bob"
+          ];
+        };
+        laptop = {
+          userRegistry = {
+            "alice" = exampleDir + "/users/alice";
+            "bob@laptop" = exampleDir + "/users/bob";
+          };
+        };
+        server = {
+          userRegistry."alice" = exampleDir + "/users/alice";
+        };
+      }
+    ) == [
+      "alice@laptop"
+      "alice@server"
+      "bob@laptop"
+    ];
+
   # an explicit `homeManager` is honored by the hosts-level builder too: it
   # exists to BYPASS capability detection, so the per-host gate must not
   # re-run detection over `inputs` and silently return { }
