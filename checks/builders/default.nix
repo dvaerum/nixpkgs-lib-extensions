@@ -258,12 +258,12 @@ let
     hostname = "custom";
     modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
     # selecting NOTHING for a channel is the per-input opt-out
-    inputSpecialCases."fake-module-input".nixosModules = null;
+    inputContributions."fake-module-input".nixosModules = null;
     extraOverlays = [ (final: prev: { from-extra-overlay = "yes"; }) ];
     allowedUnfreePackages = [ "allowed-unfree" ];
     tags = [ "kitchen-sink" ];
     nixpkgsConfig.cudaSupport = true;
-    systemType = "server";
+    hostGroup = "server";
     additionalModules = [
       { users.groups.from-additional-module = { }; }
       # observable through group names: the system `lib` must carry both the
@@ -290,14 +290,14 @@ let
         inherit inputs system;
         hostname = "laptop";
         userRegistry."alice" = exampleDir + "/users/alice";
-        loginUsers = [ "alice" ];
+        loginHomes = [ "alice" ];
       }
       // args
     );
   applyBootstrap = args: (builtins.head (bootstrapModuleFor args).imports) { inherit pkgs lib; };
 
   # Helper: does building home configs with this registry throw? The
-  # entry under test is keyed `bad` and listed in loginUsers, so the
+  # entry under test is keyed `bad` and listed in loginHomes, so the
   # throw path (resolving `bad`'s home.nix) is reached by intent, not
   # by incidental strictness of the hosts-level plumbing.
   homesThrow =
@@ -308,7 +308,7 @@ let
           laptop = {
             inherit inputs system;
             userRegistry = registry;
-            loginUsers = [ "bad" ];
+            loginHomes = [ "bad" ];
           };
         }
       )

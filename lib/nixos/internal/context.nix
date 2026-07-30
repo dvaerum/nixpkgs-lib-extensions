@@ -54,7 +54,7 @@ let
       permittedInsecurePackages ? [ ],
       nixpkgsConfig ? { },
       homeManager ? null,
-      inputSpecialCases ? { },
+      inputContributions ? { },
       ...
     }:
     let
@@ -66,7 +66,7 @@ let
       # things that are genuinely its own -- constructing `lib` and
       # constructing `pkgs` -- and asks for the rest.
       fromInputs = collectFromInputs {
-        inherit inputs inputSpecialCases baseLib;
+        inherit inputs inputContributions baseLib;
         skipFor.nixosModules = skipNixosModule;
       };
       inherit (fromInputs)
@@ -120,7 +120,7 @@ let
           builtins.removeAttrs raw [ "self" ] // { flake = raw.self; }
         else if raw ? self then
           builtins.warn
-            "nixpkgs-lib-extensions: not exposing the consuming flake's `lib` as `lib.flake`: an input named `flake` already claims the name. Rename that input, or free the name with `inputSpecialCases.\"flake\".lib = null;`."
+            "nixpkgs-lib-extensions: not exposing the consuming flake's `lib` as `lib.flake`: an input named `flake` already claims the name. Rename that input, or free the name with `inputContributions.\"flake\".lib = null;`."
             (builtins.removeAttrs raw [ "self" ])
         else
           raw;
@@ -153,7 +153,7 @@ let
           if skipped == [ ] then
             x: x
           else
-            builtins.warn "nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`, or silence this with `inputSpecialCases.\"<name>\".lib = null;` if you never wanted it namespaced."
+            builtins.warn "nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`, or silence this with `inputContributions.\"<name>\".lib = null;` if you never wanted it namespaced."
         )
           (
             builtins.removeAttrs libsFromInputs (builtins.attrNames existing)
@@ -235,7 +235,7 @@ let
       #   sops-nix export it (docs/packages) while also shipping a real
       #   `nixosModules.default` that must be imported.
       # To opt an input out by hand, select nothing for the channel:
-      # `inputSpecialCases."<name>".nixosModules = null;`
+      # `inputContributions."<name>".nixosModules = null;`
       skipNixosModule =
         name: v: (homeManagerId != null && (v.outPath or null) == homeManagerId) || isNixpkgsTree v;
 
@@ -295,7 +295,7 @@ let
       tags ? [ ],
       specialArgs ? { },
       additionalSpecialArgs ? { },
-      systemType ? null,
+      hostGroup ? null,
       # a throw, not a silent nonsense default: without inputs.self the
       # old `./.` fallback pointed INSIDE this library's own store tree,
       # so the hosts/<hostname> convention searched the wrong repo
@@ -335,7 +335,7 @@ let
           rootPath
           tags
           extLib
-          systemType
+          hostGroup
           ;
         inherit (core) inputPkgs;
       }
@@ -344,7 +344,7 @@ let
       # Shadowing a builder-owned name used to "work" and produce a
       # split-brain host: `specialArgs.hostname = "other"` reached modules
       # while networking.hostName kept the real one, and `rootPath` /
-      # `systemType` silently moved the hosts/<host> file lookup. The
+      # `hostGroup` silently moved the hosts/<host> file lookup. The
       # override promise was never true anyway -- `listOfUsernames` and
       # `username` are layered after specialArgs and cannot be overridden.
       # So: say so. Everything NOT owned here still passes through freely.

@@ -131,12 +131,12 @@ let
     );
 
   # The login-managed users that actually ship a home.nix on this host:
-  # `loginUsers` filtered down to usersWithHome. Exactly the set that gets
+  # `loginHomes` filtered down to usersWithHome. Exactly the set that gets
   # a "<user>@<host>" flake output (buildHomeConfigurations) and that the
   # login bootstrap activates (homeManagerBootstrapModule).
   loginUsersWithHome =
-    userRegistry: hostname: loginUsers:
-    builtins.filter (u: builtins.elem u loginUsers) (usersWithHome userRegistry hostname);
+    userRegistry: hostname: loginHomes:
+    builtins.filter (u: builtins.elem u loginHomes) (usersWithHome userRegistry hostname);
 
   # Every user NAME these registries mention, taken from the keys and
   # ignoring which host each key targets. Deliberately not
@@ -167,7 +167,7 @@ let
       )
     );
 
-  # `loginUsers` was the only name surface in this library that matched
+  # `loginHomes` was the only name surface in this library that matched
   # SILENTLY: every other unknown name throws. A typo there does not fail,
   # it flips the user's home to the OPPOSITE mechanism -- no flake output,
   # silently system-managed, and the system still builds and boots, so
@@ -175,7 +175,7 @@ let
   #
   # A name is only an error when NO registry mentions it at all: a name
   # that simply does not apply to a given host stays legal, because one
-  # shared `loginUsers` in `_defaults` across a fleet -- and per-host
+  # shared `loginHomes` in `_defaults` across a fleet -- and per-host
   # `"<user>@<host>"` keys -- are the documented way to use it.
   validateLoginUsers =
     fnName: perHost:
@@ -186,7 +186,7 @@ let
           map (u: {
             name = u;
             value = null;
-          }) (builtins.concatLists (map ({ loginUsers, ... }: loginUsers) perHost))
+          }) (builtins.concatLists (map ({ loginHomes, ... }: loginHomes) perHost))
         )
       );
       unknown = builtins.filter (u: !(builtins.elem u known)) wanted;
@@ -195,7 +195,7 @@ let
       null
     else
       throw ''
-        ${fnName}: loginUsers names ${builtins.concatStringsSep ", " unknown}, which is not a userRegistry user on any host (typo?). A login user must exist in the registry; registry users across all hosts: ${
+        ${fnName}: loginHomes names ${builtins.concatStringsSep ", " unknown}, which is not a userRegistry user on any host (typo?). A login user must exist in the registry; registry users across all hosts: ${
           if known == [ ] then "(none)" else builtins.concatStringsSep ", " known
         }.
       '';

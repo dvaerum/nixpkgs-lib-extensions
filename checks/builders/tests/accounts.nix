@@ -1,5 +1,5 @@
 # User account creation: the normalUserModule default, its private primary
-# group, and disabling via userModuleFn = null.
+# group, and disabling via userModule = null.
 {
   lib,
   myLib,
@@ -62,7 +62,7 @@ in
         }).config;
       failed = builtins.filter (a: !a.assertion) cfg.assertions;
     in
-    builtins.any (a: lib.hasInfix "userModuleFn" a.message) failed;
+    builtins.any (a: lib.hasInfix "userModule" a.message) failed;
 
   # ... so "root" is a valid registry user: the account stays the
   # NixOS-defined system one, and ALL of NixOS's own assertions hold
@@ -83,7 +83,7 @@ in
     && cfg.users.users.root.group == "root"
     && cfg.users.users.root.shell != null
     && builtins.all (a: a.assertion) cfg.assertions;
-  # the default userModuleFn (normalUserModule) creates an account for
+  # the default userModule (normalUserModule) creates an account for
   # every derived user, including system-only eve
   user-accounts-created =
     laptop.config.users.users.dave.isNormalUser && laptop.config.users.users.eve.isNormalUser;
@@ -96,7 +96,7 @@ in
   user-default-shell-preserved =
     laptop.config.users.users.dave.shell == laptop.config.users.defaultUserShell;
 
-  # userModuleFn = null disables account creation (alice as a login user:
+  # userModule = null disables account creation (alice as a login user:
   # a system-managed home would add a users.users.alice entry itself via
   # home-manager's useUserPackages)
   user-module-fn-null-disables =
@@ -106,8 +106,8 @@ in
         hostname = "noaccounts";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         userRegistry."alice" = exampleDir + "/users/alice";
-        loginUsers = [ "alice" ];
-        userModuleFn = null;
+        loginHomes = [ "alice" ];
+        userModule = null;
       }).config.users.users ? alice
     );
 }

@@ -248,7 +248,7 @@ two halves separately and are still available; this function is the
 two of them over a single shared plan. Prefer it, for two reasons
 beyond brevity:
 
-- The login bootstrap NEEDS both halves. A user in `loginUsers` has
+- The login bootstrap NEEDS both halves. A user in `loginHomes` has
   their home activated on first login from
   `<loginFlakeRef>#<user>@<host>`, so a flake that exports only
   `nixosConfigurations` fails at RUNTIME, on that user's first login,
@@ -275,7 +275,7 @@ outputs =
       inherit inputs;
       system = "x86_64-linux";
       userRegistry."alice" = ./users/alice;
-      loginUsers = [ "alice" ];
+      loginHomes = [ "alice" ];
     };
     laptop = { };
     server = { userRegistry = { }; };
@@ -315,7 +315,7 @@ validation), applies `homeConfigurationsBuilder` per login user, and
 merges everything into one `{ "<user>@<hostname>" = ...; }` set —
 assignable to a flake's `homeConfigurations` output directly.
 
-Only users listed in `loginUsers` (and shipping a `home.nix` for the
+Only users listed in `loginHomes` (and shipping a `home.nix` for the
 host) get an output: system-managed homes are part of the systems
 built by `buildNixosConfigurations` and need no flake output. The
 produced set is exactly what the login bootstrap activates
@@ -326,7 +326,7 @@ let
   hosts = {
     _defaults = {
       inherit inputs system userRegistry;
-      loginUsers = [ "alice" ];
+      loginHomes = [ "alice" ];
     };
     laptop = { };
     server = { userRegistry = { }; };
@@ -338,9 +338,9 @@ in
 }
 ```
 
-NixOS-only arguments in the attrset (`modules`, `userModuleFn`, ...)
+NixOS-only arguments in the attrset (`modules`, `userModule`, ...)
 are accepted and ignored here, so one hosts attrset can feed both
-build functions (`homeSharedModules` applies on BOTH sides: to the
+build functions (`homeModules` applies on BOTH sides: to the
 login homes built here and to the system-managed homes in
 `buildNixosConfigurations`). Key collisions between hosts are
 impossible: every produced key carries its own `@<hostname>` suffix.
@@ -356,7 +356,7 @@ extLib.buildHomeConfigurations {
       "alice" = ./users/alice;
       "bob"   = ./users/bob; # system-managed: no output
     };
-    loginUsers = [ "alice" ];
+    loginHomes = [ "alice" ];
   };
   laptop = { };
   desktop = { };
@@ -460,15 +460,15 @@ buildNixosConfigurations ::
   - `nixpkgs`
   - `rootPath`
   - `modules`
-  - `userModuleFn`
+  - `userModule`
   - `userRegistry`
-  - `loginUsers`
-  - `homeSharedModules` (applies to BOTH mechanisms: system-managed
+  - `loginHomes`
+  - `homeModules` (applies to BOTH mechanisms: system-managed
     homes here, login-managed homes in `buildHomeConfigurations`)
   - `loginFlakeRef`
   - `loginReactivateEveryLogin`
   - `tags`
-  - `systemType`
+  - `hostGroup`
   - `patches`
   - `extraOverlays`
   - `allowedUnfreePackages`
@@ -476,7 +476,7 @@ buildNixosConfigurations ::
   - `nixpkgsConfig`
   - `specialArgs`
   - `homeManager`
-  - `inputSpecialCases`
+  - `inputContributions`
   
   This list is an enforced ALLOWLIST: any other key throws, so typos
   (`homeConfiguration`, ...) fail loudly instead of being dropped
@@ -564,7 +564,7 @@ homeConfigurationsBuilder :: Attribute -> HomeManagerConfiguration
   NOTE: in a git-backed flake, `git add` new files or they are
   invisible to the flake and skipped silently.
 
-- **homeSharedModules**
+- **homeModules**
   home-manager modules added to the home configuration, on top of those
   auto-collected from `inputs`. Default `[ ]`.
 
@@ -574,9 +574,9 @@ The home configuration gets overridable (`mkDefault`) values for
 so pin it in the user's `home.nix` if you rely on stateVersion
 semantics.
 
-nixpkgs, systemType, specialArgs, additionalSpecialArgs, tags, patches,
+nixpkgs, hostGroup, specialArgs, additionalSpecialArgs, tags, patches,
 nixpkgsConfig, extraOverlays, allowedUnfreePackages,
-- **permittedInsecurePackages, rootPath, homeManager, inputSpecialCases**
+- **permittedInsecurePackages, rootPath, homeManager, inputContributions**
   Shared options (see `nixosConfigurationsBuilder`).
 
 
@@ -589,9 +589,9 @@ login, via a systemd *user* service that runs `home-manager switch` in the
 background (so login is never hard-blocked). First-login-only by default.
 
 `nixosConfigurationsBuilder` includes this module automatically when it
-has `loginUsers`, so it normally does not need to be wired up by hand —
+has `loginHomes`, so it normally does not need to be wired up by hand —
 direct use is for custom setups that build their NixOS systems some
-other way. It is driven by the `userRegistry` filtered by `loginUsers`
+other way. It is driven by the `userRegistry` filtered by `loginHomes`
 (the same arguments the builders take) but is otherwise independent of
 the builders. Self-gating: when no login user matches, the home-manager
 input is missing or the flake reference is unset, the module is empty.
@@ -608,7 +608,7 @@ input is missing or the flake reference is unset, the module is empty.
       hostname = "laptop";
       system   = "x86_64-linux";
       userRegistry = { "alice" = ./users/alice; };
-      loginUsers = [ "alice" ];
+      loginHomes = [ "alice" ];
     })
   ];
 }
@@ -640,7 +640,7 @@ homeManagerBootstrapModule :: Attribute -> Module
 - **userRegistry**
   The user registry (as in `nixosConfigurationsBuilder`). Default `{ }`.
 
-- **loginUsers**
+- **loginHomes**
   The usernames whose homes are login-managed; only these are
   bootstrapped (and only when the registry gives them a `home.nix`
   on this host). Default `[ ]` (module is empty).
@@ -679,7 +679,7 @@ automatically when the matching input exists:
   style), while a multi-entry set with no `default` is ambiguous
   (nixos-hardware style catalogs) and the builder THROWS rather than
   guess, naming the selections that resolve it -- see
-  `inputSpecialCases`, which also narrows a channel to named entries or
+  `inputContributions`, which also narrows a channel to named entries or
   switches it off.
 - overlays from any input exposing `overlays.default` (same
   default/sole-entry rule, but no exclusions -- overlays are collected
@@ -719,20 +719,20 @@ The host's own configuration is included by convention: relative to
 `rootPath` (default: the consuming flake, `inputs.self`), either
 `hosts/<hostname>.nix` or `hosts/<hostname>/configuration.nix` is
 imported automatically when it exists (both existing is an error).
-Setting `systemType` groups hosts one folder deeper: the lookup then
-happens under `hosts/<systemType>/` instead of `hosts/`.
+Setting `hostGroup` groups hosts one folder deeper: the lookup then
+happens under `hosts/<hostGroup>/` instead of `hosts/`.
 
 The host's users come from ONE `userRegistry` — every user gets an
-account (unless `userModuleFn = null`, or the account is a system one
+account (unless `userModule = null`, or the account is a system one
 with a uid below 1000) and their `configuration.nix` imported into
 the system. How
-each user's `home.nix` is activated is selected by `loginUsers`:
+each user's `home.nix` is activated is selected by `loginHomes`:
 
 - not listed (the default) — SYSTEM-managed home: wired into the
   system via home-manager's NixOS module
   (`home-manager.users.<user>`), activated by `nixos-rebuild
   switch`. No flake outputs, no bootstrap.
-- listed in `loginUsers` — LOGIN-managed home: activated on first
+- listed in `loginHomes` — LOGIN-managed home: activated on first
   login by the bootstrap (`homeManagerBootstrapModule`) running
   `home-manager switch --flake <loginFlakeRef>#<user>@<host>`; the
   flake must export those `homeConfigurations` outputs (built by
@@ -754,7 +754,7 @@ extLib.nixosConfigurationsBuilder {
 
   # ALL users: accounts + configuration.nix, and home.nix activated
   # with the system (home-manager NixOS module) unless listed in
-  # loginUsers. Every value is a DIRECTORY with home.nix and/or
+  # loginHomes. Every value is a DIRECTORY with home.nix and/or
   # configuration.nix.
   userRegistry = {
     "alice@*"      = ./users/alice;        # on every host
@@ -763,7 +763,7 @@ extLib.nixosConfigurationsBuilder {
   };
   # bob's home.nix activates on his first login instead (needs the
   # homeConfigurations outputs from buildHomeConfigurations)
-  loginUsers = [ "bob" ];
+  loginHomes = [ "bob" ];
 }
 =>
 <nixosSystem>
@@ -807,7 +807,7 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   layered pair: shared modules go in `_defaults.modules`, a host's
   extras go here.
 
-- **userModuleFn**
+- **userModule**
   A function `username -> NixOS module`, applied for each user derived
   from the `userRegistry`. Defaults to `normalUserModule`, which creates
   a normal login account per user; pass your own function for richer
@@ -825,7 +825,7 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   overridable; each home gets `home.stateVersion` defaulted to the
   CURRENT nixpkgs release, so pin it in the user's `home.nix` if you
   rely on stateVersion semantics, and receives `username` as a module
-  argument) -- unless the user is listed in `loginUsers`. A
+  argument) -- unless the user is listed in `loginHomes`. A
   directory with only a `configuration.nix` is a system-only user
   (account, no home). Keys select where an entry applies:
     `"<user>@<host>"`  this host only
@@ -841,7 +841,7 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   WARNING: in a git-backed flake only TRACKED files exist -- `git add` a
   new home.nix/configuration.nix or it is skipped silently.
 
-- **loginUsers**
+- **loginHomes**
   List of usernames (from `userRegistry`) whose `home.nix` is
   LOGIN-managed instead of system-managed: not part of the system,
   activated on the user's first login by the bootstrap via
@@ -855,7 +855,7 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
 
 - **loginFlakeRef**
   Where the login bootstrap finds the home configurations of
-  `loginUsers` users: on first login it runs
+  `loginHomes` users: on first login it runs
   `home-manager switch --flake <loginFlakeRef>#<user>@<hostname>`, so the
   flake at this reference must export
   `homeConfigurations."<user>@<hostname>"`.
@@ -864,14 +864,14 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   the last `nixos-rebuild`, but local edits are invisible until the
   next rebuild. Point it at a mutable checkout (e.g. `"/etc/nixos"`
   or `"git+https://..."`) to make the bootstrap build from the live
-  tree instead. Irrelevant without `loginUsers` users.
+  tree instead. Irrelevant without `loginHomes` users.
   Default `inputs.self`.
 
 - **loginReactivateEveryLogin**
   Bootstrap re-activates on every login instead of only the first.
-  Irrelevant without `loginUsers` users. Default `false`.
+  Irrelevant without `loginHomes` users. Default `false`.
 
-- **homeSharedModules**
+- **homeModules**
   home-manager modules added to every SYSTEM-managed home (on top of
   those auto-collected from `inputs`). The same argument is read by
   `homeConfigurationsBuilder`/`buildHomeConfigurations` for the
@@ -922,7 +922,7 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
 - **specialArgs**
   Extra specialArgs, merged alongside the ones the builder assembles.
   Redefining a builder-OWNED name (`hostname`, `inputs`, `rootPath`,
-  `tags`, `extLib`, `systemType`, `inputPkgs`, any `pkgs-*`) THROWS:
+  `tags`, `extLib`, `hostGroup`, `inputPkgs`, any `pkgs-*`) THROWS:
   overriding one changed only what modules see, not what the builder
   did, so `specialArgs.hostname` gave modules one name while
   `networking.hostName` and the `hosts/<hostname>` lookup kept another.
@@ -934,10 +934,10 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   the per-host half of the layered pair: shared specialArgs go in
   `_defaults.specialArgs`, a host's extras go here.
 
-- **systemType**
+- **hostGroup**
   Free-form host classification, e.g. `"vm"` or `"server"`. Passed to
-  modules as the `systemType` specialArg, and when non-null the host
-  config convention looks under `hosts/<systemType>/` instead of
+  modules as the `hostGroup` specialArg, and when non-null the host
+  config convention looks under `hosts/<hostGroup>/` instead of
   `hosts/`. Default `null` (no grouping folder).
 
 - **rootPath**
@@ -951,7 +951,7 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   warns and picks the alphabetically first otherwise). Default `null`
   (detect).
 
-- **inputSpecialCases**
+- **inputContributions**
   Per-input control of the auto-collection, keyed by input NAME and
   merged over the built-in table. Each entry takes one of three forms:
     `null`                 the input contributes NOTHING, to any channel
@@ -975,10 +975,10 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   nixpkgs trees), which only exist to prevent guessing. CHANNELS ONLY:
   the `pkgs-*` specialArgs, `inputPkgs` and the home-manager capability
   detection are computed from `inputs` directly and no case affects
-  them -- `inputSpecialCases."nixpkgs-unstable" = null;` still yields a
+  them -- `inputContributions."nixpkgs-unstable" = null;` still yields a
   `pkgs-unstable` specialArg. An input reached by hand via the
   `inputs`/`inputPkgs` specialArgs likewise always works.
-  Example: `inputSpecialCases."nixos-raspberrypi".overlays =
+  Example: `inputContributions."nixos-raspberrypi".overlays =
   [ "bootloader" "vendor-kernel" ];`
   Default `{ }`.
 
@@ -996,10 +996,10 @@ user (the Debian/Fedora "user private group" scheme, instead of NixOS's
 shared `users` group) -- so by default a user is only a member of their
 own group.
 
-This is the default `userModuleFn` of `nixosConfigurationsBuilder`, so
+This is the default `userModule` of `nixosConfigurationsBuilder`, so
 every user derived from the `userRegistry` gets a login
 account automatically. Pass your own function when accounts need more,
-or `userModuleFn = null` to disable account creation.
+or `userModule = null` to disable account creation.
 
 ### Example
 
@@ -1022,8 +1022,8 @@ extLib.normalUserModule "alice"
 # "root" is a valid registry entry: it only gets its home.nix /
 # configuration.nix, never account changes.
 
-# a custom userModuleFn can build on it:
-userModuleFn = username: {
+# a custom userModule can build on it:
+userModule = username: {
   imports = [ (extLib.normalUserModule username) ];
   users.users.${username}.extraGroups = [ "networkmanager" ];
 };

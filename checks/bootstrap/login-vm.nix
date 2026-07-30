@@ -30,7 +30,7 @@ let
           inherit system;
           hostname = "vmhost";
           userRegistry."alice" = ../example/users/alice;
-          loginUsers = [ "alice" ];
+          loginHomes = [ "alice" ];
         }
         // extraBootstrapArgs
       ))

@@ -39,7 +39,7 @@ Highlights:
   being silently ignored.
 - User accounts are created automatically (`normalUserModule`). Homes
   are built into the system by default (home-manager NixOS module);
-  users listed in `loginUsers` get theirs provisioned on first login
+  users listed in `loginHomes` get theirs provisioned on first login
   instead, by a systemd user service.
 - NixOS modules, overlays, home-manager modules and lib extensions
   exported by your flake inputs are wired in automatically; each

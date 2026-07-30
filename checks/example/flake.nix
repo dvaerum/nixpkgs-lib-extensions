@@ -86,7 +86,7 @@
           # encounters). Keys must name inputs you actually have, so this
           # stays commented out here:
           #
-          #   inputSpecialCases = {
+          #   inputContributions = {
           #     "nixos-hardware".nixosModules = null;             # none: import by hand below
           #     "nixos-raspberrypi".overlays = [ "bootloader" ];  # these, in this order
           #     "some-input".homeModules = "*";                   # all of them
@@ -96,20 +96,20 @@
           # with the system. Everyone else's home is built into the
           # system (home-manager NixOS module) and activates on
           # nixos-rebuild switch.
-          loginUsers = [
+          loginHomes = [
             "alice"
             "bob"
           ];
           # Added to every user's home configuration on every host, both
           # mechanisms (asserted by the checks; adjust freely).
-          homeSharedModules = [
+          homeModules = [
             { programs.direnv.enable = true; }
           ];
         };
 
         # A host with users, home configurations and the login bootstrap.
         # Accounts for the registry users are created automatically:
-        # `userModuleFn` defaults to `extLib.normalUserModule`. Pass your own
+        # `userModule` defaults to `extLib.normalUserModule`. Pass your own
         # `username -> module` function for richer accounts, or `null` to
         # disable account creation.
         laptop = {
@@ -137,7 +137,7 @@
     in
     # ONE call, BOTH outputs: `nixosConfigurations` for the hosts, and the
     # "user@host" keyed `homeConfigurations` that the login bootstrap
-    # activates for every `loginUsers` user. Exporting only the first is
+    # activates for every `loginHomes` user. Exporting only the first is
     # the classic mistake -- it fails at that user's FIRST LOGIN, not at
     # build time -- so this entry point produces both from one plan.
     # (`buildNixosConfigurations` / `buildHomeConfigurations` still exist

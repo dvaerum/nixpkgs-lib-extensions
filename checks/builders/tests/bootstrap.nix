@@ -17,7 +17,7 @@
   ...
 }:
 {
-  # only loginUsers are bootstrapped: dave/frank/grace are system-managed,
+  # only loginHomes are bootstrapped: dave/frank/grace are system-managed,
   # eve is system-only (no home.nix). Parameters are CLI arguments on
   # ExecStart (escapeShellArgs only quotes arguments when required, so
   # simple words appear bare).
@@ -28,7 +28,7 @@
   # the server has no registry: no bootstrap
   server-no-bootstrap = !(server.config.systemd.user.services ? home-manager-bootstrap);
 
-  # a loginUsers entry whose registry directory ships no home.nix (eve is
+  # a loginHomes entry whose registry directory ships no home.nix (eve is
   # a config-only user) has nothing to bootstrap: no service
   no-bootstrap-for-config-only-login-user =
     !(
@@ -37,11 +37,11 @@
         hostname = "evelogin";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         userRegistry."eve" = exampleDir + "/users/eve";
-        loginUsers = [ "eve" ];
+        loginHomes = [ "eve" ];
       }).config.systemd.user.services ? home-manager-bootstrap
     );
 
-  # loginUsers names matching NONE of the host's users are ignored without
+  # loginHomes names matching NONE of the host's users are ignored without
   # error (the list is usually shared through _defaults across hosts):
   # alice stays system-managed, no bootstrap appears
   unknown-login-users-ignored =
@@ -51,7 +51,7 @@
         hostname = "ghostlogin";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         userRegistry."alice" = exampleDir + "/users/alice";
-        loginUsers = [ "ghost" ];
+        loginHomes = [ "ghost" ];
       };
     in
     sys.config.home-manager.users ? alice

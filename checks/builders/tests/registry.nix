@@ -65,12 +65,12 @@
         laptop = {
           inherit inputs system;
           userRegistry."alice" = "${exampleDir + "/users/alice"}";
-          loginUsers = [ "alice" ];
+          loginHomes = [ "alice" ];
         };
       }
     ) == [ "alice@laptop" ];
 
-  # only loginUsers get homeConfigurations outputs: dave/frank/grace are
+  # only loginHomes get homeConfigurations outputs: dave/frank/grace are
   # system-managed, eve has no home config at all
   home-configs-keyed-per-host =
     builtins.attrNames example.homeConfigurations == [
@@ -90,7 +90,7 @@
             "bob@laptop" = exampleDir + "/users/bob"; # laptop only -> NOT on server
             "frank@*" = exampleDir + "/users/frank-base"; # wildcard -> every host
           };
-          loginUsers = [
+          loginHomes = [
             "alice"
             "bob"
             "frank"
@@ -116,7 +116,7 @@
             "helen" = exampleDir + "/users/alice";
             "helen@otherhost" = exampleDir + "/users/bob";
           };
-          loginUsers = [ "helen" ];
+          loginHomes = [ "helen" ];
         };
       }
     ) == [ "helen@laptop" ];

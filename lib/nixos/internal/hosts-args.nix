@@ -14,8 +14,8 @@ let
 
   # ONE hosts attrset is meant to feed BOTH buildNixosConfigurations and
   # buildHomeConfigurations, so both validate against the same allowlists:
-  # arguments only one side uses (modules, userModuleFn, ...) are accepted
-  # everywhere and ignored by the other side; homeSharedModules is used by
+  # arguments only one side uses (modules, userModule, ...) are accepted
+  # everywhere and ignored by the other side; homeModules is used by
   # BOTH (system-managed and login-managed homes).
   # Keep in sync with the documented argument lists (tested by
   # checks/builders/tests/defaults.nix).
@@ -25,14 +25,14 @@ let
     "nixpkgs"
     "rootPath"
     "modules"
-    "userModuleFn"
+    "userModule"
     "userRegistry"
-    "loginUsers"
-    "homeSharedModules"
+    "loginHomes"
+    "homeModules"
     "loginFlakeRef"
     "loginReactivateEveryLogin"
     "tags"
-    "systemType"
+    "hostGroup"
     "patches"
     "extraOverlays"
     "allowedUnfreePackages"
@@ -40,7 +40,7 @@ let
     "nixpkgsConfig"
     "specialArgs"
     "homeManager"
-    "inputSpecialCases"
+    "inputContributions"
   ];
   allowedHostArgs = allowedDefaultArgs ++ [
     "hostname"
@@ -247,7 +247,7 @@ let
   # `_core` is internal plumbing, never something a consumer writes.
   withCore = p: p.args // (if p.core != null then { _core = p.core; } else { });
 
-  # A loginUsers typo is otherwise silent: the home flips to the
+  # A loginHomes typo is otherwise silent: the home flips to the
   # system-managed mechanism and everything still builds and boots. Only
   # checkable from a PLAN, where every host's registry is in view -- a name
   # that matches no user on one host is legal, a name no registry mentions
@@ -259,7 +259,7 @@ let
         builtins.mapAttrs (hostname: p: {
           inherit hostname;
           registry = p.args.userRegistry or { };
-          loginUsers = p.args.loginUsers or [ ];
+          loginHomes = p.args.loginHomes or [ ];
         }) plan
       )
     );
@@ -283,7 +283,7 @@ let
           rawRegistry = p.args.userRegistry or { };
           registry = if rawRegistry == null then { } else rawRegistry;
           # login-managed users that actually ship a home.nix on this host
-          usersHome = loginUsersWithHome registry hostname (p.args.loginUsers or [ ]);
+          usersHome = loginUsersWithHome registry hostname (p.args.loginHomes or [ ]);
         in
         # a host with no home-manager contributes nothing. An explicit
         # `homeManager` counts as having one WITHOUT re-running detection --

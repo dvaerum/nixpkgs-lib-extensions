@@ -155,14 +155,14 @@ in
 
   # buildHomeConfigurations: the SAME hosts attrset produces the merged
   # "user@host" set across all hosts, with per-host registry overrides;
-  # only loginUsers get outputs
+  # only loginHomes get outputs
   build-home-configurations =
     let
       homes = myLib.buildHomeConfigurations {
         _defaults = {
           inherit inputs system;
           userRegistry."alice" = exampleDir + "/users/alice";
-          loginUsers = [
+          loginHomes = [
             "alice"
             "bob"
           ];
@@ -176,7 +176,7 @@ in
             # present but NOT a login user on hostB: no output
             "dave" = exampleDir + "/users/dave";
           };
-          loginUsers = [ "bob" ];
+          loginHomes = [ "bob" ];
         };
       };
     in
@@ -192,7 +192,7 @@ in
         _defaults = {
           inherit inputs system;
           userRegistry."alice" = exampleDir + "/users/alice";
-          loginUsers = [ "alice" ];
+          loginHomes = [ "alice" ];
         };
         hostA = { };
         hostB = { };
@@ -255,7 +255,7 @@ in
           userRegistry."alice" = exampleDir + "/users/alice";
         };
         hostA = {
-          loginUsers = [ "alice" ];
+          loginHomes = [ "alice" ];
         };
         hostB = { };
       };
@@ -345,7 +345,7 @@ in
 
   # the allowlist and its documentation cannot drift: every allowlisted
   # name must appear backtick-quoted in the buildNixosConfigurations doc
-  # comment (this is exactly the drift that happened with the loginUsers
+  # comment (this is exactly the drift that happened with the loginHomes
   # renames)
   allowlist-documented =
     let

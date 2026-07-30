@@ -82,7 +82,7 @@ in
     : NOTE: in a git-backed flake, `git add` new files or they are
     : invisible to the flake and skipped silently.
 
-    homeSharedModules
+    homeModules
     : home-manager modules added to the home configuration, on top of those
     : auto-collected from `inputs`. Default `[ ]`.
 
@@ -92,9 +92,9 @@ in
     so pin it in the user's `home.nix` if you rely on stateVersion
     semantics.
 
-    nixpkgs, systemType, specialArgs, additionalSpecialArgs, tags, patches,
+    nixpkgs, hostGroup, specialArgs, additionalSpecialArgs, tags, patches,
     nixpkgsConfig, extraOverlays, allowedUnfreePackages,
-    permittedInsecurePackages, rootPath, homeManager, inputSpecialCases
+    permittedInsecurePackages, rootPath, homeManager, inputContributions
     : Shared options (see `nixosConfigurationsBuilder`).
   */
   homeConfigurationsBuilder =
@@ -104,7 +104,7 @@ in
       system,
       username,
       userRegistry ? { },
-      homeSharedModules ? [ ],
+      homeModules ? [ ],
       ...
     }@args:
     let
@@ -120,7 +120,7 @@ in
         ;
 
       registry = if userRegistry == null then { } else userRegistry;
-      homeModules = (shared.resolveUser registry hostname username).homeModules;
+      registryHomeModules = (shared.resolveUser registry hostname username).homeModules;
     in
     builtins.seq validArgs (
       if home-manager == null then
@@ -128,7 +128,7 @@ in
           homeConfigurationsBuilder: no home-manager input found (detected
           by capability: an input whose `lib` has `homeManagerConfiguration`).
         ''
-      else if homeModules == [ ] then
+      else if registryHomeModules == [ ] then
         throw ''
           homeConfigurationsBuilder: `${username}` has no home.nix in
           `userRegistry` matching host `${hostname}` (unmatched keys,
@@ -148,9 +148,9 @@ in
           };
           modules =
             autoHomeModules
-            ++ homeSharedModules
-            # all matched home.nix files: "<user>@*" and "<user>@<host>" merge
             ++ homeModules
+            # all matched home.nix files: "<user>@*" and "<user>@<host>" merge
+            ++ registryHomeModules
             ++ [
               {
                 _file = ./homeConfigurationsBuilder.nix;

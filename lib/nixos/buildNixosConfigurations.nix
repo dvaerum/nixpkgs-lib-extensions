@@ -81,15 +81,15 @@ in
     : - `nixpkgs`
     : - `rootPath`
     : - `modules`
-    : - `userModuleFn`
+    : - `userModule`
     : - `userRegistry`
-    : - `loginUsers`
-    : - `homeSharedModules` (applies to BOTH mechanisms: system-managed
+    : - `loginHomes`
+    : - `homeModules` (applies to BOTH mechanisms: system-managed
     :   homes here, login-managed homes in `buildHomeConfigurations`)
     : - `loginFlakeRef`
     : - `loginReactivateEveryLogin`
     : - `tags`
-    : - `systemType`
+    : - `hostGroup`
     : - `patches`
     : - `extraOverlays`
     : - `allowedUnfreePackages`
@@ -97,7 +97,7 @@ in
     : - `nixpkgsConfig`
     : - `specialArgs`
     : - `homeManager`
-    : - `inputSpecialCases`
+    : - `inputContributions`
     :
     : This list is an enforced ALLOWLIST: any other key throws, so typos
     : (`homeConfiguration`, ...) fail loudly instead of being dropped

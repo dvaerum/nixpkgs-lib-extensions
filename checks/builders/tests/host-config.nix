@@ -23,12 +23,12 @@
   # `modules` in the example
   auto-host-file-module = laptop.config.fileSystems."/".device == "/dev/sda1";
   auto-host-dir-module = server.config.fileSystems."/".device == "/dev/vda1";
-  # with systemType set the lookup moves under hosts/<systemType>/ ...
+  # with hostGroup set the lookup moves under hosts/<hostGroup>/ ...
   typed-host-convention =
     (myLib.nixosConfigurationsBuilder {
       inherit inputs system;
       hostname = "typedhost";
-      systemType = "vm";
+      hostGroup = "vm";
       rootPath = fixturesDir + "/typed-root";
     }).config.users.groups ? typed-host-marker;
   # ... and without it the type folders are NOT searched (the same host
@@ -72,14 +72,14 @@
   # tags also label the boot entry (mkDefault); no tags -> NixOS default []
   tags-set-as-system-nixos-tags =
     custom.config.system.nixos.tags == [ "kitchen-sink" ] && laptop.config.system.nixos.tags == [ ];
-  system-type-special-arg = custom._module.specialArgs.systemType == "server";
+  system-type-special-arg = custom._module.specialArgs.hostGroup == "server";
   # a specialArg the builder does not own passes through untouched
   special-args-passed-through = custom._module.specialArgs.probeArg == "from-special-args";
 
   # ... but redefining a builder-OWNED name throws. It used to "work" and
   # produce a split-brain host: `specialArgs.hostname` reached modules while
   # networking.hostName and the hosts/<hostname> lookup kept the real name,
-  # and `rootPath`/`systemType` silently moved that lookup. The override
+  # and `rootPath`/`hostGroup` silently moved that lookup. The override
   # promise was never true anyway -- listOfUsernames and username are
   # layered afterwards and were never overridable.
   special-args-shadow-throws =

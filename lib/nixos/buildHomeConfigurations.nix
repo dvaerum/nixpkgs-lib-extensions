@@ -13,7 +13,7 @@ in
     merges everything into one `{ "<user>@<hostname>" = ...; }` set —
     assignable to a flake's `homeConfigurations` output directly.
 
-    Only users listed in `loginUsers` (and shipping a `home.nix` for the
+    Only users listed in `loginHomes` (and shipping a `home.nix` for the
     host) get an output: system-managed homes are part of the systems
     built by `buildNixosConfigurations` and need no flake output. The
     produced set is exactly what the login bootstrap activates
@@ -24,7 +24,7 @@ in
       hosts = {
         _defaults = {
           inherit inputs system userRegistry;
-          loginUsers = [ "alice" ];
+          loginHomes = [ "alice" ];
         };
         laptop = { };
         server = { userRegistry = { }; };
@@ -36,9 +36,9 @@ in
     }
     ```
 
-    NixOS-only arguments in the attrset (`modules`, `userModuleFn`, ...)
+    NixOS-only arguments in the attrset (`modules`, `userModule`, ...)
     are accepted and ignored here, so one hosts attrset can feed both
-    build functions (`homeSharedModules` applies on BOTH sides: to the
+    build functions (`homeModules` applies on BOTH sides: to the
     login homes built here and to the system-managed homes in
     `buildNixosConfigurations`). Key collisions between hosts are
     impossible: every produced key carries its own `@<hostname>` suffix.
@@ -54,7 +54,7 @@ in
           "alice" = ./users/alice;
           "bob"   = ./users/bob; # system-managed: no output
         };
-        loginUsers = [ "alice" ];
+        loginHomes = [ "alice" ];
       };
       laptop = { };
       desktop = { };

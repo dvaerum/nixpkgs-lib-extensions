@@ -17,7 +17,7 @@ and the workflow.
 - Each user's home is activated by ONE of two mechanisms, chosen per
   user: **with the system** (default -- home-manager's NixOS module,
   applied by `nixos-rebuild switch`) or **on first login** (users
-  listed in `loginUsers` -- a systemd user service runs
+  listed in `loginHomes` -- a systemd user service runs
   `home-manager switch` in the background).
 - NixOS modules, home-manager modules, overlays and lib extensions
   exported by your flake inputs are **wired in automatically**.
@@ -68,7 +68,7 @@ users/
    loader.
 2. The scaffolded **registry** creates six real accounts (alice, bob,
    dave, eve, frank, grace) with their groups and, for the
-   `loginUsers`, their bootstrap services. Replace those entries with
+   `loginHomes`, their bootstrap services. Replace those entries with
    your own users before the first switch.
 
 A host file then looks like:
@@ -89,8 +89,8 @@ nixos-rebuild switch --flake .#laptop
 ```
 
 This builds the system INCLUDING the homes of every user not listed
-in `loginUsers` -- those activate right there, with the switch. Homes
-of `loginUsers` are exported per user and host instead
+in `loginHomes` -- those activate right there, with the switch. Homes
+of `loginHomes` are exported per user and host instead
 (e.g. `homeConfigurations."alice@laptop"`) and applied later: on each
 user's first login, by the bootstrap service. Either way you normally
 never run `home-manager` by hand.
@@ -172,7 +172,7 @@ hostname. In your flake the full wiring looks like this (the scaffolded
           # alice's home activates on
           # her first login; all other
           # homes ship with the system
-          loginUsers = [ "alice" ];
+          loginHomes = [ "alice" ];
         };
         laptop = { };
         server = {
@@ -194,7 +194,7 @@ hostname. In your flake the full wiring looks like this (the scaffolded
 `buildConfigurations` is the entry point to reach for. The two halves
 are also available separately as `buildNixosConfigurations` and
 `buildHomeConfigurations` (same hosts attrset), but exporting only the
-first is a trap: a `loginUsers` user's home is resolved at their first
+first is a trap: a `loginHomes` user's home is resolved at their first
 login, so a missing `homeConfigurations` output fails *then*, on a
 booted machine, rather than at build time. One call cannot forget half.
 
@@ -218,17 +218,17 @@ your flake root:
 
 Both existing at once is an error. Anything extra goes in `modules`.
 
-With many machines, group them by kind: set `systemType = "vm";` on a
+With many machines, group them by kind: set `hostGroup = "vm";` on a
 host and the lookup moves one folder deeper, to
 `hosts/vm/<hostname>.nix` (or `hosts/vm/<hostname>/configuration.nix`).
-The value also reaches your modules as the `systemType` specialArg,
-so shared modules can branch on it. Without `systemType` nothing
+The value also reaches your modules as the `hostGroup` specialArg,
+so shared modules can branch on it. Without `hostGroup` nothing
 changes -- no extra subfolder is consulted.
 
 ## Accounts
 
 Every registry-derived user gets a login account automatically:
-`userModuleFn` defaults to `normalUserModule`, which sets
+`userModule` defaults to `normalUserModule`, which sets
 `isNormalUser` and gives the user a **private primary group** named
 after them (instead of the shared `users` group).
 
@@ -243,7 +243,7 @@ changes.
 Richer accounts -- build on the default:
 
 ```nix
-userModuleFn = username: {
+userModule = username: {
   imports = [ (extLib.normalUserModule username) ];
   users.users.${username} = {
     extraGroups = [ "networkmanager" ];
@@ -251,19 +251,19 @@ userModuleFn = username: {
 };
 ```
 
-Disable account creation entirely with `userModuleFn = null;`
+Disable account creation entirely with `userModule = null;`
 (accounts must then come from your host config or the users'
 `configuration.nix` files).
 
 ## Two home mechanisms
 
 Every registry user's `home.nix` is activated by exactly one of two
-mechanisms; `loginUsers` selects which:
+mechanisms; `loginHomes` selects which:
 
 ```
                      home.nix of a user
                              |
-              in loginUsers? |
+              in loginHomes? |
              no              |             yes
               v                             v
   built INTO the system         built as the flake output
@@ -361,7 +361,7 @@ A complete flake:
               inherit inputs system
                 userRegistry;
               hostname = "laptop";
-              loginUsers = [ "alice" ];
+              loginHomes = [ "alice" ];
               # loginReactivateEveryLogin =
               #   true;
               # loginFlakeRef = "/etc/nixos";
@@ -414,13 +414,13 @@ plasma-manager export their single module under a name, not
 `default`). A set with SEVERAL entries and no `default` is ambiguous
 -- nixos-hardware, for example, ships hundreds of mutually exclusive
 hardware profiles -- and the builder refuses to guess: evaluation
-throws and points at `inputSpecialCases`, where you say which of them
+throws and points at `inputContributions`, where you say which of them
 you want. (It does not list the entries; a catalog has hundreds. Name
 one that does not exist and *that* error lists them.)
 
 ### Selecting what an input contributes
 
-`inputSpecialCases` is keyed by input name, and each entry names the
+`inputContributions` is keyed by input name, and each entry names the
 entries to take per channel -- `nixosModules`, `homeModules` or
 `overlays`. It is an ordinary builder argument, so it goes in
 `_defaults` (applying to every host) or on a single host entry:
@@ -430,7 +430,7 @@ hosts = {
   _defaults = {
     inherit inputs system userRegistry;
 
-    inputSpecialCases = {
+    inputContributions = {
       # these entries, auto-imported in this order
       "nixos-raspberrypi".overlays =
         [ "bootloader" "vendor-kernel" ];
@@ -457,7 +457,7 @@ by leaving the channel out entirely -- the default `default`/single-entry
 rule above. `extendLib` and `lib` hold a single value rather than a
 set, so for those only `null`/`[ ]` (off) and `"*"` (on) apply.
 
-Two shorthands: `inputSpecialCases."x" = null;` switches off *every*
+Two shorthands: `inputContributions."x" = null;` switches off *every*
 channel of an input at once, and a function value is the escape hatch
 for exports living under nonstandard paths --
 `"x" = v: { nixosModules = v.modules.nixos; };`.
@@ -525,7 +525,7 @@ like the `nixpkgs-*` inputs -- which ship helper modules that would
 break a system. Exporting `legacyPackages` alone (sops-nix does, for
 its docs) does not exclude an input. Both skips exist to stop the
 builder from guessing, so an explicit selection overrides them:
-`inputSpecialCases."x".nixosModules = [ "the-one-i-mean" ];`.
+`inputContributions."x".nixosModules = [ "the-one-i-mean" ];`.
 
 Those skips are per channel, deliberately. A nixpkgs tree's `lib` is
 also not namespaced (its lib IS the base lib), but its
@@ -553,7 +553,7 @@ Both NixOS modules and home-manager modules get:
 | `inputPkgs.<name>` | every input's packages, pre-selected for the host's system |
 | `pkgs-<variant>` | package set per `nixpkgs-*` input |
 | `extLib` | this repo's lib (also merged into `lib`) |
-| `hostname`, `rootPath`, `tags`, `systemType` | the call arguments of the same name |
+| `hostname`, `rootPath`, `tags`, `hostGroup` | the call arguments of the same name |
 | `listOfUsernames` | the host's registry-derived users |
 | `username` | home-manager configs only: whose home |
 
@@ -677,11 +677,11 @@ eval-level changes.
 - "Every login" means every systemd user-manager instance: the
   bootstrap re-runs when the user's first session starts, not on
   each additional terminal login.
-- If the bootstrap seems to do nothing: at least one `loginUsers`
+- If the bootstrap seems to do nothing: at least one `loginHomes`
   name must match a registry user shipping a `home.nix` on this host,
   a home-manager input must exist, and `inputs.self` (or
   `loginFlakeRef`) must be set -- all are required, and the service
-  is simply absent otherwise. Users NOT in `loginUsers` never touch
+  is simply absent otherwise. Users NOT in `loginHomes` never touch
   the bootstrap: their homes activate with `nixos-rebuild switch`.
 
 ## Verifying your setup

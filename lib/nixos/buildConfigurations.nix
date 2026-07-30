@@ -15,7 +15,7 @@ in
     two of them over a single shared plan. Prefer it, for two reasons
     beyond brevity:
 
-    - The login bootstrap NEEDS both halves. A user in `loginUsers` has
+    - The login bootstrap NEEDS both halves. A user in `loginHomes` has
       their home activated on first login from
       `<loginFlakeRef>#<user>@<host>`, so a flake that exports only
       `nixosConfigurations` fails at RUNTIME, on that user's first login,
@@ -42,7 +42,7 @@ in
           inherit inputs;
           system = "x86_64-linux";
           userRegistry."alice" = ./users/alice;
-          loginUsers = [ "alice" ];
+          loginHomes = [ "alice" ];
         };
         laptop = { };
         server = { userRegistry = { }; };

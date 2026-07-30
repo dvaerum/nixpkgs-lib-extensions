@@ -11,7 +11,7 @@
 # builder files keep that single import:
 #
 #   inputs.nix     input-convention introspection (detection, the channel
-#                  conventions, inputSpecialCases classification/selection)
+#                  conventions, inputContributions classification/selection)
 #   registry.nix   userRegistry resolution (matching, validation, user lists)
 #   context.nix    the shared evaluation context (mkContext)
 #   hosts-args.nix argument allowlists and hosts-attrset validation

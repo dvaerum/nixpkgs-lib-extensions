@@ -6,10 +6,10 @@
     shared `users` group) -- so by default a user is only a member of their
     own group.
 
-    This is the default `userModuleFn` of `nixosConfigurationsBuilder`, so
+    This is the default `userModule` of `nixosConfigurationsBuilder`, so
     every user derived from the `userRegistry` gets a login
     account automatically. Pass your own function when accounts need more,
-    or `userModuleFn = null` to disable account creation.
+    or `userModule = null` to disable account creation.
 
     # Example
 
@@ -32,8 +32,8 @@
     # "root" is a valid registry entry: it only gets its home.nix /
     # configuration.nix, never account changes.
 
-    # a custom userModuleFn can build on it:
-    userModuleFn = username: {
+    # a custom userModule can build on it:
+    userModule = username: {
       imports = [ (extLib.normalUserModule username) ];
       users.users.${username}.extraGroups = [ "networkmanager" ];
     };
@@ -93,11 +93,11 @@
             {
               assertion = !(normalAccount && config.users.users.${username}.isSystemUser);
               message = ''
-                nixpkgs-lib-extensions: user `${username}` is declared `isSystemUser = true`, but this host's `userModuleFn` (by default `normalUserModule`) also makes every userRegistry user a NORMAL account, and NixOS allows only one of the two.
+                nixpkgs-lib-extensions: user `${username}` is declared `isSystemUser = true`, but this host's `userModule` (by default `normalUserModule`) also makes every userRegistry user a NORMAL account, and NixOS allows only one of the two.
                 Fix it by one of:
                   - dropping `${username}` from the userRegistry, if the account is not a person;
                   - pinning a uid below 1000 for `${username}`, which this module leaves alone;
-                  - passing `userModuleFn = null` and creating the accounts yourself.
+                  - passing `userModule = null` and creating the accounts yourself.
               '';
             }
           ];

@@ -1,6 +1,6 @@
 # Auto-loading of inputs: the generic conventions (nixosModules,
 # homeManagerModules/homeModules, overlays, extendLib, nixpkgs-* package
-# sets), the inputSpecialCases forms (per-channel selections, input-level
+# sets), the inputContributions forms (per-channel selections, input-level
 # null, the function escape hatch) and the inputs/inputPkgs exposure.
 {
   myLib,
@@ -18,14 +18,14 @@
   ...
 }:
 let
-  # A minimal host whose only interesting part is its inputSpecialCases.
+  # A minimal host whose only interesting part is its inputContributions.
   probeHost =
     hostname: extraInputs: cases:
     myLib.nixosConfigurationsBuilder {
       inputs = inputs // extraInputs;
       inherit system hostname;
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-      inputSpecialCases = cases;
+      inputContributions = cases;
     };
   # Forcing the group names reaches the auto-collection (and its throws).
   throwsGroups = sys: !(builtins.tryEval (builtins.attrNames sys.config.users.groups)).success;
@@ -47,7 +47,7 @@ in
     && aliceHome.config.home.sessionVariables.FROM_SINGLE_HM == "1";
   # ... but SEVERAL entries without `default` (nixos-hardware style) is
   # ambiguous: auto-import refuses to guess and THROWS with the
-  # inputSpecialCases remedies instead of silently skipping the input
+  # inputContributions remedies instead of silently skipping the input
   multi-export-without-default-throws =
     !(builtins.tryEval (
       (myLib.nixosConfigurationsBuilder {
@@ -60,7 +60,7 @@ in
       }).config.users.groups ? multi-one
     )).success;
   # ... and the escape hatch works: opting the channel out via
-  # inputSpecialCases makes evaluation succeed with NONE of the entries
+  # inputContributions makes evaluation succeed with NONE of the entries
   # imported. (It says nothing about laziness -- the function form REPLACES
   # the whole export set before any decision is made. The tombstone proof
   # is channel-selection-skips-tombstone below.)
@@ -74,7 +74,7 @@ in
           inherit system;
           hostname = "catalogoptout";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-          inputSpecialCases."fake-multi-module-input" = _: { nixosModules = { }; };
+          inputContributions."fake-multi-module-input" = _: { nixosModules = { }; };
         }).config.users.groups;
     in
     !(groups ? multi-one) && !(groups ? multi-two);
@@ -114,7 +114,7 @@ in
       hostname = "laptop";
       username = "alice";
       userRegistry."alice" = exampleDir + "/users/alice";
-      homeSharedModules = [
+      homeModules = [
         (
           { inputs, ... }:
           {
@@ -154,7 +154,7 @@ in
       hostname = "laptop";
       username = "alice";
       userRegistry."alice" = exampleDir + "/users/alice";
-      homeSharedModules = [
+      homeModules = [
         (
           { lib, ... }:
           {
@@ -217,7 +217,7 @@ in
   tree-overlay-applied =
     (probeHost "treeoverlay" { inherit fake-tree-input; } { }).pkgs ? from-tree-overlay;
 
-  # ── inputSpecialCases: per-channel selections ──
+  # ── inputContributions: per-channel selections ──
 
   # selecting NOTHING for a channel is the per-input opt-out (the `custom`
   # host switches fake-module-input's nixosModules off this way)
@@ -299,7 +299,7 @@ in
         hostname = "laptop";
         username = "alice";
         userRegistry."alice" = exampleDir + "/users/alice";
-        inputSpecialCases."fake-module-input" = null;
+        inputContributions."fake-module-input" = null;
       };
     in
     !(sys.config.users.groups ? from-input-module)
@@ -382,7 +382,7 @@ in
     probeHost "selunused" { } { "fake-module-input".homeModules = [ "nope" ]; }
   );
 
-  # ── inputSpecialCases: the function escape hatch ──
+  # ── inputContributions: the function escape hatch ──
 
   # consumer-provided cases extend the built-in table: the
   # nur-shaped `not-nur` input can be normalized onto the conventions ...
@@ -391,7 +391,7 @@ in
       inherit inputs system;
       hostname = "scprobe";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-      inputSpecialCases."not-nur" = v: { nixosModules = v.modules.nixos or { }; };
+      inputContributions."not-nur" = v: { nixosModules = v.modules.nixos or { }; };
     }).config.users.groups ? from-notnur-module;
   # ... and the function form ALSO overrides the built-in skips, exactly as
   # a named selection does. Without that, remapping a nixpkgs-TREE-shaped
@@ -414,7 +414,7 @@ in
       inherit system;
       hostname = "treeremap";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-      inputSpecialCases."distro" = v: { nixosModules = v.modules.nixos; };
+      inputContributions."distro" = v: { nixosModules = v.modules.nixos; };
     }).config.users.groups ? from-remapped-tree;
 
   # ... and double as the per-input opt-out for any channel
@@ -424,7 +424,7 @@ in
         inherit inputs system;
         hostname = "scoptout";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-        inputSpecialCases."fake-module-input" = _: { nixosModules = { }; };
+        inputContributions."fake-module-input" = _: { nixosModules = { }; };
       }).config.users.groups ? from-input-module
     );
 

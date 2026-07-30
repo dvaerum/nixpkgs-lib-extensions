@@ -25,11 +25,11 @@
         };
         inherit system;
         userRegistry."alice" = exampleDir + "/users/alice";
-        loginUsers = [ "alice" ];
+        loginHomes = [ "alice" ];
       };
     } == { };
 
-  # a loginUsers TYPO used to be silent: no flake output, the home quietly
+  # a loginHomes TYPO used to be silent: no flake output, the home quietly
   # system-managed instead, and the system still built and booted. The
   # hosts-level builders see every host's registry, so a name matching no
   # user anywhere is a typo and throws.
@@ -40,21 +40,21 @@
           laptop = {
             inherit inputs system;
             userRegistry."alice" = exampleDir + "/users/alice";
-            loginUsers = [ "alicce" ];
+            loginHomes = [ "alicce" ];
           };
         }
       )
     )).success;
 
   # ... while a name that simply does not apply to THIS host stays legal:
-  # one shared loginUsers in _defaults across a fleet is the documented way
+  # one shared loginHomes in _defaults across a fleet is the documented way
   # to use it, so bob (a user on laptop only) must not break server
   login-users-unmatched-on-one-host-ok =
     builtins.attrNames (
       myLib.buildHomeConfigurations {
         _defaults = {
           inherit inputs system;
-          loginUsers = [
+          loginHomes = [
             "alice"
             "bob"
           ];
@@ -89,7 +89,7 @@
           inherit system;
           homeManager = inputs.home-manager;
           userRegistry."alice" = exampleDir + "/users/alice";
-          loginUsers = [ "alice" ];
+          loginHomes = [ "alice" ];
         };
       }
     ) == [ "alice@laptop" ];
@@ -117,7 +117,7 @@
   home-eval-username = aliceHome.config.home.username == "alice";
   home-eval-home-directory = aliceHome.config.home.homeDirectory == "/home/alice";
   home-eval-state-version-default = aliceHome.config.home.stateVersion == lib.trivial.release;
-  # homeSharedModules (set in the example's _defaults) reach login homes
+  # homeModules (set in the example's _defaults) reach login homes
   home-shared-modules-applied = aliceHome.config.programs.direnv.enable;
 
   # ... and throws when the matched registry entries ship no home.nix at
@@ -146,7 +146,7 @@
           "alice" = exampleDir + "/users/alice";
           "dave" = exampleDir + "/users/dave";
         };
-        homeSharedModules = [
+        homeModules = [
           (
             { username, listOfUsernames, ... }:
             {
@@ -190,11 +190,11 @@
       hostname = "whoami";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
       userRegistry."dave" = exampleDir + "/users/dave";
-      homeSharedModules = [
+      homeModules = [
         ({ username, ... }: { home.sessionVariables.WHOAMI = username; })
       ];
     }).config.home-manager.users.dave.home.sessionVariables.WHOAMI == "dave";
-  # ... homeSharedModules reach system homes as well
+  # ... homeModules reach system homes as well
   system-home-shared-modules-applied = laptop.config.home-manager.users.dave.programs.direnv.enable;
   # ... and exactly the non-login users get one: alice/bob are
   # login-managed, eve is system-only (no home.nix)

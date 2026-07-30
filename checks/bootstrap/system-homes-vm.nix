@@ -28,7 +28,7 @@ pkgs.testers.runNixOSTest {
 
     home-manager.useGlobalPkgs = true;
     home-manager.useUserPackages = true;
-    # stands in for the builder's homeSharedModules slot
+    # stands in for the builder's homeModules slot
     home-manager.sharedModules = [
       { home.file.".system-home-marker".text = "ok"; }
     ];

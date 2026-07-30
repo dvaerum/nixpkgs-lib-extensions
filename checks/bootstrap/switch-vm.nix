@@ -126,7 +126,7 @@ pkgs.testers.runNixOSTest {
           inherit system;
           hostname = "fullvm";
           userRegistry."alice" = ../example/users/alice;
-          loginUsers = [ "alice" ];
+          loginHomes = [ "alice" ];
           loginFlakeRef = testFlake;
         })
       ];

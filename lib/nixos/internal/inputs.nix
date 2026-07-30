@@ -1,7 +1,7 @@
 # Input-convention introspection for the lib/nixos builders: how a flake
 # input is recognized (home-manager, nixpkgs trees), how its exports are
 # mapped onto the auto-collection conventions, and how a consumer's
-# `inputSpecialCases` entry narrows or replaces them. One of the four
+# `inputContributions` entry narrows or replaces them. One of the four
 # concern-files aggregated by ./shared.nix.
 #
 # Like the builder files it is a function of `extLib` — the fully
@@ -53,7 +53,7 @@ let
 
   # ── the auto-collection channels ──
   #
-  # Every channel an input can contribute to automatically. `inputSpecialCases`
+  # Every channel an input can contribute to automatically. `inputContributions`
   # is keyed by channel name, so this list doubles as the allowlist for its
   # keys. Entry-set channels hold a SET of entries, so a selection can name
   # the ones to take; single-value channels hold one value, which a selection
@@ -107,12 +107,12 @@ let
       [ ]
     else
       throw ''
-        nixpkgs-lib-extensions: input `${name}` exports ${toString (builtins.length names)} ${channel} entries and no `default` -- auto-import will not guess. Select what you want via the builder's inputSpecialCases argument:
-          inputSpecialCases."${name}".${channel} = [ "<entry>" ]; # these entries, in this order
-          inputSpecialCases."${name}".${channel} = "*";           # all of them
-          inputSpecialCases."${name}".${channel} = null;          # none -- select per host instead'';
+        nixpkgs-lib-extensions: input `${name}` exports ${toString (builtins.length names)} ${channel} entries and no `default` -- auto-import will not guess. Select what you want via the builder's inputContributions argument:
+          inputContributions."${name}".${channel} = [ "<entry>" ]; # these entries, in this order
+          inputContributions."${name}".${channel} = "*";           # all of them
+          inputContributions."${name}".${channel} = null;          # none -- select per host instead'';
 
-  # A consumer's `inputSpecialCases.<input>` entry comes in three forms:
+  # A consumer's `inputContributions.<input>` entry comes in three forms:
   #
   #   null                  the input contributes NOTHING, to any channel
   #   function              escape hatch: maps the input onto the convention
@@ -162,9 +162,9 @@ let
             selections = v;
           }
         else
-          throw ''nixpkgs-lib-extensions: inputSpecialCases."${name}": unknown channel(s) ${shownList bad} (typo?). Valid channels: ${shownList channelNames}.''
+          throw ''nixpkgs-lib-extensions: inputContributions."${name}": unknown channel(s) ${shownList bad} (typo?). Valid channels: ${shownList channelNames}.''
       else
-        throw ''nixpkgs-lib-extensions: inputSpecialCases."${name}" must be `null` (contribute nothing), a function (map the input onto the convention attributes), or an attrset of per-channel selections -- got a value of type `${builtins.typeOf v}`.'';
+        throw ''nixpkgs-lib-extensions: inputContributions."${name}" must be `null` (contribute nothing), a function (map the input onto the convention attributes), or an attrset of per-channel selections -- got a value of type `${builtins.typeOf v}`.'';
 
   # What an input contributes to one ENTRY-SET channel:
   #
@@ -198,7 +198,7 @@ let
         if missing == [ ] then
           map (n: exported.${n}) selection
         else
-          throw ''nixpkgs-lib-extensions: inputSpecialCases."${name}".${channel} selects ${shownList missing}, which input `${name}` does not export. Exported ${channel}: ${
+          throw ''nixpkgs-lib-extensions: inputContributions."${name}".${channel} selects ${shownList missing}, which input `${name}` does not export. Exported ${channel}: ${
             if available == [ ] then "(none)" else shownList available
           }.''
       else
@@ -207,7 +207,7 @@ let
         # in string interpolation with an uncatchable coercion error instead
         # of this message.
         throw
-          ''nixpkgs-lib-extensions: inputSpecialCases."${name}".${channel} must be a list of entry names (strings), `"*"` (all), or `null` / `[ ]` (none) -- got ${
+          ''nixpkgs-lib-extensions: inputContributions."${name}".${channel} must be a list of entry names (strings), `"*"` (all), or `null` / `[ ]` (none) -- got ${
             if builtins.isList selection then
               "a list holding a non-string"
             else
@@ -230,7 +230,7 @@ let
       else if selection == "*" then
         true
       else
-        throw ''nixpkgs-lib-extensions: inputSpecialCases."${name}".${channel} holds a single value, not a set of entries: only `null` / `[ ]` (off) and `"*"` (on) are accepted -- got a value of type `${builtins.typeOf selection}`.'';
+        throw ''nixpkgs-lib-extensions: inputContributions."${name}".${channel} holds a single value, not a set of entries: only `null` / `[ ]` (off) and `"*"` (on) are accepted -- got a value of type `${builtins.typeOf selection}`.'';
 
   # A case keyed by an input that does not exist is a silent no-op -- and the
   # error it was written to fix comes back unexplained. Same defect class as
@@ -243,7 +243,7 @@ let
     if bad == [ ] then
       cases
     else
-      throw "nixpkgs-lib-extensions: inputSpecialCases names input(s) ${shownList bad}, which are not in `inputs` (typo?). Known inputs: ${shownList (builtins.attrNames inputs)}.";
+      throw "nixpkgs-lib-extensions: inputContributions names input(s) ${shownList bad}, which are not in `inputs` (typo?). Known inputs: ${shownList (builtins.attrNames inputs)}.";
 
   # Special cases for inputs that do not follow the generic output
   # conventions, keyed by the input's NAME in `inputs`. A case applies ONLY
@@ -257,7 +257,7 @@ let
     # and which triggers home-manager's useGlobalPkgs warning in every
     # home. A case would look like:
     #   some-input = v: { nixosModules = v.odd.export.name or { }; };
-    # Consumers extend this table via the `inputSpecialCases` builder
+    # Consumers extend this table via the `inputContributions` builder
     # argument, which is also where a channel is narrowed to named entries
     # or switched off entirely.
   };
@@ -309,12 +309,12 @@ let
   collectFromInputs =
     {
       inputs,
-      inputSpecialCases,
+      inputContributions,
       baseLib,
       skipFor ? { },
     }:
     let
-      cases = builtinInputSpecialCases // (validateCases inputs inputSpecialCases);
+      cases = builtinInputSpecialCases // (validateCases inputs inputContributions);
       conventionInputs = builtins.mapAttrs (normalizeInput cases) inputs;
       caseOf = classifyCase cases;
 
@@ -367,7 +367,7 @@ let
               ) (builtins.intersectAttrs case.selections entrySetChannels)
             );
         in
-        builtins.deepSeq (baseLib.concatLists (baseLib.mapAttrsToList probe inputSpecialCases)) null;
+        builtins.deepSeq (baseLib.concatLists (baseLib.mapAttrsToList probe inputContributions)) null;
     in
     {
       inherit conventionInputs caseOf selectionsChecked;

@@ -12,9 +12,9 @@ in
     background (so login is never hard-blocked). First-login-only by default.
 
     `nixosConfigurationsBuilder` includes this module automatically when it
-    has `loginUsers`, so it normally does not need to be wired up by hand —
+    has `loginHomes`, so it normally does not need to be wired up by hand —
     direct use is for custom setups that build their NixOS systems some
-    other way. It is driven by the `userRegistry` filtered by `loginUsers`
+    other way. It is driven by the `userRegistry` filtered by `loginHomes`
     (the same arguments the builders take) but is otherwise independent of
     the builders. Self-gating: when no login user matches, the home-manager
     input is missing or the flake reference is unset, the module is empty.
@@ -31,7 +31,7 @@ in
           hostname = "laptop";
           system   = "x86_64-linux";
           userRegistry = { "alice" = ./users/alice; };
-          loginUsers = [ "alice" ];
+          loginHomes = [ "alice" ];
         })
       ];
     }
@@ -63,7 +63,7 @@ in
     userRegistry
     : The user registry (as in `nixosConfigurationsBuilder`). Default `{ }`.
 
-    loginUsers
+    loginHomes
     : The usernames whose homes are login-managed; only these are
     : bootstrapped (and only when the registry gives them a `home.nix`
     : on this host). Default `[ ]` (module is empty).
@@ -90,7 +90,7 @@ in
       hostname,
       system,
       userRegistry ? { },
-      loginUsers ? [ ],
+      loginHomes ? [ ],
       loginFlakeRef ? null,
       loginReactivateEveryLogin ? false,
       homeManager ? null,
@@ -102,7 +102,7 @@ in
       effectiveFlakeRef = if loginFlakeRef != null then loginFlakeRef else (inputs.self or null);
       registry = if userRegistry == null then { } else userRegistry;
       # login-managed users with an actual home.nix on this host
-      usersHome = shared.loginUsersWithHome registry hostname loginUsers;
+      usersHome = shared.loginUsersWithHome registry hostname loginHomes;
     in
     # `_file` points eval errors of this generated module at this file
     # instead of an anonymous <unknown-file> location.
