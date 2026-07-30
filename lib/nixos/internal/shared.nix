@@ -18,8 +18,7 @@
 #
 # Like the builder files each of them is a function of `extLib` — the fully
 # assembled nixpkgs-lib-extensions lib.
-extLib:
-{
+extLib: {
   inherit (import ./inputs.nix extLib) detectHomeManager pickExported;
   inherit (import ./registry.nix extLib)
     resolveUser

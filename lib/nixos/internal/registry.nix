@@ -32,15 +32,17 @@ let
       fallback = userRegistry.${username} or null;
     in
     if atTier != [ ] then
-      (if fallback != null then
-        warn ''
-          userRegistry: the plain `${username}` entry is IGNORED on host
-          `${hostname}` because `${username}@...` entries exist. Plain entries
-          are standalone defaults, never merged with @-entries; import the
-          directory explicitly from an @-entry if you want to reuse it.
-        '' atTier
-      else
-        atTier)
+      (
+        if fallback != null then
+          warn ''
+            userRegistry: the plain `${username}` entry is IGNORED on host
+            `${hostname}` because `${username}@...` entries exist. Plain entries
+            are standalone defaults, never merged with @-entries; import the
+            directory explicitly from an @-entry if you want to reuse it.
+          '' atTier
+        else
+          atTier
+      )
     else if fallback != null then
       [ fallback ]
     else

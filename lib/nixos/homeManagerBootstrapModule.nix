@@ -97,7 +97,8 @@ in
     }:
     let
       home-manager = if homeManager != null then homeManager else shared.detectHomeManager inputs;
-      homeManagerPkg = if home-manager == null then null else home-manager.packages.${system}.home-manager;
+      homeManagerPkg =
+        if home-manager == null then null else home-manager.packages.${system}.home-manager;
       effectiveFlakeRef = if loginFlakeRef != null then loginFlakeRef else (inputs.self or null);
       registry = if userRegistry == null then { } else userRegistry;
       # login-managed users with an actual home.nix on this host

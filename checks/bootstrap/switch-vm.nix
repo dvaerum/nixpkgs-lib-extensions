@@ -41,21 +41,21 @@ let
   # so the lock is generated here on the host and shipped with the flake --
   # in-VM evaluation then only verifies it. The narHash comes from a tiny
   # host derivation (pure fetchTree cannot hash an unlocked path input).
-  lockedRefFor =
-    input:
-    {
-      type = "path";
-      path = toString input;
-      lastModified = 0;
-      # pinned to x86_64-linux: this runs during EVALUATION (IFD) and must be
-      # buildable on the machine evaluating the checks, whatever system the
-      # check itself targets
-      narHash = builtins.readFile (
-        nixpkgs.legacyPackages."x86_64-linux".runCommand "narhash" { } ''
-          ${nixpkgs.legacyPackages."x86_64-linux".nix}/bin/nix-hash --type sha256 --sri ${input} | tr -d '\n' > $out
-        ''
-      );
-    };
+  lockedRefFor = input: {
+    type = "path";
+    path = toString input;
+    lastModified = 0;
+    # pinned to x86_64-linux: this runs during EVALUATION (IFD) and must be
+    # buildable on the machine evaluating the checks, whatever system the
+    # check itself targets
+    narHash = builtins.readFile (
+      nixpkgs.legacyPackages."x86_64-linux".runCommand "narhash" { } ''
+        ${
+          nixpkgs.legacyPackages."x86_64-linux".nix
+        }/bin/nix-hash --type sha256 --sri ${input} | tr -d '\n' > $out
+      ''
+    );
+  };
 
   flakeLock = builtins.toJSON {
     version = 7;

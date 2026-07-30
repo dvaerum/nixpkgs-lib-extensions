@@ -38,8 +38,7 @@
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         userRegistry."eve" = exampleDir + "/users/eve";
         loginUsers = [ "eve" ];
-      }).config.systemd.user.services
-      ? home-manager-bootstrap
+      }).config.systemd.user.services ? home-manager-bootstrap
     );
 
   # loginUsers names matching NONE of the host's users are ignored without
@@ -71,7 +70,12 @@
     (applyBootstrap { loginReactivateEveryLogin = true; })
     .systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
   );
-  bootstrap-gates-without-home-manager = applyBootstrap { inputs = { self = inputs.self; }; } == { };
+  bootstrap-gates-without-home-manager =
+    applyBootstrap {
+      inputs = {
+        self = inputs.self;
+      };
+    } == { };
   bootstrap-gates-without-flake-ref =
     applyBootstrap { inputs = { inherit nixpkgs home-manager; }; } == { };
 }

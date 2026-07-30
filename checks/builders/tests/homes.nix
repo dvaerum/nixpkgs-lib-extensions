@@ -33,16 +33,18 @@
   # that cannot be built is an error, not an empty result
   home-builder-throws-without-home-manager =
     !(builtins.tryEval (
-      builtins.attrNames (myLib.homeConfigurationsBuilder {
-        inputs = {
-          inherit nixpkgs;
-          self = inputs.self;
-        };
-        inherit system;
-        hostname = "laptop";
-        username = "alice";
-        userRegistry."alice" = exampleDir + "/users/alice";
-      })
+      builtins.attrNames (
+        myLib.homeConfigurationsBuilder {
+          inputs = {
+            inherit nixpkgs;
+            self = inputs.self;
+          };
+          inherit system;
+          hostname = "laptop";
+          username = "alice";
+          userRegistry."alice" = exampleDir + "/users/alice";
+        }
+      )
     )).success;
 
   # LOGIN-managed homes REALLY evaluate through home-manager's module
@@ -57,12 +59,14 @@
   # all (eve is a system-only user: configuration.nix, no home.nix)
   home-builder-throws-without-home-nix =
     !(builtins.tryEval (
-      builtins.attrNames (myLib.homeConfigurationsBuilder {
-        inherit inputs system;
-        hostname = "laptop";
-        username = "eve";
-        userRegistry."eve" = exampleDir + "/users/eve";
-      })
+      builtins.attrNames (
+        myLib.homeConfigurationsBuilder {
+          inherit inputs system;
+          hostname = "laptop";
+          username = "eve";
+          userRegistry."eve" = exampleDir + "/users/eve";
+        }
+      )
     )).success;
 
   # login homes get `username` and `listOfUsernames` as module arguments
@@ -150,7 +154,6 @@
         hostname = "nohm";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         userRegistry."alice" = exampleDir + "/users/alice";
-      }).options
-      ? home-manager
+      }).options ? home-manager
     );
 }

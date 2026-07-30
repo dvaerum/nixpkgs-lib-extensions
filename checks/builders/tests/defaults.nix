@@ -63,46 +63,60 @@ in
 
   # _defaults must not set hostname (comes from the key) or the
   # per-host halves of the layered pairs
-  defaults-hostname-throws = throws (myLib.buildNixosConfigurations {
-    _defaults = { hostname = "x"; };
-    h = { };
-  });
-  defaults-additional-modules-throws = throws (myLib.buildNixosConfigurations {
-    _defaults = {
-      additionalModules = [ ];
-    };
-    h = { };
-  });
-  defaults-additional-special-args-throws = throws (myLib.buildNixosConfigurations {
-    _defaults = {
-      additionalSpecialArgs = { };
-    };
-    h = { };
-  });
+  defaults-hostname-throws = throws (
+    myLib.buildNixosConfigurations {
+      _defaults = {
+        hostname = "x";
+      };
+      h = { };
+    }
+  );
+  defaults-additional-modules-throws = throws (
+    myLib.buildNixosConfigurations {
+      _defaults = {
+        additionalModules = [ ];
+      };
+      h = { };
+    }
+  );
+  defaults-additional-special-args-throws = throws (
+    myLib.buildNixosConfigurations {
+      _defaults = {
+        additionalSpecialArgs = { };
+      };
+      h = { };
+    }
+  );
 
   # _defaults is an ALLOWLIST: a typo'd key throws instead of being
   # silently dropped by the builder's `...` pattern
-  defaults-typo-key-throws = throws (myLib.buildNixosConfigurations {
-    _defaults = {
-      homeConfiguration = { };
-    };
-    h = { };
-  });
+  defaults-typo-key-throws = throws (
+    myLib.buildNixosConfigurations {
+      _defaults = {
+        homeConfiguration = { };
+      };
+      h = { };
+    }
+  );
   # ... and the additional* special-case fires for unknown names too
-  defaults-additional-prefix-throws = throws (myLib.buildNixosConfigurations {
-    _defaults = {
-      additionalOverlays = [ ];
-    };
-    h = { };
-  });
+  defaults-additional-prefix-throws = throws (
+    myLib.buildNixosConfigurations {
+      _defaults = {
+        additionalOverlays = [ ];
+      };
+      h = { };
+    }
+  );
 
   # host entries are allowlisted too: a leftover argument (the removed
   # `users`) or a typo throws instead of silently doing nothing
-  host-unknown-key-throws = throws (myLib.buildNixosConfigurations {
-    h = {
-      users = [ "root" ];
-    };
-  });
+  host-unknown-key-throws = throws (
+    myLib.buildNixosConfigurations {
+      h = {
+        users = [ "root" ];
+      };
+    }
+  );
 
   # buildHomeConfigurations: the SAME hosts attrset produces the merged
   # "user@host" set across all hosts, with per-host registry overrides;
@@ -159,11 +173,13 @@ in
     && !(systems.hostA.options ? home-manager);
 
   # ... and shares the validation: the same typo throws there too
-  build-home-configurations-allowlisted = throws (myLib.buildHomeConfigurations {
-    h = {
-      users = [ "root" ];
-    };
-  });
+  build-home-configurations-allowlisted = throws (
+    myLib.buildHomeConfigurations {
+      h = {
+        users = [ "root" ];
+      };
+    }
+  );
 
   # DIRECT builder calls are validated too: the `...` patterns no longer
   # swallow typos or stale argument names

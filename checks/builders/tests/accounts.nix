@@ -63,7 +63,8 @@ in
     && builtins.all (a: a.assertion) cfg.assertions;
   # the default userModuleFn (normalUserModule) creates an account for
   # every derived user, including system-only eve
-  user-accounts-created = laptop.config.users.users.dave.isNormalUser && laptop.config.users.users.eve.isNormalUser;
+  user-accounts-created =
+    laptop.config.users.users.dave.isNormalUser && laptop.config.users.users.eve.isNormalUser;
 
   # ... with a private primary group named after the user
   user-private-group =

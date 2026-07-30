@@ -1,7 +1,6 @@
 # This file is a function-file: the lib loader (lib/default.nix) applies it
 # to `extLib` so it can delegate to its sibling `importIfNixOr`.
-extLib:
-{
+extLib: {
   /**
     Import a path only when it contains valid, importable Nix; otherwise
     return `{ }` (a harmless no-op module) with a warning naming the

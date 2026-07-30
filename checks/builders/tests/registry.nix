@@ -14,14 +14,15 @@
   ...
 }:
 {
-  users-derived-from-registry = laptop._module.specialArgs.listOfUsernames == [
-    "alice"
-    "bob"
-    "dave"
-    "eve"
-    "frank"
-    "grace"
-  ];
+  users-derived-from-registry =
+    laptop._module.specialArgs.listOfUsernames == [
+      "alice"
+      "bob"
+      "dave"
+      "eve"
+      "frank"
+      "grace"
+    ];
 
   # companion configuration.nix files from user directories reach the system
   companion-config-applied = laptop.config.users.groups ? media;
@@ -44,39 +45,44 @@
   missing-path-throws = homesThrow { "bad" = exampleDir + "/does-not-exist"; };
   # absolute string paths work like path literals
   string-path-entry-works =
-    builtins.attrNames (myLib.buildHomeConfigurations {
-      laptop = {
-        inherit inputs system;
-        userRegistry."alice" = "${exampleDir + "/users/alice"}";
-        loginUsers = [ "alice" ];
-      };
-    }) == [ "alice@laptop" ];
+    builtins.attrNames (
+      myLib.buildHomeConfigurations {
+        laptop = {
+          inherit inputs system;
+          userRegistry."alice" = "${exampleDir + "/users/alice"}";
+          loginUsers = [ "alice" ];
+        };
+      }
+    ) == [ "alice@laptop" ];
 
   # only loginUsers get homeConfigurations outputs: dave/frank/grace are
   # system-managed, eve has no home config at all
-  home-configs-keyed-per-host = builtins.attrNames example.homeConfigurations == [
-    "alice@laptop"
-    "bob@laptop"
-  ];
+  home-configs-keyed-per-host =
+    builtins.attrNames example.homeConfigurations == [
+      "alice@laptop"
+      "bob@laptop"
+    ];
 
   # key forms resolved on a second host: wildcard + plain apply, the
   # laptop-only entry does not
   wildcard-applies-on-any-host =
-    builtins.attrNames (myLib.buildHomeConfigurations {
-      server = {
-        inherit inputs system;
-        userRegistry = {
-          "alice" = exampleDir + "/users/alice"; # plain -> any host
-          "bob@laptop" = exampleDir + "/users/bob"; # laptop only -> NOT on server
-          "frank@*" = exampleDir + "/users/frank-base"; # wildcard -> every host
+    builtins.attrNames (
+      myLib.buildHomeConfigurations {
+        server = {
+          inherit inputs system;
+          userRegistry = {
+            "alice" = exampleDir + "/users/alice"; # plain -> any host
+            "bob@laptop" = exampleDir + "/users/bob"; # laptop only -> NOT on server
+            "frank@*" = exampleDir + "/users/frank-base"; # wildcard -> every host
+          };
+          loginUsers = [
+            "alice"
+            "bob"
+            "frank"
+          ];
         };
-        loginUsers = [
-          "alice"
-          "bob"
-          "frank"
-        ];
-      };
-    }) == [
+      }
+    ) == [
       "alice@server"
       "frank@server"
     ];
@@ -87,27 +93,30 @@
   # a plain entry still applies when the user's only @-entries target OTHER
   # hosts (shadowing needs a matching @-entry, not any @-entry)
   plain-applies-despite-foreign-host-entry =
-    builtins.attrNames (myLib.buildHomeConfigurations {
-      laptop = {
-        inherit inputs system;
-        userRegistry = {
-          "helen" = exampleDir + "/users/alice";
-          "helen@otherhost" = exampleDir + "/users/bob";
+    builtins.attrNames (
+      myLib.buildHomeConfigurations {
+        laptop = {
+          inherit inputs system;
+          userRegistry = {
+            "helen" = exampleDir + "/users/alice";
+            "helen@otherhost" = exampleDir + "/users/bob";
+          };
+          loginUsers = [ "helen" ];
         };
-        loginUsers = [ "helen" ];
-      };
-    }) == [ "helen@laptop" ];
+      }
+    ) == [ "helen@laptop" ];
 
   # an explicit null registry behaves like an empty one
   null-registry-disables =
     let
-      sys =
-        (myLib.nixosConfigurationsBuilder {
+      sys = (
+        myLib.nixosConfigurationsBuilder {
           inherit inputs system;
           hostname = "nullreg";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
           userRegistry = null;
-        });
+        }
+      );
     in
     sys._module.specialArgs.listOfUsernames == [ ]
     && !(sys.config.systemd.user.services ? home-manager-bootstrap);

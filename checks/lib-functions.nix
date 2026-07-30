@@ -67,10 +67,13 @@ let
       };
 
     # importIfNix: the documented outcomes, against real repo files
-    import-if-nix-file = builtins.isFunction (importIfNix ../checks/example/users/dave/configuration.nix);
+    import-if-nix-file = builtins.isFunction (
+      importIfNix ../checks/example/users/dave/configuration.nix
+    );
     import-if-nix-non-nix-file = importIfNix ../README.md == { };
     import-if-nix-directory-with-default = builtins.isFunction (importIfNix ../lib);
-    import-if-nix-directory-without-default = importIfNix ../checks/invalid-fixtures/no-nix-files == { };
+    import-if-nix-directory-without-default =
+      importIfNix ../checks/invalid-fixtures/no-nix-files == { };
     import-if-nix-missing-path = importIfNix ../does-not-exist == { };
     # the git-crypt case: right name, encrypted (binary) content -> { }
     import-if-nix-git-crypted-content = importIfNix ../checks/invalid-fixtures/git-crypted.nix == { };
