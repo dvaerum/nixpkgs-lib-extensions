@@ -7,7 +7,6 @@
 # assembled nixpkgs-lib-extensions lib.
 extLib:
 let
-  inherit (import ./inputs.nix extLib) warn;
 
   # Registry values must be directories: a path literal or an absolute string
   # pointing at an existing directory.
@@ -34,7 +33,7 @@ let
     if atTier != [ ] then
       (
         if fallback != null then
-          warn ''
+          builtins.warn ''
             userRegistry: the plain `${username}` entry is IGNORED on host
             `${hostname}` because `${username}@...` entries exist. Plain entries
             are standalone defaults, never merged with @-entries; import the

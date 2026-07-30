@@ -9,9 +9,6 @@
 # file keeps the same shape so their imports stay uniform).
 extLib:
 let
-  # `builtins.warn` needs Nix >= 2.23; fall back to a trace with the same look.
-  warn = builtins.warn or (msg: val: builtins.trace "evaluation warning: ${msg}" val);
-
   shownList = names: builtins.concatStringsSep ", " names;
 
   # The home-manager input, detected by capability (its `lib` exposes
@@ -36,7 +33,7 @@ let
     if matches == [ ] then
       null
     else if builtins.length matches > 1 then
-      warn
+      builtins.warn
         "nixpkgs-lib-extensions: several inputs look like home-manager (${builtins.concatStringsSep ", " matches}); using `${builtins.head matches}`. Pass `homeManager = inputs.<name>;` to the builder to choose explicitly."
         inputs.${builtins.head matches}
     else
@@ -249,7 +246,6 @@ let
 in
 {
   inherit
-    warn
     detectHomeManager
     entrySetChannels
     singleValueChannels

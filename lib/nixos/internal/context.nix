@@ -18,7 +18,6 @@
 extLib:
 let
   inherit (import ./inputs.nix extLib)
-    warn
     detectHomeManager
     classifyCase
     resolveEntrySet
@@ -176,7 +175,7 @@ let
         if raw ? self && !(raw ? flake) then
           builtins.removeAttrs raw [ "self" ] // { flake = raw.self; }
         else if raw ? self then
-          warn
+          builtins.warn
             "nixpkgs-lib-extensions: not exposing the consuming flake's `lib` as `lib.flake`: an input named `flake` already claims the name."
             (builtins.removeAttrs raw [ "self" ])
         else
@@ -210,7 +209,7 @@ let
           if skipped == [ ] then
             x: x
           else
-            warn "nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`."
+            builtins.warn "nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`."
         )
           (
             builtins.removeAttrs libsFromInputs (builtins.attrNames existing)

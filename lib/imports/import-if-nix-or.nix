@@ -58,12 +58,11 @@
     let
       type = if builtins.pathExists path then builtins.readFileType path else null;
 
-      # `builtins.warn` needs Nix >= 2.23; fall back to a trace with the same look.
-      warn = builtins.warn or (msg: val: builtins.trace "evaluation warning: ${msg}" val);
-
       # every skipped import says WHY -- a silently skipped file should
       # never be a silent mystery
-      skip = reason: warn "importIfNixOr: ${toString path} ${reason}; using the default instead" default;
+      skip =
+        reason:
+        builtins.warn "importIfNixOr: ${toString path} ${reason}; using the default instead" default;
 
       # "does this file parse as Nix?" -- answered by a tiny derivation,
       # since pure evaluation cannot inspect arbitrary file contents
