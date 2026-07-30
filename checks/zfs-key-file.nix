@@ -15,7 +15,7 @@
 #
 # Whether ZFS itself tolerates a trailing newline in a
 # `keyformat=passphrase` key file is a separate question, answered in a VM by
-# checks/zfs-passphrase-newline.nix: it does (a single trailing newline is
+# `nix build .#zfs-newline-probe`: it does (a single trailing newline is
 # stripped). So this check is about determinism, not about rescuing a broken
 # pool -- it keeps the three writers from depending on that ZFS detail.
 { pkgs, myLib }:

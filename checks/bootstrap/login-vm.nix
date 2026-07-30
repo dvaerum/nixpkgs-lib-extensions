@@ -43,34 +43,31 @@ in
 pkgs.testers.runNixOSTest {
   name = "home-manager-bootstrap-login";
 
-  nodes = {
-    machine = mkNode { };
-    reactivating = mkNode { loginReactivateEveryLogin = true; };
-  };
+  # ONE node. This test exists for the one thing only a booted machine can
+  # show: that the systemd USER service actually fires when a session
+  # starts, and that the stamp survives into the next user-manager
+  # instance. The FLAG behaviors it used to boot a second VM for --
+  # --reactivate-every-login overriding the stamp, user filtering, the
+  # failure path -- are all covered deterministically and in seconds by
+  # checks/bootstrap/script.nix, which drives the very same wrapper with a
+  # recording stub. A second full boot bought no unique coverage.
+  nodes.machine = mkNode { };
 
   testScript = ''
-    start_all()
-
-    def first_run(m):
-        m.wait_for_unit("multi-user.target")
-        # the autologin session starts alice's user manager -> the service runs
-        m.wait_until_succeeds("test -f /tmp/hm-record")
-        m.succeed("grep -q -- 'switch --flake /fake-flake#alice@vmhost' /tmp/hm-record")
-        m.wait_until_succeeds("test -f ~alice/.local/state/home-manager-bootstrap.stamp")
-        m.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 1 ]')
-        # a fresh user-manager instance = the next login
-        m.succeed("systemctl restart user@$(id -u alice).service")
-        m.wait_until_succeeds(
-            "su -l alice -c 'env XDG_RUNTIME_DIR=/run/user/$(id -u alice) "
-            "systemctl --user is-active home-manager-bootstrap.service'"
-        )
-
-    first_run(machine)
-    first_run(reactivating)
-
-    # the stamp prevents a re-run on the next user-manager instance ...
+    machine.wait_for_unit("multi-user.target")
+    # the autologin session starts alice's user manager -> the service runs
+    machine.wait_until_succeeds("test -f /tmp/hm-record")
+    machine.succeed("grep -q -- 'switch --flake /fake-flake#alice@vmhost' /tmp/hm-record")
+    machine.wait_until_succeeds("test -f ~alice/.local/state/home-manager-bootstrap.stamp")
     machine.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 1 ]')
-    # ... unless --reactivate-every-login is set
-    reactivating.wait_until_succeeds('[ "$(wc -l < /tmp/hm-record)" -eq 2 ]')
+
+    # a fresh user-manager instance = the next login
+    machine.succeed("systemctl restart user@$(id -u alice).service")
+    machine.wait_until_succeeds(
+        "su -l alice -c 'env XDG_RUNTIME_DIR=/run/user/$(id -u alice) "
+        "systemctl --user is-active home-manager-bootstrap.service'"
+    )
+    # ... and the stamp keeps it from switching again
+    machine.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 1 ]')
   '';
 }

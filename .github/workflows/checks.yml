@@ -21,7 +21,7 @@ jobs:
 
       # ubuntu-latest runners expose /dev/kvm, which the VM tests require
       # (deliberately not listed here -- the list grows and this comment
-      # would rot; they are the checks named *-vm plus zfs-passphrase-newline)
+      # would rot; they are the checks named *-vm)
       - name: Run flake checks
         run: |
           nix --extra-experimental-features 'nix-command flakes' flake check --print-build-logs

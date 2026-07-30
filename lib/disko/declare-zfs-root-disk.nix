@@ -116,7 +116,7 @@
       # newline where `echo -n` does not. That turned out to be harmless,
       # because ZFS strips a single trailing newline from a
       # `keyformat=passphrase` key file (verified in a VM by
-      # checks/zfs-passphrase-newline.nix), but resting the ability to unlock
+      # `nix build .#zfs-newline-probe`), but resting the ability to unlock
       # a pool on that detail is not a plan. Hence ONE definition producing
       # deterministic bytes, used by all three. It expects `KEY` to be set by
       # the caller.

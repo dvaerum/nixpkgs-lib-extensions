@@ -130,9 +130,6 @@
             pkgs = nixpkgs.legacyPackages.${system};
             inherit nixpkgs myLib;
           };
-          zfs-passphrase-newline = import ./checks/zfs-passphrase-newline.nix {
-            pkgs = nixpkgs.legacyPackages.${system};
-          };
           lib-functions = import ./checks/lib-functions.nix {
             pkgs = nixpkgs.legacyPackages.${system};
             inherit nixpkgs myLib;
@@ -158,6 +155,18 @@
 
       packages = eachSupportedSystem (system: {
         gen-docs = genDocsFor system;
+
+        # An on-demand EXPERIMENT, not a check: it boots a VM with real ZFS
+        # (kernel module, 2 GB) to answer "does ZFS strip a trailing newline
+        # from a keyformat=passphrase key file?" -- and the answer is yes,
+        # recorded in the file. The library was then deliberately made
+        # independent of it: the invariant that matters, that all three key
+        # writers agree byte for byte, is pinned cheaply by
+        # checks/zfs-key-file.nix. Run it with
+        # `nix build .#zfs-newline-probe` when touching that code.
+        zfs-newline-probe = import ./checks/zfs-passphrase-newline.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+        };
       });
 
       # `nix fmt` -- the same script the `formatting` check runs with --check,

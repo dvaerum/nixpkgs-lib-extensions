@@ -72,7 +72,7 @@ nix run .#gen-docs   # rebuild docs/lib.md from    (check: docs-up-to-date)
                      # the doc comments in lib/
 ```
 
-The full suite is `nix flake check`; four of its checks boot a VM and
+The full suite is `nix flake check`; three of its checks boot a VM and
 need `/dev/kvm`.
 
 ## Use the extra library on its own
