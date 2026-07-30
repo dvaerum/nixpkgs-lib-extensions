@@ -357,19 +357,38 @@ in
   # ── the complaints themselves, not merely "something threw" ──
   # tryEval discards the message, so each of the throws-assertions above is
   # equally satisfied by an unrelated failure. These pin the actual text.
-  defaults-hostname-complaint = complains { _defaults = { hostname = "x"; }; h = { }; } "it comes from each attribute key";
-  defaults-additional-complaint =
-    complains { _defaults = { additionalModules = [ ]; }; h = { }; } "per-host halves of the layered pairs";
-  defaults-typo-complaint = complains { _defaults = { homeConfiguration = { }; }; h = { }; } "not a builder argument";
-  reserved-key-complaint = complains { _default = { }; h = { }; } "keys starting with `_` are reserved";
-  non-attrset-defaults-complaint = complains { _defaults = [ "no" ]; h = { }; } "must be an attribute set";
+  defaults-hostname-complaint = complains {
+    _defaults = {
+      hostname = "x";
+    };
+    h = { };
+  } "it comes from each attribute key";
+  defaults-additional-complaint = complains {
+    _defaults = {
+      additionalModules = [ ];
+    };
+    h = { };
+  } "per-host halves of the layered pairs";
+  defaults-typo-complaint = complains {
+    _defaults = {
+      homeConfiguration = { };
+    };
+    h = { };
+  } "not a builder argument";
+  reserved-key-complaint = complains {
+    _default = { };
+    h = { };
+  } "keys starting with `_` are reserved";
+  non-attrset-defaults-complaint = complains {
+    _defaults = [ "no" ];
+    h = { };
+  } "must be an attribute set";
   # and the direct-call door reports the offending name too
-  direct-call-complaint =
-    builtins.any (p: lib.hasInfix "homesharedmodules" p) (
-      shared.builderArgProblems "probe" [ "username" ] {
-        inherit inputs system;
-        hostname = "x";
-        homesharedmodules = [ ];
-      }
-    );
+  direct-call-complaint = builtins.any (p: lib.hasInfix "homesharedmodules" p) (
+    shared.builderArgProblems "probe" [ "username" ] {
+      inherit inputs system;
+      hostname = "x";
+      homesharedmodules = [ ];
+    }
+  );
 }

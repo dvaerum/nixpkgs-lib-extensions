@@ -272,6 +272,110 @@ let
     in
     if builtins.isAttrs v && case.remap != null then v // case.remap v else v;
 
+  # Deduplicate the PATH elements of a collected module/overlay list,
+  # keeping every non-path element as-is (order preserved). A blanket
+  # `lib.unique` would deep-compare attrset modules, which can THROW when
+  # two distinct modules carry functions at the same attribute path; only
+  # paths have a cheap, reliable identity, so only they are deduplicated
+  # (the module system tolerates the rare duplicated attrset module fine).
+  uniquePaths =
+    list:
+    (builtins.foldl'
+      (
+        acc: x:
+        if !(builtins.isPath x) then
+          acc // { out = acc.out ++ [ x ]; }
+        else if builtins.elem x acc.seen then
+          acc
+        else
+          {
+            seen = acc.seen ++ [ x ];
+            out = acc.out ++ [ x ];
+          }
+      )
+      {
+        seen = [ ];
+        out = [ ];
+      }
+      list
+    ).out;
+
+
+  # Everything an input contributes automatically, resolved in one place:
+  # the consumer's cases (validated against the real input names), the
+  # function-form remap, the per-channel selections, the eager validation
+  # of every selection written, and the collectors for each entry-set
+  # channel. `skipFor` carries the per-channel built-in skips, which need
+  # the caller's home-manager identity and so cannot live here.
+  collectFromInputs =
+    {
+      inputs,
+      inputSpecialCases,
+      baseLib,
+      skipFor ? { },
+    }:
+    let
+      cases = builtinInputSpecialCases // (validateCases inputs inputSpecialCases);
+      conventionInputs = builtins.mapAttrs (normalizeInput cases) inputs;
+      caseOf = classifyCase cases;
+
+      # The built-in `skip` rules are consulted ONLY when the consumer said
+      # nothing about this input -- they stop the builder from GUESSING, and
+      # ANY explicit case is the opposite of a guess. That includes the
+      # FUNCTION form: remapping an input's exports onto the conventions is a
+      # statement that you want them, so skipping afterwards would apply the
+      # remap and silently discard the result.
+      collectChannel =
+        channel: locate:
+        let
+          skip = skipFor.${channel} or (_: _: false);
+        in
+        uniquePaths (
+          baseLib.concatLists (
+            baseLib.mapAttrsToList (
+              name: v:
+              let
+                case = caseOf name;
+                explicit = case.selections ? ${channel} || case.remap != null;
+              in
+              if !(baseLib.isAttrs v) || (!explicit && skip name v) then
+                [ ]
+              else
+                resolveEntrySet name channel (locate v) case
+            ) conventionInputs
+          )
+        );
+
+      # Entry-name validation must not depend on whether the CALLER happens
+      # to collect the channel: a `homeModules` typo on a host with no
+      # system-managed homes would otherwise never be forced, while the docs
+      # promise every typo fails loudly. Scoped to the inputs the consumer
+      # named, so nothing else is probed (which also keeps a deprecated
+      # `homeManagerModules` alias untouched on inputs never mentioned).
+      # `length` forces the list's shape, never the entries, so catalog
+      # tombstones stay unforced.
+      selectionsChecked =
+        let
+          probe =
+            name: _:
+            let
+              case = caseOf name;
+              v = conventionInputs.${name};
+            in
+            baseLib.optionals (baseLib.isAttrs v) (
+              baseLib.mapAttrsToList (
+                channel: locate: builtins.length (resolveEntrySet name channel (locate v) case)
+              ) (builtins.intersectAttrs case.selections entrySetChannels)
+            );
+        in
+        builtins.deepSeq (baseLib.concatLists (baseLib.mapAttrsToList probe inputSpecialCases)) null;
+    in
+    {
+      inherit conventionInputs caseOf selectionsChecked;
+      # one collector per entry-set channel, derived from that same table
+      collected = baseLib.mapAttrs collectChannel entrySetChannels;
+    };
+
   # A real nixpkgs source tree (nixpkgs itself or a fork): exports package
   # sets AND can build NixOS systems. These are never module-imported
   # (their helper modules would break a system) and never lib-namespaced
@@ -285,6 +389,7 @@ in
   inherit
     detectHomeManager
     libOf
+    collectFromInputs
     entrySetChannels
     classifyCase
     resolveEntrySet

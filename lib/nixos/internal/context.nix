@@ -20,43 +20,10 @@ let
   inherit (import ./inputs.nix extLib)
     detectHomeManager
     libOf
-    entrySetChannels
-    classifyCase
-    resolveEntrySet
     channelEnabled
-    validateCases
-    builtinInputSpecialCases
-    normalizeInput
+    collectFromInputs
     isNixpkgsTree
     ;
-
-  # Deduplicate the PATH elements of a collected module/overlay list,
-  # keeping every non-path element as-is (order preserved). A blanket
-  # `lib.unique` would deep-compare attrset modules, which can THROW when
-  # two distinct modules carry functions at the same attribute path; only
-  # paths have a cheap, reliable identity, so only they are deduplicated
-  # (the module system tolerates the rare duplicated attrset module fine).
-  uniquePaths =
-    list:
-    (builtins.foldl'
-      (
-        acc: x:
-        if !(builtins.isPath x) then
-          acc // { out = acc.out ++ [ x ]; }
-        else if builtins.elem x acc.seen then
-          acc
-        else
-          {
-            seen = acc.seen ++ [ x ];
-            out = acc.out ++ [ x ];
-          }
-      )
-      {
-        seen = [ ];
-        out = [ ];
-      }
-      list
-    ).out;
 
   # The argument names mkContextCore consumes -- everything the
   # host-independent part of the context depends on. The build* functions
@@ -93,70 +60,21 @@ let
     let
       baseLib = nixpkgs.lib;
 
-      # ── how each input's automatic contributions are resolved ──
-      #
-      # ONE seam for every channel: the consumer's cases (validated against
-      # the actual input names) are classified per input, the FUNCTION form
-      # reshapes the input itself (conventionInputs), and the SELECTION forms
-      # are answered per channel below. The `inputs`/`inputPkgs` specialArgs
-      # stay raw: an input that contributes nothing automatically is still
-      # reachable by hand.
-      cases = builtinInputSpecialCases // (validateCases inputs inputSpecialCases);
-      conventionInputs = builtins.mapAttrs (normalizeInput cases) inputs;
-      caseOf = classifyCase cases;
-
-      # Collect one entry-set channel across every input: locate the input's
-      # exports for the channel, then let resolveEntrySet choose from them.
-      # The built-in `skip` rules are consulted ONLY when the consumer said
-      # nothing about this input -- they exist to stop the builder from
-      # GUESSING, and ANY explicit case is the opposite of a guess. That
-      # includes the FUNCTION form: remapping an input's exports onto the
-      # conventions is a statement that you want them, so a nixpkgs-tree or
-      # home-manager-shaped input must not then be skipped -- which would
-      # apply the remap and silently discard the result.
-      collectChannel =
-        channel: locate: skip:
-        uniquePaths (
-          baseLib.concatLists (
-            baseLib.mapAttrsToList (
-              name: v:
-              let
-                case = caseOf name;
-                explicit = case.selections ? ${channel} || case.remap != null;
-              in
-              if !(baseLib.isAttrs v) || (!explicit && skip name v) then
-                [ ]
-              else
-                resolveEntrySet name channel (locate v) case
-            ) conventionInputs
-          )
-        );
-
-      # Entry-name validation must not depend on whether this particular
-      # builder happens to COLLECT the channel: a `homeModules` typo on a
-      # host with no system-managed homes, or a `nixosModules` typo in
-      # homeConfigurationsBuilder, would otherwise never be forced -- while
-      # the docs promise every typo fails loudly. So every selection the
-      # consumer actually wrote is resolved here, eagerly. Scoped to the
-      # inputs they named, so nothing else is probed (which also keeps the
-      # deprecated `homeManagerModules` alias untouched on inputs the
-      # consumer never mentioned). `length` forces the list's shape, never
-      # the entries themselves, so catalog tombstones stay unforced.
-      selectionsChecked =
-        let
-          probe =
-            name: _:
-            let
-              case = caseOf name;
-              v = conventionInputs.${name};
-            in
-            baseLib.optionals (baseLib.isAttrs v) (
-              baseLib.mapAttrsToList (
-                channel: locate: builtins.length (resolveEntrySet name channel (locate v) case)
-              ) (builtins.intersectAttrs case.selections entrySetChannels)
-            );
-        in
-        builtins.deepSeq (baseLib.concatLists (baseLib.mapAttrsToList probe inputSpecialCases)) null;
+      # Everything about what the INPUTS contribute lives in ./inputs.nix:
+      # the case classification, the per-channel selection, the eager
+      # validation and the collectors themselves. context.nix keeps the two
+      # things that are genuinely its own -- constructing `lib` and
+      # constructing `pkgs` -- and asks for the rest.
+      fromInputs = collectFromInputs {
+        inherit inputs inputSpecialCases baseLib;
+        skipFor.nixosModules = skipNixosModule;
+      };
+      inherit (fromInputs)
+        conventionInputs
+        caseOf
+        collected
+        selectionsChecked
+        ;
 
       # Extend the system lib with this repo's own extensions (`extLib`, always
       # available since the builders are part of nixpkgs-lib-extensions) plus any
@@ -270,30 +188,14 @@ let
             inherit patches;
           };
 
-      # Every entry-set channel, collected. Derived from `entrySetChannels`
-      # (internal/inputs.nix), which is also the allowlist for
-      # inputSpecialCases keys and the table the eager validation above
-      # walks -- one source of truth, so a channel cannot be accepted as a
-      # selection key while nothing collects it.
-      #
-      # `skipFor` is the ONLY per-channel special-casing, and the asymmetry
-      # in it is intentional rather than an oversight: nixpkgs trees are
-      # skipped for modules because their nixosModules are system-breaking
-      # helpers (readOnlyPkgs, notDetected) and nixpkgs itself would
-      # otherwise hit the ambiguity throw on every host; and skipped for the
-      # lib namespacing (below) because a tree's lib IS the base lib.
-      # Neither reason reaches OVERLAYS -- nixpkgs exports none at all, and
-      # a fork that deliberately exports `overlays.default` means it to be
-      # applied. A tree shipping a catalog of overlays is handled loudly by
-      # the ambiguity throw instead, and inputSpecialCases can opt any
-      # channel out per input. Pinned by the tree-input assertions in
-      # checks/builders/tests/auto-loading.nix -- do not "fix" it for
-      # symmetry.
-      skipFor.nixosModules = skipNixosModule;
-      collected = baseLib.mapAttrs (
-        channel: locate: collectChannel channel locate (skipFor.${channel} or (_: _: false))
-      ) entrySetChannels;
-
+      # `skipFor` is the only per-channel special-casing, and the asymmetry
+      # in it is intentional: nixpkgs trees are skipped for modules (their
+      # nixosModules are system-breaking helpers, and nixpkgs itself would
+      # hit the ambiguity throw on every host) and for the lib namespacing
+      # (a tree's lib IS the base lib), but NOT for overlays -- nixpkgs
+      # exports none, and a fork exporting `overlays.default` means it to be
+      # applied. Pinned by the tree-input assertions in
+      # checks/builders/tests/auto-loading.nix; do not "fix" for symmetry.
       autoOverlays = collected.overlays;
 
       # `src` is the tree to import, ALREADY patched (or not) by the caller:

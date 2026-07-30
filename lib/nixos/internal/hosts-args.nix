@@ -175,12 +175,19 @@ let
         rawDefaults = hosts._defaults or { };
       in
       if !(builtins.isAttrs rawDefaults) then
-        [ "${fnName}: `_defaults` must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf rawDefaults}`." ]
+        [
+          "${fnName}: `_defaults` must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf rawDefaults}`."
+        ]
       else
-        (map (
-          k:
-          "- `${k}`: keys starting with `_` are reserved; a hostname cannot start with one. Did you mean `_defaults`?"
-        ) (builtins.filter (k: k != "_defaults" && builtins.substring 0 1 k == "_") (builtins.attrNames hosts)))
+        (map
+          (
+            k:
+            "- `${k}`: keys starting with `_` are reserved; a hostname cannot start with one. Did you mean `_defaults`?"
+          )
+          (
+            builtins.filter (k: k != "_defaults" && builtins.substring 0 1 k == "_") (builtins.attrNames hosts)
+          )
+        )
         ++ (map (
           name:
           if name == "hostname" then
