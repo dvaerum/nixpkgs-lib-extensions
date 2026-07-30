@@ -357,11 +357,9 @@ let
   # a silent merge collision would hide a test
   totalDefined = lib.foldl' (sum: s: sum + lib.length (lib.attrNames s)) 0 assertionSets;
 
-  failed = lib.attrNames (lib.filterAttrs (_: ok: ok != true) assertions);
+  runner = import ../run-assertions.nix { inherit pkgs; };
 in
 if totalDefined != lib.length (lib.attrNames assertions) then
   throw "checks/builders/tests: duplicate assertion names across test files"
-else if failed == [ ] then
-  pkgs.runCommand "lib-nixos-builders-tests" { } "touch $out"
 else
-  throw "lib/nixos builder tests failed: ${lib.concatStringsSep ", " failed}"
+  runner.run "lib-nixos-builders-tests" assertions

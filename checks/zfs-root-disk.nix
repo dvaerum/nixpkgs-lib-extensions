@@ -192,9 +192,6 @@ let
     } (r: r.disko.devices.zpool."zroot-testhost".datasets);
   };
 
-  failed = lib.attrNames (lib.filterAttrs (_: ok: ok != true) assertions);
+  runner = import ./run-assertions.nix { inherit pkgs; };
 in
-if failed == [ ] then
-  pkgs.runCommand "zfs-root-disk-tests" { } "touch $out"
-else
-  throw "declareZfsRootDisk tests failed: ${lib.concatStringsSep ", " failed}"
+runner.run "zfs-root-disk-tests" assertions

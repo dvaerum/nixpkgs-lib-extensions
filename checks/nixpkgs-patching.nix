@@ -59,9 +59,6 @@ let
       !builtins.pathExists "${variantUnpatched._module.specialArgs.pkgs-variant.path}/nixpkgs-lib-extensions-test-marker";
   };
 
-  failed = lib.attrNames (lib.filterAttrs (_: ok: ok != true) assertions);
+  runner = import ./run-assertions.nix { inherit pkgs; };
 in
-if failed == [ ] then
-  pkgs.runCommand "nixpkgs-patching-tests" { } "touch $out"
-else
-  throw "nixpkgs patching tests failed: ${lib.concatStringsSep ", " failed}"
+runner.run "nixpkgs-patching-tests" assertions

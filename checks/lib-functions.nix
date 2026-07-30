@@ -113,9 +113,6 @@ let
       };
   };
 
-  failed = lib.attrNames (lib.filterAttrs (_: ok: ok != true) assertions);
+  runner = import ./run-assertions.nix { inherit pkgs; };
 in
-if failed == [ ] then
-  pkgs.runCommand "lib-functions-tests" { } "touch $out"
-else
-  throw "lib function tests failed: ${lib.concatStringsSep ", " failed}"
+runner.run "lib-functions-tests" assertions

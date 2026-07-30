@@ -34,7 +34,9 @@ extLib: {
   inherit (import ./hosts-args.nix extLib)
     allowedDefaultArgs
     validateBuilderArgs
+    builderArgProblems
     splitHostsArgs
+    hostsProblems
     planHosts
     systemsFromPlan
     homesFromPlan

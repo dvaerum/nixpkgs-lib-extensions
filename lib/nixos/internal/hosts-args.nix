@@ -48,12 +48,14 @@ let
     "additionalSpecialArgs"
   ];
 
-  # Direct-call argument validation for the singular builders: the same
-  # rigor splitHostsArgs applies to hosts attrsets, at the other door --
-  # otherwise the `...` patterns silently swallow typos and stale names.
-  # `extraAllowed` covers builder-specific keys (e.g. `username`);
-  # _-prefixed keys are internal plumbing and always pass.
-  validateBuilderArgs =
+  # The PROBLEMS with a direct builder call, as a list of strings -- empty
+  # when there are none. Split out from the throwing wrapper below so the
+  # tests can assert on the MESSAGE: `builtins.tryEval` discards it, so an
+  # assertion that only checks "did it throw" is equally satisfied by an
+  # unrelated failure elsewhere in the expression, and stays green forever
+  # against the wrong error. The error text is this library's main UX
+  # surface; it deserves to be tested, not just its existence.
+  builderArgProblems =
     fnName: extraAllowed: args:
     let
       allowed = allowedHostArgs ++ extraAllowed;
@@ -62,11 +64,23 @@ let
       );
     in
     if bad == [ ] then
-      args
+      [ ]
     else
-      throw ''
-        ${fnName}: unknown argument(s): ${builtins.concatStringsSep ", " bad} (typo?). Accepted: ${builtins.concatStringsSep ", " allowed}.
-      '';
+      [
+        "${fnName}: unknown argument(s): ${builtins.concatStringsSep ", " bad} (typo?). Accepted: ${builtins.concatStringsSep ", " allowed}."
+      ];
+
+  # Direct-call argument validation for the singular builders: the same
+  # rigor splitHostsArgs applies to hosts attrsets, at the other door --
+  # otherwise the `...` patterns silently swallow typos and stale names.
+  # `extraAllowed` covers builder-specific keys (e.g. `username`);
+  # _-prefixed keys are internal plumbing and always pass.
+  validateBuilderArgs =
+    fnName: extraAllowed: args:
+    let
+      problems = builderArgProblems fnName extraAllowed args;
+    in
+    if problems == [ ] then args else throw (builtins.concatStringsSep "\n" problems);
 
   # Validate a hosts attrset (the shared input of both build* functions)
   # and split it into { defaults, hostEntries }. Throws, naming fnName,
@@ -141,6 +155,41 @@ let
       ''
     else
       { inherit defaults hostEntries; };
+
+  # The complaints a hosts attrset would produce, as DATA. Same reason as
+  # builderArgProblems: `builtins.tryEval` discards the message, so an
+  # assertion that only checks "did it throw" is satisfied by ANY failure
+  # in the expression and stays green against the wrong error forever.
+  # These messages are the library's main UX surface -- test them.
+  hostsProblems =
+    fnName: hosts:
+    let
+      probe = builtins.tryEval (splitHostsArgs fnName hosts);
+    in
+    if probe.success then
+      [ ]
+    else
+      # re-derive rather than parse the thrown string: the same inputs, minus
+      # the throw
+      let
+        rawDefaults = hosts._defaults or { };
+      in
+      if !(builtins.isAttrs rawDefaults) then
+        [ "${fnName}: `_defaults` must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf rawDefaults}`." ]
+      else
+        (map (
+          k:
+          "- `${k}`: keys starting with `_` are reserved; a hostname cannot start with one. Did you mean `_defaults`?"
+        ) (builtins.filter (k: k != "_defaults" && builtins.substring 0 1 k == "_") (builtins.attrNames hosts)))
+        ++ (map (
+          name:
+          if name == "hostname" then
+            "- `hostname`: never a default -- it comes from each attribute key. Drop it."
+          else if builtins.substring 0 10 name == "additional" then
+            "- `${name}`: the `additional*` arguments are the per-host halves of the layered pairs (modules/additionalModules, specialArgs/additionalSpecialArgs). Set the base half in `_defaults`, the additional half on the host entry."
+          else
+            "- `${name}`: not a builder argument (typo?). `_defaults` accepts: ${builtins.concatStringsSep ", " allowedDefaultArgs}."
+        ) (builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames rawDefaults)));
 
   # ONE plan per hosts attrset, shared by every hosts-level builder: split
   # and validate, merge `_defaults` under each entry, and decide once
@@ -250,7 +299,9 @@ in
     allowedDefaultArgs
     allowedHostArgs
     validateBuilderArgs
+    builderArgProblems
     splitHostsArgs
+    hostsProblems
     planHosts
     systemsFromPlan
     homesFromPlan
