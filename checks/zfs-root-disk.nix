@@ -120,6 +120,39 @@ let
     no-encryption-when-disabled =
       !(plain.disko.devices.zpool."zroot-testhost".rootFsOptions ? encryption);
 
+    # the attrset form's `mountpoint` is optional: the guard in
+    # gen_zfs_user_folder said so while the code above it read the attribute
+    # unconditionally, so the guard was dead and `{ username = "x"; }` died
+    # with a bare "attribute 'mountpoint' missing"
+    user-attrset-mountpoint-optional =
+      let
+        datasets =
+          (build {
+            enableEncryption = false;
+            listOfUsernames = [ { username = "solo"; } ];
+          }).disko.devices.zpool."zroot-testhost".datasets;
+      in
+      datasets ? "HOME/solo" && !(datasets."HOME/solo".options ? mountpoint);
+
+    # a repeated user silently collapsed into whichever entry came last --
+    # including two entries with DIFFERENT mountpoints
+    duplicate-user-throws = buildThrows {
+      enableEncryption = false;
+      listOfUsernames = [
+        "dup"
+        {
+          username = "dup";
+          mountpoint = "/srv/dup";
+        }
+      ];
+    } (r: r.disko.devices.zpool."zroot-testhost".datasets);
+
+    # encryption keeps a recovery path: the key file comes from the
+    # motherboard UUID, so a board swap or a restored pool must still be
+    # able to ASK for the passphrase rather than hang on sysroot.mount
+    encryption-keeps-passphrase-fallback =
+      !((build { }).boot.zfs.requestEncryptionCredentials.condition or false);
+
     # argument validation throws
     invalid-encryption-throws = buildThrows { enableEncryption = "yes"; } (
       r: r.disko.devices.zpool."zroot-testhost".rootFsOptions

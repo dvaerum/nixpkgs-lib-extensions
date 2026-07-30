@@ -185,9 +185,16 @@
             if (builtins.isString user_setting) then
               { name = user_setting; }
             else if (builtins.isAttrs user_setting && (builtins.hasAttr "username" user_setting)) then
+              # `mountpoint` is OPTIONAL -- the guard further down already
+              # says so, but reading it unconditionally here made that guard
+              # dead code and turned `{ username = "bar"; }` into a bare
+              # "attribute 'mountpoint' missing" that named neither
+              # listOfUsernames nor declareZfsRootDisk.
               {
                 name = user_setting.username;
-                mountpoint = user_setting.mountpoint;
+              }
+              // lib.optionalAttrs (builtins.hasAttr "mountpoint" user_setting) {
+                inherit (user_setting) mountpoint;
               }
             else
               (throw "The element in `listOfUsernames` can either be a `string` or `attrset` ({ username = ...; mountpoint = ...; })");
@@ -205,9 +212,22 @@
         }
       );
 
-      zfs_filesystems_for_users = builtins.listToAttrs (
-        lib.lists.forEach listOfUsernames gen_zfs_user_folder
-      );
+      # listToAttrs keeps the LAST entry for a repeated key, so two entries
+      # for the same user -- with different mountpoints, say -- would have
+      # silently collapsed into whichever came last.
+      zfs_user_folders = lib.lists.forEach listOfUsernames gen_zfs_user_folder;
+      duplicate_user_datasets =
+        let
+          names = map (e: e.name) zfs_user_folders;
+        in
+        lib.unique (lib.filter (n: lib.count (m: m == n) names > 1) names);
+      zfs_filesystems_for_users =
+        if duplicate_user_datasets == [ ] then
+          builtins.listToAttrs zfs_user_folders
+        else
+          throw "declareZfsRootDisk: `listOfUsernames` names the same user more than once (${
+            builtins.concatStringsSep ", " (map (n: lib.removePrefix "HOME/" n) duplicate_user_datasets)
+          }); only the last entry would have survived.";
 
       zroot_general_datasets = {
         "ROOT" = {
@@ -284,7 +304,17 @@
           devNodes = lib.mkDefault "/dev/disk/by-partuuid";
           forceImportRoot = lib.mkDefault true;
 
-          requestEncryptionCredentials = lib.mkDefault false;
+          # Left at NixOS's default (true) when encrypting: the key file is
+          # derived from the motherboard's UUID, so a board swap, a machine
+          # reporting "Not Settable", or a restored-elsewhere pool leaves a
+          # dataset locked. With this false there is no fallback at all --
+          # the visible symptom is a sysroot.mount timeout, with the real
+          # cause several screens earlier. Leaving it true means stage 1
+          # ASKS for the passphrase for anything the key file did not
+          # unlock, which is the difference between a recoverable boot and
+          # a rescue USB. Datasets the key file did unlock are never
+          # prompted for.
+          requestEncryptionCredentials = lib.mkIf (!enableEncryption) (lib.mkDefault false);
         };
 
         tmp = {
@@ -345,7 +375,14 @@
               fi
               case "$keylocation" in
                 none|prompt ) ;;
-                * ) zfs load-key "$dataset" || true ;;
+                # `|| true` on purpose: one dataset that cannot be unlocked
+                # must not abort the loop and leave the REST locked too.
+                # But say which one -- silently swallowing this is what
+                # turned a wrong key into an unexplained sysroot.mount
+                # timeout. boot.zfs.requestEncryptionCredentials then
+                # prompts for whatever is still locked.
+                * ) zfs load-key "$dataset" \
+                      || echo "zfs-load-encryption-keys: could not load the key for $dataset (keylocation=$keylocation); it stays locked" >&2 ;;
               esac
             done
           '';
