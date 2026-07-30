@@ -815,7 +815,12 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   Attribute set merged into `nixpkgs.config` for the host's package
   set -- e.g. `{ cudaSupport = true; }`. Merged last, so it can also
   override what `allowedUnfreePackages`/`permittedInsecurePackages`
-  produced. Default `{ }`.
+  produced. This is the ONLY route for nixpkgs config here: the builder
+  passes a package set it built itself, and nixpkgs asserts that the
+  `nixpkgs.config` module option is empty in that case ("nixpkgs.config
+  options should be passed when creating the instance instead"). Setting
+  it from a module therefore fails an assertion rather than being
+  ignored. Default `{ }`.
 
 - **patches**
   Patch files applied to the nixpkgs SOURCE tree (via `applyPatches`)
@@ -826,7 +831,12 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
 
 - **extraOverlays**
   Overlays applied on top of the ones auto-collected from `inputs`.
-  Default `[ ]`.
+  Unlike `nixpkgsConfig`, this is not the only route: a module's own
+  `nixpkgs.overlays` works too and composes with these (nixpkgs appends
+  module overlays onto the package set passed in), so a third-party
+  module bringing its own overlays needs nothing special. Prefer this
+  argument when you want explicit ordering or want the overlay in the
+  package set the builder shares with home-manager. Default `[ ]`.
 
 - **allowedUnfreePackages**
   Unfree package names to allow (matched by `lib.getName` via

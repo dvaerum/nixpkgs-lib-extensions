@@ -225,7 +225,12 @@ in
     : Attribute set merged into `nixpkgs.config` for the host's package
     : set -- e.g. `{ cudaSupport = true; }`. Merged last, so it can also
     : override what `allowedUnfreePackages`/`permittedInsecurePackages`
-    : produced. Default `{ }`.
+    : produced. This is the ONLY route for nixpkgs config here: the builder
+    : passes a package set it built itself, and nixpkgs asserts that the
+    : `nixpkgs.config` module option is empty in that case ("nixpkgs.config
+    : options should be passed when creating the instance instead"). Setting
+    : it from a module therefore fails an assertion rather than being
+    : ignored. Default `{ }`.
 
     patches
     : Patch files applied to the nixpkgs SOURCE tree (via `applyPatches`)
@@ -236,7 +241,12 @@ in
 
     extraOverlays
     : Overlays applied on top of the ones auto-collected from `inputs`.
-    : Default `[ ]`.
+    : Unlike `nixpkgsConfig`, this is not the only route: a module's own
+    : `nixpkgs.overlays` works too and composes with these (nixpkgs appends
+    : module overlays onto the package set passed in), so a third-party
+    : module bringing its own overlays needs nothing special. Prefer this
+    : argument when you want explicit ordering or want the overlay in the
+    : package set the builder shares with home-manager. Default `[ ]`.
 
     allowedUnfreePackages
     : Unfree package names to allow (matched by `lib.getName` via
@@ -462,21 +472,26 @@ in
         };
         modules = [
           (
-            { config, ... }:
+            { ... }:
             {
               _file = ./nixosConfigurationsBuilder.nix;
               networking.hostName = lib.mkDefault hostname;
               # host tags label the boot entry too; a host setting the
               # option itself overrides this
               system.nixos.tags = lib.mkDefault tags;
-              # The builder provides `pkgs`, so module-level
-              # nixpkgs.overlays / nixpkgs.config never take effect --
-              # a completely idiomatic NixOS pattern silently doing
-              # nothing (third-party default modules do this too).
-              # Surface it instead of staying quiet.
-              warnings =
-                lib.optional (config.nixpkgs.overlays != [ ] || config.nixpkgs.config != { })
-                  "nixpkgs-lib-extensions: a module on host `${hostname}` sets nixpkgs.overlays or nixpkgs.config, but the builder provides the package set -- those options are INERT here. Use the extraOverlays / nixpkgsConfig builder arguments instead.";
+              # NOTE: this used to warn that module-level nixpkgs.overlays /
+              # nixpkgs.config are ignored because the builder provides
+              # `pkgs`. That was WRONG. Passing `pkgs` as an eval-config
+              # ARGUMENT sets the `nixpkgs.pkgs` option
+              # (nixos/lib/eval-config.nix), and the nixpkgs module then
+              # builds `cfg.pkgs.appendOverlays cfg.overlays`
+              # (nixos/modules/misc/nixpkgs.nix) -- so a module's overlays
+              # compose on top of ours as usual. `nixpkgs.config` is not
+              # silently dropped either: nixpkgs asserts it must be empty
+              # when pkgs is passed in, which is why `nixpkgsConfig` is the
+              # only route for THAT one. (The nixpkgs warning about ignored
+              # options applies to `specialArgs.pkgs`, which this builder
+              # deliberately does not use -- see internal/context.nix.)
             }
           )
           bootstrapModule

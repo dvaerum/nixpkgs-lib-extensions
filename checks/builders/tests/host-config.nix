@@ -90,18 +90,39 @@
       }).config.networking.hostName
     ).success;
 
-  # module-level nixpkgs.overlays is INERT (the builder provides pkgs):
-  # a NixOS warning must surface it
-  inert-nixpkgs-options-warn =
-    builtins.any (w: lib.hasInfix "INERT" w)
+  # A module-level `nixpkgs.overlays` DOES take effect, and composes with
+  # the builder's own: passing `pkgs` as an eval-config argument sets the
+  # `nixpkgs.pkgs` option, and the nixpkgs module then evaluates
+  # `cfg.pkgs.appendOverlays cfg.overlays`. (This repo once warned that the
+  # option was inert -- it never was.)
+  module-level-overlay-applies =
+    let
+      probe =
+        (myLib.nixosConfigurationsBuilder {
+          inherit inputs system;
+          hostname = "moduleoverlay";
+          modules = [
+            (exampleDir + "/hosts/server/configuration.nix")
+            { nixpkgs.overlays = [ (final: prev: { from-module-overlay = "yes"; }) ]; }
+          ];
+        }).pkgs;
+    in
+    probe ? from-module-overlay && probe ? from-input-overlay;
+
+  # ... while `nixpkgs.config` genuinely cannot be set that way: nixpkgs
+  # asserts it must be empty when an externally built pkgs is passed in, so
+  # the `nixpkgsConfig` builder argument is the only route for it.
+  module-level-nixpkgs-config-fails-assertion =
+    !(builtins.all (a: a.assertion)
       (myLib.nixosConfigurationsBuilder {
         inherit inputs system;
-        hostname = "inertprobe";
+        hostname = "moduleconfig";
         modules = [
           (exampleDir + "/hosts/server/configuration.nix")
-          { nixpkgs.overlays = [ (final: prev: { }) ]; }
+          { nixpkgs.config.allowUnfree = true; }
         ];
-      }).config.warnings;
+      }).config.assertions
+    );
   root-path-defaults-to-self = toString laptop._module.specialArgs.rootPath == toString exampleDir;
   additional-modules-applied = custom.config.users.groups ? from-additional-module;
 
