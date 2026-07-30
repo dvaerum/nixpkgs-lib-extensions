@@ -62,6 +62,14 @@
           # with such a uid, and those accounts define their own group and
           # shell, so this module leaves them entirely untouched. Reading
           # the merged uid here is safe: this module never defines it.
+          #
+          # `isSystemUser` deliberately does NOT gate these definitions.
+          # It would be the more accurate test -- service accounts usually
+          # leave uid null -- but `users.groups` and the user submodule are
+          # mutually dependent in NixOS, so deciding what to DEFINE by
+          # reading it is an infinite recursion. The conflict is caught by
+          # the assertion below instead, which reads config at assertion
+          # time and so does not feed back into the users wiring.
           normalAccount =
             let
               uid = config.users.users.${username}.uid;
@@ -76,6 +84,23 @@
             group = lib.mkIf normalAccount (lib.mkOverride 900 username);
           };
           users.groups = lib.mkIf normalAccount { ${username} = { }; };
+
+          # Without this, declaring `isSystemUser = true` for a registry
+          # user fails with NixOS's own "exactly one of isSystemUser and
+          # isNormalUser must be set" -- true, but it never mentions that
+          # something else set isNormalUser, let alone what to do about it.
+          assertions = [
+            {
+              assertion = !(normalAccount && config.users.users.${username}.isSystemUser);
+              message = ''
+                nixpkgs-lib-extensions: user `${username}` is declared `isSystemUser = true`, but this host's `userModuleFn` (by default `normalUserModule`) also makes every userRegistry user a NORMAL account, and NixOS allows only one of the two.
+                Fix it by one of:
+                  - dropping `${username}` from the userRegistry, if the account is not a person;
+                  - pinning a uid below 1000 for `${username}`, which this module leaves alone;
+                  - passing `userModuleFn = null` and creating the accounts yourself.
+              '';
+            }
+          ];
         }
       )
     ];

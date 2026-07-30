@@ -14,13 +14,13 @@ let
   # The config stub supplies the merged uid the module inspects; its
   # conditional settings come back as mkIf structures (condition/content).
   unitModule =
-    username: uid:
+    username: uid: isSystemUser:
     (builtins.head (myLib.normalUserModule username).imports) {
       inherit lib;
-      config.users.users.${username}.uid = uid;
+      config.users.users.${username} = { inherit uid isSystemUser; };
     };
-  aliceModule = unitModule "alice" null;
-  rootModule = unitModule "root" 0;
+  aliceModule = unitModule "alice" null false;
+  rootModule = unitModule "root" 0 false;
 in
 {
   # the module itself declares the account, the private group, and sets the
@@ -41,6 +41,28 @@ in
     !rootModule.users.users.root.isNormalUser.condition
     && !rootModule.users.users.root.group.condition
     && !rootModule.users.groups.condition;
+
+  # `isSystemUser` cannot GATE the definitions above -- users.groups and the
+  # user submodule are mutually dependent in NixOS, so deciding what to
+  # define by reading it is an infinite recursion. It is caught by an
+  # assertion instead, which names this module and the ways out; NixOS's own
+  # message ("exactly one of isSystemUser and isNormalUser must be set") is
+  # true but never says who set the other one.
+  system-user-conflict-explained =
+    let
+      cfg =
+        (myLib.nixosConfigurationsBuilder {
+          inherit inputs system;
+          hostname = "sysuser";
+          modules = [
+            (exampleDir + "/hosts/server/configuration.nix")
+            { users.users.eve.isSystemUser = true; }
+          ];
+          userRegistry."eve" = exampleDir + "/users/eve";
+        }).config;
+      failed = builtins.filter (a: !a.assertion) cfg.assertions;
+    in
+    builtins.any (a: lib.hasInfix "userModuleFn" a.message) failed;
 
   # ... so "root" is a valid registry user: the account stays the
   # NixOS-defined system one, and ALL of NixOS's own assertions hold

@@ -308,6 +308,29 @@ in
     && !(sys.pkgs.lib ? fake-module-input)
     && !(home.config.home.sessionVariables ? FROM_INPUT_HM);
 
+  # an input whose `lib` THROWS must not take the whole host with it: it is
+  # simply not namespaced. `v.lib or { }` did not cover this -- `or` catches
+  # a MISSING attribute, while `?` forces the value.
+  throwing-lib-input-tolerated =
+    let
+      sys = myLib.nixosConfigurationsBuilder {
+        inputs = inputs // {
+          badlib = {
+            outPath = "/nix/store/fake-badlib";
+            legacyPackages = { };
+            lib = throw "this input's lib must not break every host";
+            nixosModules.default = {
+              users.groups.from-badlib = { };
+            };
+          };
+        };
+        inherit system;
+        hostname = "badlibprobe";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+      };
+    in
+    !(sys.pkgs.lib ? badlib) && sys.config.users.groups ? from-input-module;
+
   # ── validation: every typo fails loudly instead of quietly doing nothing ──
 
   channel-selection-unknown-entry-throws = throwsGroups (
@@ -370,6 +393,30 @@ in
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
       inputSpecialCases."not-nur" = v: { nixosModules = v.modules.nixos or { }; };
     }).config.users.groups ? from-notnur-module;
+  # ... and the function form ALSO overrides the built-in skips, exactly as
+  # a named selection does. Without that, remapping a nixpkgs-TREE-shaped
+  # distribution flake (nixos-raspberrypi and friends: legacyPackages +
+  # lib.nixosSystem, modules under a nonstandard path) applied the remap and
+  # then silently discarded the result -- the documented escape hatch
+  # evaluating, building and booting without the modules it was written for.
+  input-special-cases-function-overrides-skip =
+    (myLib.nixosConfigurationsBuilder {
+      inputs = inputs // {
+        distro = {
+          outPath = "/nix/store/fake-distro";
+          legacyPackages = { };
+          lib.nixosSystem = _: { };
+          modules.nixos.default = {
+            users.groups.from-remapped-tree = { };
+          };
+        };
+      };
+      inherit system;
+      hostname = "treeremap";
+      modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+      inputSpecialCases."distro" = v: { nixosModules = v.modules.nixos; };
+    }).config.users.groups ? from-remapped-tree;
+
   # ... and double as the per-input opt-out for any channel
   input-special-cases-opt-out =
     !(

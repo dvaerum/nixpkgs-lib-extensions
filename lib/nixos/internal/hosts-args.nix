@@ -73,7 +73,27 @@ let
   splitHostsArgs =
     fnName: hosts:
     let
-      defaults = hosts._defaults or { };
+      rawDefaults = hosts._defaults or { };
+      # A hostname cannot START with `_`, which is what makes `_defaults`
+      # safe as a reserved key -- but nothing enforced the other direction,
+      # so `_default` / `_Defaults` / `_defualts` silently became a HOST and
+      # took every real host's shared arguments with it.
+      badReserved =
+        map
+          (
+            k:
+            "- `${k}`: keys starting with `_` are reserved; a hostname cannot start with one. Did you mean `_defaults`?"
+          )
+          (
+            builtins.filter (k: k != "_defaults" && builtins.substring 0 1 k == "_") (builtins.attrNames hosts)
+          );
+      # A non-attrset `_defaults` otherwise dies inside builtins.attrNames
+      # with no mention of which flake, function or key is at fault.
+      defaults =
+        if builtins.isAttrs rawDefaults then
+          rawDefaults
+        else
+          throw "${fnName}: `_defaults` must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf rawDefaults}`.";
       defaultComplaint =
         name:
         if name == "hostname" then
@@ -85,7 +105,10 @@ let
       badDefaults = map defaultComplaint (
         builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames defaults)
       );
-      hostEntries = builtins.removeAttrs hosts [ "_defaults" ];
+      # every `_`-prefixed key is reserved, so none of them is ever a host
+      hostEntries = builtins.removeAttrs hosts (
+        builtins.filter (k: builtins.substring 0 1 k == "_") (builtins.attrNames hosts)
+      );
       badHostKeys = builtins.concatLists (
         builtins.attrValues (
           builtins.mapAttrs (
@@ -105,7 +128,7 @@ let
           ) hostEntries
         )
       );
-      problems = badDefaults ++ badHostKeys;
+      problems = badReserved ++ badDefaults ++ badHostKeys;
     in
     if problems != [ ] then
       throw ''

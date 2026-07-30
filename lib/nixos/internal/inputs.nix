@@ -11,6 +11,19 @@ extLib:
 let
   shownList = names: builtins.concatStringsSep ", " names;
 
+  # An input's `lib`, or `{ }` if it has none OR if reading it throws.
+  # `v.lib or { }` only covers a MISSING attribute: `?` and `or` force the
+  # value to WHNF, so an input whose `lib` is a `throw` (a deprecation
+  # tombstone, a broken flake) would take down every host that merely asks
+  # "is this a nixpkgs tree?". Every site that inspects a foreign `lib`
+  # goes through here.
+  libOf =
+    v:
+    let
+      probe = builtins.tryEval (if builtins.isAttrs (v.lib or null) then v.lib else { });
+    in
+    if probe.success then probe.value else { };
+
   # The home-manager input, detected by capability (its `lib` exposes
   # `homeManagerConfiguration`) rather than by name, so it is found no matter
   # what the consuming flake calls the input. null if none is present.
@@ -25,9 +38,8 @@ let
         n:
         let
           v = inputs.${n};
-          probe = builtins.tryEval (builtins.isAttrs v && (v.lib or { }) ? homeManagerConfiguration);
         in
-        probe.success && probe.value
+        builtins.isAttrs v && (libOf v) ? homeManagerConfiguration
       ) (builtins.attrNames inputs);
     in
     if matches == [ ] then
@@ -264,7 +276,7 @@ let
   # sets AND can build NixOS systems. These are never module-imported
   # (their helper modules would break a system) and never lib-namespaced
   # (their lib IS the base).
-  isNixpkgsTree = v: v ? legacyPackages && (v.lib or { }) ? nixosSystem;
+  isNixpkgsTree = v: v ? legacyPackages && (libOf v) ? nixosSystem;
 in
 {
   # Exported = consumed elsewhere. The channel lists, pickExported and the
@@ -272,6 +284,7 @@ in
   # below, and re-exporting them would read as public surface.
   inherit
     detectHomeManager
+    libOf
     entrySetChannels
     classifyCase
     resolveEntrySet

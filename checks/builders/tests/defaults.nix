@@ -118,6 +118,30 @@ in
     }
   );
 
+  # a `_defaults` TYPO used to become a host of its own AND strip every real
+  # host of its shared arguments -- silently, because every `_defaults` key
+  # is also a valid host key. All `_`-prefixed keys are reserved now.
+  defaults-typo-key-is-reserved = throws (
+    myLib.buildNixosConfigurations {
+      _default = {
+        inherit inputs system;
+      };
+      h = { };
+    }
+  );
+  # ... and a non-attrset `_defaults` says which key is at fault, instead of
+  # dying inside builtins.attrNames with no context
+  defaults-non-attrset-throws = throws (
+    myLib.buildNixosConfigurations {
+      _defaults = [
+        "not"
+        "an"
+        "attrset"
+      ];
+      h = { };
+    }
+  );
+
   # buildHomeConfigurations: the SAME hosts attrset produces the merged
   # "user@host" set across all hosts, with per-host registry overrides;
   # only loginUsers get outputs

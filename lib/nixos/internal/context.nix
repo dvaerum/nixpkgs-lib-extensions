@@ -19,6 +19,7 @@ extLib:
 let
   inherit (import ./inputs.nix extLib)
     detectHomeManager
+    libOf
     entrySetChannels
     classifyCase
     resolveEntrySet
@@ -110,9 +111,13 @@ let
 
       # Collect one entry-set channel across every input: locate the input's
       # exports for the channel, then let resolveEntrySet choose from them.
-      # The built-in `skip` rules are consulted ONLY when no selection was
-      # given -- they exist to stop the builder from GUESSING, and naming an
-      # entry is the opposite of a guess.
+      # The built-in `skip` rules are consulted ONLY when the consumer said
+      # nothing about this input -- they exist to stop the builder from
+      # GUESSING, and ANY explicit case is the opposite of a guess. That
+      # includes the FUNCTION form: remapping an input's exports onto the
+      # conventions is a statement that you want them, so a nixpkgs-tree or
+      # home-manager-shaped input must not then be skipped -- which would
+      # apply the remap and silently discard the result.
       collectChannel =
         channel: locate: skip:
         uniquePaths (
@@ -121,9 +126,9 @@ let
               name: v:
               let
                 case = caseOf name;
-                selected = case.selections ? ${channel};
+                explicit = case.selections ? ${channel} || case.remap != null;
               in
-              if !(baseLib.isAttrs v) || (!selected && skip name v) then
+              if !(baseLib.isAttrs v) || (!explicit && skip name v) then
                 [ ]
               else
                 resolveEntrySet name channel (locate v) case
@@ -182,19 +187,14 @@ let
       # into the flat lib. Skipped: nixpkgs trees (their lib IS the base).
       libsFromInputs =
         let
-          raw = baseLib.mapAttrs (_: v: v.lib) (
+          raw = baseLib.mapAttrs (_: libOf) (
             baseLib.filterAttrs (
               name: v:
-              # tryEval: an input whose `lib` THROWS must not break every
-              # host; it is simply not namespaced. The selection check sits
-              # OUTSIDE the probe, so a malformed selection still throws
-              # instead of being swallowed as "not namespaced".
-              let
-                probe = builtins.tryEval (
-                  baseLib.isAttrs v && baseLib.isAttrs (v.lib or null) && !(isNixpkgsTree v)
-                );
-              in
-              channelEnabled name "lib" (caseOf name) && probe.success && probe.value
+              # `libOf` absorbs an input whose `lib` THROWS -- it is simply
+              # not namespaced rather than breaking every host. The
+              # selection check stays OUTSIDE it, so a malformed selection
+              # still throws instead of being swallowed as "not namespaced".
+              channelEnabled name "lib" (caseOf name) && baseLib.isAttrs v && libOf v != { } && !(isNixpkgsTree v)
             ) conventionInputs
           );
         in
@@ -261,7 +261,8 @@ let
       }
       // nixpkgsConfig;
 
-      # Optionally apply patches to a nixpkgs source tree.
+      # Optionally apply patches to a nixpkgs source tree. Used for the
+      # PRIMARY nixpkgs only -- see mkPkgs.
       patchSrc =
         npkgs:
         if patches == [ ] then
@@ -299,9 +300,14 @@ let
 
       autoOverlays = collected.overlays;
 
+      # `src` is the tree to import, ALREADY patched (or not) by the caller:
+      # `patches` are a fix for THIS host's nixpkgs, and a nixpkgs PR diff
+      # essentially never applies to a different tree. Applying them to the
+      # `nixpkgs-*` variants too broke `pkgs-unstable` lazily, far from the
+      # `patches = [ ... ]` line and only for hosts that touched it.
       mkPkgs =
-        npkgs:
-        import (patchSrc npkgs) {
+        src:
+        import src {
           inherit system;
           # the input-lib namespacing overlay sits between the collected
           # input overlays and the caller's extraOverlays, so extraOverlays
@@ -315,7 +321,7 @@ let
       # seq: `pkgs` is forced by every consumer, so hanging the eager
       # selection validation off it makes a typo fail on any use of the
       # context rather than only where its channel happens to be collected.
-      pkgs = builtins.seq selectionsChecked (mkPkgs nixpkgs);
+      pkgs = builtins.seq selectionsChecked (mkPkgs selectedSrc);
 
       home-manager = if homeManager != null then homeManager else detectHomeManager inputs;
 
@@ -338,8 +344,10 @@ let
       autoNixosModules = collected.nixosModules;
       autoHomeModules = collected.homeModules;
 
-      # Expose every other `nixpkgs-*` input as a `pkgs-*` specialArg, built the
-      # same way as the primary (e.g. nixpkgs-unstable -> pkgs-unstable).
+      # Expose every other `nixpkgs-*` input as a `pkgs-*` specialArg, with
+      # the same overlays and config as the primary (e.g. nixpkgs-unstable ->
+      # pkgs-unstable) but WITHOUT `patches`: those target this host's own
+      # nixpkgs revision and would fail to apply to a different tree.
       pkgsFromInputs =
         lib.mapAttrs' (name: np: lib.nameValuePair "pkgs-${lib.removePrefix "nixpkgs-" name}" (mkPkgs np))
           (
