@@ -392,7 +392,6 @@ buildNixosConfigurations ::
   - `rootPath`
   - `modules`
   - `userModuleFn`
-  - `excludeModuleInputs`
   - `userRegistry`
   - `loginUsers`
   - `homeSharedModules` (applies to BOTH mechanisms: system-managed
@@ -606,16 +605,13 @@ automatically when the matching input exists:
 - NixOS modules from any input exposing `nixosModules.default` (excluded:
   the home-manager input, since it is used standalone, and nixpkgs trees
   -- anything with `legacyPackages` AND `lib.nixosSystem` -- whose helper
-  modules would break the system; opt out more via `excludeModuleInputs`).
-  The `default` export is auto-loaded; without one, a set with exactly one
-  entry is used as-is (sops-nix style), while a multi-entry set with no
-  `default` is ambiguous (nixos-hardware style catalogs) and the builder
-  THROWS with instructions: resolve it via `inputSpecialCases`, either
-  picking the entry to auto-import
-  (`inputSpecialCases."nixos-hardware" = v: { nixosModules.default =
-  v.nixosModules.dell-xps-13-9310; };`) or opting the channel out
-  (`inputSpecialCases."nixos-hardware" = _: { nixosModules = { }; };`)
-  and importing catalog entries explicitly in `modules`.
+  modules would break the system). The `default` export is auto-loaded;
+  without one, a set with exactly one entry is used as-is (sops-nix
+  style), while a multi-entry set with no `default` is ambiguous
+  (nixos-hardware style catalogs) and the builder THROWS rather than
+  guess, listing the exported entries and the selections that resolve
+  it -- see `inputSpecialCases`, which also narrows a channel to named
+  entries or switches it off.
 - overlays from any input exposing `overlays.default` (same rule).
 - lib extensions from any input exposing an `extendLib` function; this repo's
   own extensions are always applied to the system `lib` and also passed as the
@@ -744,9 +740,6 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   a normal login account per user; pass your own function for richer
   accounts, or `null` to disable account creation entirely.
 
-- **excludeModuleInputs**
-  Input names to skip when auto-collecting NixOS modules. Default `[ ]`.
-
 - **userRegistry**
   THE user registry: every host user, whatever their home mechanism.
   Every value must be a DIRECTORY containing `home.nix` (the user's
@@ -871,12 +864,28 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   (detect).
 
 - **inputSpecialCases**
-  Per-input normalization table merged over the built-in one, keyed
-  by input NAME: each case maps the input onto the standard
-  convention attributes (`nixosModules`/`homeModules`/`overlays`/
-  `extendLib`/`lib`). Also the per-input OPT-OUT for any
-  auto-collection channel, e.g.
-  `{ some-input = _: { homeModules = { }; overlays = { }; }; }`.
+  Per-input control of the auto-collection, keyed by input NAME and
+  merged over the built-in table. Each entry takes one of three forms:
+    `null`                 the input contributes NOTHING, to any channel
+    `{ <channel> = ...; }` a per-channel SELECTION (below)
+    a function             escape hatch for exports living under
+                           nonstandard paths: maps the input onto the
+                           convention attributes, e.g.
+                           `v: { nixosModules = v.modules.nixos; }`
+  A selection value is a list of entry names (auto-imported in the order
+  given), `"*"` (every entry, alphabetically), or `null`/`[ ]` (none).
+  The selectable channels are `nixosModules`, `homeModules` and
+  `overlays`; `extendLib` and `lib` hold a single value, so for them only
+  `null`/`[ ]` (off) and `"*"` (on) apply. Naming entries is how you take
+  SEVERAL of a catalog's exports -- and it is validated: an unknown
+  channel key, an unknown entry name, or a case keyed by an input that is
+  not in `inputs` all throw, listing the valid options. An explicit
+  selection also overrides the built-in skips (the home-manager input,
+  nixpkgs trees), which only exist to prevent guessing. Only the
+  AUTOMATIC contributions are affected: an input reached by hand via the
+  `inputs`/`inputPkgs` specialArgs always works.
+  Example: `inputSpecialCases."nixos-raspberrypi".overlays =
+  [ "bootloader" "vendor-kernel" ];`
   Default `{ }`.
 
 `homeConfigurationsBuilder` accepts this same shared set, so both

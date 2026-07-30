@@ -402,21 +402,47 @@ plasma-manager export their single module under a name, not
 `default`). A set with SEVERAL entries and no `default` is ambiguous
 -- nixos-hardware, for example, ships hundreds of mutually exclusive
 hardware profiles -- and the builder refuses to guess: evaluation
-throws, telling you to resolve it via the `inputSpecialCases`
-argument. Either pick the entry to auto-import:
+throws, listing the exported entries and pointing at
+`inputSpecialCases`, where you say which of them you want.
+
+### Selecting what an input contributes
+
+`inputSpecialCases` is keyed by input name, and each entry names the
+entries to take per channel -- `nixosModules`, `homeModules` or
+`overlays`:
 
 ```nix
-inputSpecialCases."nixos-hardware" = v: {
-  nixosModules.default =
-    v.nixosModules.dell-xps-13-9310;
+inputSpecialCases = {
+  # these entries, auto-imported in this order
+  "nixos-raspberrypi".overlays =
+    [ "bootloader" "vendor-kernel" ];
+  # every entry (alphabetically)
+  "some-input".homeModules = "*";
+  # none: a catalog you import from by hand
+  "nixos-hardware".nixosModules = null;
 };
 ```
 
-or, for a catalog of opt-in entries, opt the channel out and import
-the entries you want explicitly in `modules`:
+The four selection values are: a **list of names** (taken in the
+order given), `"*"` (all of them), `null` or `[ ]` (none), and --
+by leaving the channel out entirely -- the default `default`/single-entry
+rule above. `extendLib` and `lib` hold a single value rather than a
+set, so for those only `null`/`[ ]` (off) and `"*"` (on) apply.
+
+Two shorthands: `inputSpecialCases."x" = null;` switches off *every*
+channel of an input at once, and a function value is the escape hatch
+for exports living under nonstandard paths --
+`"x" = v: { nixosModules = v.modules.nixos; };`.
+
+Selecting by name is checked, so a typo fails loudly instead of
+quietly doing nothing: an unknown channel key, an entry the input does
+not export, or a case keyed by an input that is not in `inputs` each
+throw with the valid options listed. Opting a channel out affects
+only the AUTOMATIC collection -- reaching an input by hand always
+works:
 
 ```nix
-inputSpecialCases."nixos-hardware" = _: { nixosModules = { }; };
+"nixos-hardware".nixosModules = null;
 
 modules = [
   inputs.nixos-hardware
@@ -463,13 +489,22 @@ lib = import ./common/helper-functions {
 (If you name an actual input `flake`, that input keeps the name and
 your self lib is dropped with a warning.)
 
-Opt an input out of the NixOS-module auto-import with
-`excludeModuleInputs = [ "name" ];` (it does not affect home-manager
-modules or overlays). Nixpkgs trees -- anything exposing both
-`legacyPackages` and `lib.nixosSystem`, like the `nixpkgs-*` inputs
--- are never module-imported: they ship helper modules that would
+Two kinds of input are skipped by the NixOS-module auto-import on
+their own: the home-manager input (the builder wires its module in
+deliberately, where system-managed homes need it) and nixpkgs trees
+-- anything exposing both `legacyPackages` and `lib.nixosSystem`,
+like the `nixpkgs-*` inputs -- which ship helper modules that would
 break a system. Exporting `legacyPackages` alone (sops-nix does, for
-its docs) does not exclude an input.
+its docs) does not exclude an input. Both skips exist to stop the
+builder from guessing, so an explicit selection overrides them:
+`inputSpecialCases."x".nixosModules = [ "the-one-i-mean" ];`.
+
+Those skips are per channel, deliberately. A nixpkgs tree's `lib` is
+also not namespaced (its lib IS the base lib), but its
+`overlays.default` IS applied -- nixpkgs exports no overlays at all,
+and a fork that exports one means it to be used. A tree shipping a
+whole CATALOG of overlays is caught by the ambiguity throw like any
+other catalog, and opted out per channel the same way.
 
 Inputs with nonstandard export names can be normalized by a small
 table keyed by input name -- currently empty (NUR, its one former

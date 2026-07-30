@@ -22,7 +22,6 @@ let
     "rootPath"
     "modules"
     "userModuleFn"
-    "excludeModuleInputs"
     "userRegistry"
     "loginUsers"
     "homeSharedModules"

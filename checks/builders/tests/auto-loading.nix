@@ -1,6 +1,7 @@
 # Auto-loading of inputs: the generic conventions (nixosModules,
 # homeManagerModules/homeModules, overlays, extendLib, nixpkgs-* package
-# sets), the keyed special cases (nur), and the inputs/inputPkgs exposure.
+# sets), the inputSpecialCases forms (per-channel selections, input-level
+# null, the function escape hatch) and the inputs/inputPkgs exposure.
 {
   myLib,
   inputs,
@@ -10,9 +11,25 @@
   aliceHome,
   custom,
   fake-multi-module-input,
+  fake-catalog-input,
+  fake-overlay-catalog,
+  fake-tree-input,
   exampleDir,
   ...
 }:
+let
+  # A minimal host whose only interesting part is its inputSpecialCases.
+  probeHost =
+    hostname: extraInputs: cases:
+    myLib.nixosConfigurationsBuilder {
+      inputs = inputs // extraInputs;
+      inherit system hostname;
+      modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+      inputSpecialCases = cases;
+    };
+  # Forcing the group names reaches the auto-collection (and its throws).
+  throwsGroups = sys: !(builtins.tryEval (builtins.attrNames sys.config.users.groups)).success;
+in
 {
   # every `nixpkgs-*` input becomes a `pkgs-*` specialArg
   pkgs-variant-exposed = laptop._module.specialArgs ? pkgs-unstable;
@@ -34,12 +51,13 @@
   multi-export-without-default-throws =
     !(builtins.tryEval (
       (myLib.nixosConfigurationsBuilder {
-        inputs = inputs // { inherit fake-multi-module-input; };
+        inputs = inputs // {
+          inherit fake-multi-module-input;
+        };
         inherit system;
         hostname = "multithrow";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-      }).config.users.groups
-      ? multi-one
+      }).config.users.groups ? multi-one
     )).success;
   # ... and the escape hatch works: opting the channel out via
   # inputSpecialCases makes evaluation succeed with NONE of the entries
@@ -49,7 +67,9 @@
     let
       groups =
         (myLib.nixosConfigurationsBuilder {
-          inputs = inputs // { inherit fake-multi-module-input; };
+          inputs = inputs // {
+            inherit fake-multi-module-input;
+          };
           inherit system;
           hostname = "catalogoptout";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -180,10 +200,147 @@
     in
     pkgsLib.flake.marker == "explicit" && !(pkgsLib.flake ? selfHelper);
 
-  # auto-collection can be opted out per input name
-  exclude-module-inputs-respected = !(custom.config.users.groups ? from-input-module);
+  # ── nixpkgs trees: each channel treats them differently, ON PURPOSE ──
+  # (see the autoOverlays comment in lib/nixos/internal/context.nix; these
+  # three assertions exist so nobody "fixes" the asymmetry for symmetry)
 
-  # consumer-provided inputSpecialCases extend the built-in table: the
+  # a tree's MODULES are skipped -- even a sole unambiguous entry, which the
+  # single-export rule would otherwise auto-import
+  tree-modules-skipped =
+    !((probeHost "treeprobe" { inherit fake-tree-input; } { }).config.users.groups ? from-tree-module);
+  # its LIB is not namespaced: a tree's lib IS the base lib
+  tree-lib-not-namespaced =
+    !((probeHost "treelib" { inherit fake-tree-input; } { }).pkgs.lib ? fake-tree-input);
+  # but its OVERLAY *is* applied: a fork exporting `overlays.default`
+  # deliberately means it to be
+  tree-overlay-applied =
+    (probeHost "treeoverlay" { inherit fake-tree-input; } { }).pkgs ? from-tree-overlay;
+
+  # ── inputSpecialCases: per-channel selections ──
+
+  # selecting NOTHING for a channel is the per-input opt-out (the `custom`
+  # host switches fake-module-input's nixosModules off this way)
+  channel-selection-none-excludes = !(custom.config.users.groups ? from-input-module);
+
+  # naming entries takes exactly those -- SEVERAL of them, which the
+  # `default`-or-sole-entry rule cannot express at all
+  channel-selection-named-entries =
+    let
+      groups =
+        (probeHost "selnamed" { inherit fake-catalog-input; } {
+          "fake-catalog-input".nixosModules = [
+            "alpha"
+            "beta"
+          ];
+        }).config.users.groups;
+    in
+    groups ? catalog-alpha && groups ? catalog-beta;
+
+  # ... and leaves the unnamed ones out
+  channel-selection-subset =
+    let
+      groups =
+        (probeHost "selsubset" { inherit fake-catalog-input; } {
+          "fake-catalog-input".nixosModules = [ "beta" ];
+        }).config.users.groups;
+    in
+    groups ? catalog-beta && !(groups ? catalog-alpha);
+
+  # "*" takes every entry
+  channel-selection-star-takes-all =
+    let
+      groups =
+        (probeHost "selstar" { inherit fake-catalog-input; } {
+          "fake-catalog-input".nixosModules = "*";
+        }).config.users.groups;
+    in
+    groups ? catalog-alpha && groups ? catalog-beta;
+
+  # the list ORDER is the auto-import order: both of this catalog's overlays
+  # write `catalogOrder`, so whichever is selected LAST wins
+  channel-selection-order-preserved =
+    (probeHost "selorder" { inherit fake-overlay-catalog; } {
+      "fake-overlay-catalog".overlays = [
+        "first"
+        "second"
+      ];
+    }).pkgs.catalogOrder == "second"
+    &&
+      (probeHost "selorderrev" { inherit fake-overlay-catalog; } {
+        "fake-overlay-catalog".overlays = [
+          "second"
+          "first"
+        ];
+      }).pkgs.catalogOrder == "first";
+
+  # a selection never forces the entries it did NOT pick -- real catalogs
+  # carry `throw` tombstones for removed ones
+  channel-selection-skips-tombstone =
+    (probeHost "seltombstone" { inherit fake-multi-module-input; } {
+      "fake-multi-module-input".nixosModules = [ "one" ];
+    }).config.users.groups ? multi-one;
+
+  # an explicit selection overrides a built-in skip: home-manager's NixOS
+  # module is normally kept out of the auto-collected set (by store-path
+  # identity), but naming it is the opposite of a guess
+  selection-overrides-builtin-skip =
+    (probeHost "hmselected" { } {
+      "home-manager".nixosModules = [ "default" ];
+    }).options ? home-manager;
+
+  # input-level `null`: the input contributes NOTHING, on every channel --
+  # modules, overlays, extendLib and its namespaced lib
+  input-level-null-kills-every-channel =
+    let
+      sys = probeHost "nullcase" { } { "fake-module-input" = null; };
+      home = myLib.homeConfigurationsBuilder {
+        inherit inputs system;
+        hostname = "laptop";
+        username = "alice";
+        userRegistry."alice" = exampleDir + "/users/alice";
+        inputSpecialCases."fake-module-input" = null;
+      };
+    in
+    !(sys.config.users.groups ? from-input-module)
+    && !(sys.pkgs ? from-input-overlay)
+    && !(sys.pkgs.lib ? autoExtMarker)
+    && !(sys.pkgs.lib ? fake-module-input)
+    && !(home.config.home.sessionVariables ? FROM_INPUT_HM);
+
+  # ── validation: every typo fails loudly instead of quietly doing nothing ──
+
+  channel-selection-unknown-entry-throws = throwsGroups (
+    probeHost "selbadentry" { inherit fake-catalog-input; } {
+      "fake-catalog-input".nixosModules = [
+        "alpha"
+        "nope"
+      ];
+    }
+  );
+  channel-selection-unknown-channel-throws = throwsGroups (
+    # nixosModule, not nixosModules
+    probeHost "selbadchannel" { inherit fake-catalog-input; } {
+      "fake-catalog-input".nixosModule = null;
+    }
+  );
+  # a bare entry name is not a selection: only a list or `"*"`
+  channel-selection-bad-value-throws = throwsGroups (
+    probeHost "selbadvalue" { inherit fake-catalog-input; } {
+      "fake-catalog-input".nixosModules = "alpha";
+    }
+  );
+  # a case keyed by an input that does not exist would silently do nothing
+  input-special-cases-unknown-input-throws = throwsGroups (
+    probeHost "selbadinput" { } { "no-such-input".overlays = null; }
+  );
+  # extendLib/lib hold ONE value: there is nothing to name in them
+  single-value-channel-selection-throws = throwsGroups (
+    probeHost "selsinglebad" { } { "fake-module-input".extendLib = [ "default" ]; }
+  );
+
+  # ── inputSpecialCases: the function escape hatch ──
+
+  # consumer-provided cases extend the built-in table: the
   # nur-shaped `not-nur` input can be normalized onto the conventions ...
   input-special-cases-consumer =
     (myLib.nixosConfigurationsBuilder {
@@ -200,8 +357,7 @@
         hostname = "scoptout";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         inputSpecialCases."fake-module-input" = _: { nixosModules = { }; };
-      }).config.users.groups
-      ? from-input-module
+      }).config.users.groups ? from-input-module
     );
 
   # the homeManager argument bypasses capability detection (here with a

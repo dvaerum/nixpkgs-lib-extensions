@@ -118,6 +118,34 @@ let
     };
   };
 
+  # A multi-entry module catalog WITHOUT any `throw` tombstone, so `"*"`
+  # (take everything) is a legal selection for it. Like
+  # fake-multi-module-input it stays out of the shared `inputs` set --
+  # without a selection it would throw for every host -- and is threaded in
+  # via ctx. It exports NOTHING but nixosModules, so a test can select that
+  # channel without having to opt out of another catalog in the same input.
+  fake-catalog-input = {
+    outPath = "/nix/store/fake-catalog-input";
+    nixosModules = {
+      alpha = {
+        users.groups.catalog-alpha = { };
+      };
+      beta = {
+        users.groups.catalog-beta = { };
+      };
+    };
+  };
+
+  # The same, for overlays: both entries write the same attribute, which is
+  # how selection ORDER is observed (the last one selected wins).
+  fake-overlay-catalog = {
+    outPath = "/nix/store/fake-overlay-catalog";
+    overlays = {
+      first = final: prev: { catalogOrder = "first"; };
+      second = final: prev: { catalogOrder = "second"; };
+    };
+  };
+
   # An input contributing home modules under the NEW `homeModules` name:
   # its `default` is auto-loaded.
   fake-home-modules-input = {
@@ -129,6 +157,26 @@ let
     # OLD name warn (here: throw, to prove the collector never touches it
     # when homeModules exists)
     homeManagerModules = throw "deprecated homeManagerModules alias must not be accessed when homeModules exists";
+  };
+
+  # A nixpkgs-TREE-shaped input (legacyPackages + lib.nixosSystem, like a
+  # nixpkgs fork or a distribution flake such as nixos-raspberrypi) that also
+  # exports an overlay and a module. The three channels treat it differently
+  # ON PURPOSE -- see the autoOverlays comment in lib/nixos/internal/context.nix
+  # -- and the tree-* assertions pin each of them.
+  fake-tree-input = {
+    outPath = "/nix/store/fake-tree-input";
+    legacyPackages = { };
+    lib = {
+      nixosSystem = _: { };
+      treeHelper = "from-tree-lib";
+    };
+    overlays.default = final: prev: { from-tree-overlay = "yes"; };
+    # a SOLE entry, so the "unambiguous single export" rule would auto-import
+    # it if trees were not skipped for modules
+    nixosModules.helper = {
+      users.groups.from-tree-module = { };
+    };
   };
 
   # An input exporting `legacyPackages` (sops-nix publishes docs/packages
@@ -161,7 +209,12 @@ let
     # A second package-set input: must be exposed as the `pkgs-unstable`
     # specialArg (and its helper nixosModules must NOT be auto-imported).
     nixpkgs-unstable = nixpkgs;
-    inherit fake-module-input fake-home-modules-input fake-single-module-input fake-sops-shaped-input;
+    inherit
+      fake-module-input
+      fake-home-modules-input
+      fake-single-module-input
+      fake-sops-shaped-input
+      ;
     strings = fake-strings-collision;
     disko = fake-disko-input;
     fenix = fake-fenix;
@@ -200,33 +253,33 @@ let
   execStart = laptop.config.systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart;
 
   # A kitchen-sink host covering the config knobs the example doesn't use.
-  custom =
-    myLib.nixosConfigurationsBuilder {
-      inherit inputs system;
-      hostname = "custom";
-      modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-      excludeModuleInputs = [ "fake-module-input" ];
-      extraOverlays = [ (final: prev: { from-extra-overlay = "yes"; }) ];
-      allowedUnfreePackages = [ "allowed-unfree" ];
-      tags = [ "kitchen-sink" ];
-      nixpkgsConfig.cudaSupport = true;
-      systemType = "server";
-      additionalModules = [
-        { users.groups.from-additional-module = { }; }
-        # observable through group names: the system `lib` must carry both the
-        # extension from fake-module-input's extendLib and this repo's own
-        (
-          { lib, ... }:
-          {
-            users.groups.${lib.autoExtMarker} = { };
-            users.groups.${lib.stringToTitle "ext-marker"} = { };
-          }
-        )
-      ];
-      # user-supplied specialArgs override the builder-assembled ones
-      # (tags would otherwise be the [] default)
-      specialArgs.tags = [ "overridden-tag" ];
-    };
+  custom = myLib.nixosConfigurationsBuilder {
+    inherit inputs system;
+    hostname = "custom";
+    modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+    # selecting NOTHING for a channel is the per-input opt-out
+    inputSpecialCases."fake-module-input".nixosModules = null;
+    extraOverlays = [ (final: prev: { from-extra-overlay = "yes"; }) ];
+    allowedUnfreePackages = [ "allowed-unfree" ];
+    tags = [ "kitchen-sink" ];
+    nixpkgsConfig.cudaSupport = true;
+    systemType = "server";
+    additionalModules = [
+      { users.groups.from-additional-module = { }; }
+      # observable through group names: the system `lib` must carry both the
+      # extension from fake-module-input's extendLib and this repo's own
+      (
+        { lib, ... }:
+        {
+          users.groups.${lib.autoExtMarker} = { };
+          users.groups.${lib.stringToTitle "ext-marker"} = { };
+        }
+      )
+    ];
+    # user-supplied specialArgs override the builder-assembled ones
+    # (tags would otherwise be the [] default)
+    specialArgs.tags = [ "overridden-tag" ];
+  };
 
   # A host built from a PATCHED nixpkgs; the marker file proves the system
   # was evaluated from the patched tree (forces building the patched source).
@@ -270,13 +323,15 @@ let
   homesThrow =
     registry:
     !(builtins.tryEval (
-      builtins.attrNames (myLib.buildHomeConfigurations {
-        laptop = {
-          inherit inputs system;
-          userRegistry = registry;
-          loginUsers = [ "bad" ];
-        };
-      })
+      builtins.attrNames (
+        myLib.buildHomeConfigurations {
+          laptop = {
+            inherit inputs system;
+            userRegistry = registry;
+            loginUsers = [ "bad" ];
+          };
+        }
+      )
     )).success;
 
   # Everything a test file may need.
@@ -300,6 +355,9 @@ let
       applyBootstrap
       homesThrow
       fake-multi-module-input
+      fake-catalog-input
+      fake-overlay-catalog
+      fake-tree-input
       exampleDir
       fixturesDir
       invalidFixturesDir
@@ -310,7 +368,9 @@ let
   # Auto-discover the test files and merge their assertion sets.
   assertionSets = map (file: import (./tests + "/${file}") ctx) (
     lib.attrNames (
-      lib.filterAttrs (name: type: type == "regular" && lib.hasSuffix ".nix" name) (builtins.readDir ./tests)
+      lib.filterAttrs (name: type: type == "regular" && lib.hasSuffix ".nix" name) (
+        builtins.readDir ./tests
+      )
     )
   );
   assertions = lib.mergeAttrsList assertionSets;

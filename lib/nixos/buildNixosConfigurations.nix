@@ -82,7 +82,6 @@ in
     : - `rootPath`
     : - `modules`
     : - `userModuleFn`
-    : - `excludeModuleInputs`
     : - `userRegistry`
     : - `loginUsers`
     : - `homeSharedModules` (applies to BOTH mechanisms: system-managed
@@ -132,7 +131,9 @@ in
       extLib.nixosConfigurationsBuilder (
         split.defaults
         // args
-        // { inherit hostname; }
+        // {
+          inherit hostname;
+        }
         // (if builtins.intersectAttrs coreArgSet args == { } then { _core = defaultsCore; } else { })
       )
     ) split.hostEntries;

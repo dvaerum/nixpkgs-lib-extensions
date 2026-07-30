@@ -1,7 +1,7 @@
 # The shared evaluation context of the lib/nixos builders: `mkContext`
 # assembles everything a builder needs (lib, pkgs, specialArgs and the
-# auto-collected module/overlay sets) from one argument attrset. One of
-# the four concern-files aggregated by ./shared.nix.
+# auto-collected module/overlay sets) from one argument attrset. One of the
+# four concern-files aggregated by ./shared.nix.
 #
 # The context is built in two layers:
 #   mkContextCore  the host-INDEPENDENT part, a function of the core
@@ -20,7 +20,10 @@ let
   inherit (import ./inputs.nix extLib)
     warn
     detectHomeManager
-    pickExported
+    classifyCase
+    resolveEntrySet
+    channelEnabled
+    validateCases
     builtinInputSpecialCases
     normalizeInput
     isNixpkgsTree
@@ -34,18 +37,25 @@ let
   # (the module system tolerates the rare duplicated attrset module fine).
   uniquePaths =
     list:
-    (builtins.foldl' (
-      acc: x:
-      if !(builtins.isPath x) then
-        acc // { out = acc.out ++ [ x ]; }
-      else if builtins.elem x acc.seen then
-        acc
-      else
-        {
-          seen = acc.seen ++ [ x ];
-          out = acc.out ++ [ x ];
-        }
-    ) { seen = [ ]; out = [ ]; } list).out;
+    (builtins.foldl'
+      (
+        acc: x:
+        if !(builtins.isPath x) then
+          acc // { out = acc.out ++ [ x ]; }
+        else if builtins.elem x acc.seen then
+          acc
+        else
+          {
+            seen = acc.seen ++ [ x ];
+            out = acc.out ++ [ x ];
+          }
+      )
+      {
+        seen = [ ];
+        out = [ ];
+      }
+      list
+    ).out;
 
   # The argument names mkContextCore consumes -- everything the
   # host-independent part of the context depends on. The build* functions
@@ -60,7 +70,6 @@ let
     "allowedUnfreePackages"
     "permittedInsecurePackages"
     "nixpkgsConfig"
-    "excludeModuleInputs"
     "homeManager"
     "inputSpecialCases"
   ];
@@ -80,7 +89,6 @@ let
       allowedUnfreePackages ? [ ],
       permittedInsecurePackages ? [ ],
       nixpkgsConfig ? { },
-      excludeModuleInputs ? [ ],
       homeManager ? null,
       inputSpecialCases ? { },
       ...
@@ -88,13 +96,55 @@ let
     let
       baseLib = nixpkgs.lib;
 
+      # ── how each input's automatic contributions are resolved ──
+      #
+      # ONE seam for every channel: the consumer's cases (validated against
+      # the actual input names) are classified per input, the FUNCTION form
+      # reshapes the input itself (conventionInputs), and the SELECTION forms
+      # are answered per channel below. The `inputs`/`inputPkgs` specialArgs
+      # stay raw: an input that contributes nothing automatically is still
+      # reachable by hand.
+      cases = builtinInputSpecialCases // (validateCases inputs inputSpecialCases);
+      conventionInputs = builtins.mapAttrs (normalizeInput cases) inputs;
+      caseOf = classifyCase cases;
+
+      # Collect one entry-set channel across every input: locate the input's
+      # exports for the channel, then let resolveEntrySet choose from them.
+      # The built-in `skip` rules are consulted ONLY when no selection was
+      # given -- they exist to stop the builder from GUESSING, and naming an
+      # entry is the opposite of a guess.
+      collectChannel =
+        channel: locate: skip:
+        uniquePaths (
+          baseLib.concatLists (
+            baseLib.mapAttrsToList (
+              name: v:
+              let
+                case = caseOf name;
+                selected = case.selections ? ${channel};
+              in
+              if !(baseLib.isAttrs v) || (!selected && skip name v) then
+                [ ]
+              else
+                resolveEntrySet name channel (locate v) case
+            ) conventionInputs
+          )
+        );
+
       # Extend the system lib with this repo's own extensions (`extLib`, always
       # available since the builders are part of nixpkgs-lib-extensions) plus any
       # other input that exposes an `extendLib` function.
-      libExtenders = baseLib.filter (v: baseLib.isAttrs v && v ? extendLib) (baseLib.attrValues inputs);
-      extendedLib = baseLib.foldl' (acc: ext: acc.extend (final: prev: ext.extendLib prev)) (
-        baseLib.extend (final: prev: baseLib.recursiveUpdate prev extLib)
-      ) libExtenders;
+      libExtenders = baseLib.concatLists (
+        baseLib.mapAttrsToList (
+          name: v:
+          baseLib.optional (
+            baseLib.isAttrs v && v ? extendLib && channelEnabled name "extendLib" (caseOf name)
+          ) v.extendLib
+        ) conventionInputs
+      );
+      extendedLib = baseLib.foldl' (acc: ext: acc.extend (final: prev: ext prev)) (baseLib.extend (
+        final: prev: baseLib.recursiveUpdate prev extLib
+      )) libExtenders;
 
       # Each input's standalone `lib` export, namespaced by input name:
       # exposed as `lib.<name>` in modules and as `pkgs.lib.<name>` (e.g.
@@ -107,14 +157,16 @@ let
             baseLib.filterAttrs (
               name: v:
               # tryEval: an input whose `lib` THROWS must not break every
-              # host; it is simply not namespaced
+              # host; it is simply not namespaced. The selection check sits
+              # OUTSIDE the probe, so a malformed selection still throws
+              # instead of being swallowed as "not namespaced".
               let
                 probe = builtins.tryEval (
                   baseLib.isAttrs v && baseLib.isAttrs (v.lib or null) && !(isNixpkgsTree v)
                 );
               in
-              probe.success && probe.value
-            ) inputs
+              channelEnabled name "lib" (caseOf name) && probe.success && probe.value
+            ) conventionInputs
           );
         in
         # The consuming flake's own lib output (inputs.self) is renamed to
@@ -124,9 +176,9 @@ let
         if raw ? self && !(raw ? flake) then
           builtins.removeAttrs raw [ "self" ] // { flake = raw.self; }
         else if raw ? self then
-          warn "nixpkgs-lib-extensions: not exposing the consuming flake's `lib` as `lib.flake`: an input named `flake` already claims the name." (
-            builtins.removeAttrs raw [ "self" ]
-          )
+          warn
+            "nixpkgs-lib-extensions: not exposing the consuming flake's `lib` as `lib.flake`: an input named `flake` already claims the name."
+            (builtins.removeAttrs raw [ "self" ])
         else
           raw;
 
@@ -152,16 +204,13 @@ let
         let
           existing = builtins.intersectAttrs extendedLib libsFromInputs;
           owned = builtins.intersectAttrs (baseLib.genAttrs ownedNamespaces (_: null)) existing;
-          skipped = builtins.attrNames (
-            builtins.removeAttrs existing (builtins.attrNames owned)
-          );
+          skipped = builtins.attrNames (builtins.removeAttrs existing (builtins.attrNames owned));
         in
         (
           if skipped == [ ] then
             x: x
           else
-            warn ''
-              nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`.''
+            warn "nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`."
         )
           (
             builtins.removeAttrs libsFromInputs (builtins.attrNames existing)
@@ -195,22 +244,24 @@ let
             inherit patches;
           };
 
-      # The collectors see inputs through their special case (if any); the
-      # `inputs`/`inputPkgs` specialArgs stay raw. Consumer cases (the
-      # `inputSpecialCases` argument) extend and override the built-ins.
-      conventionInputs = builtins.mapAttrs (
-        normalizeInput (builtinInputSpecialCases // inputSpecialCases)
-      ) inputs;
-
-      # Auto-collect overlays (package extensions) from every input exposing `overlays`.
-      autoOverlays = uniquePaths (
-        lib.concatLists (
-          lib.mapAttrsToList (
-            name: v:
-            lib.optionals (lib.isAttrs v && v ? overlays) (pickExported name "overlays" v.overlays)
-          ) conventionInputs
-        )
-      );
+      # Auto-collect overlays (package extensions) from every input exposing
+      # `overlays`. Deliberately NO built-in skips, where nixosModules and the
+      # lib namespacing both skip nixpkgs trees. The asymmetry is intentional,
+      # not an oversight -- both of those skips answer a hazard specific to
+      # their channel:
+      #   modules: a tree's nixosModules are system-breaking helpers
+      #            (readOnlyPkgs, notDetected), and nixpkgs itself would hit
+      #            the ambiguity throw on every single host without the skip.
+      #   lib:     a tree's lib IS the base lib, so namespacing it would only
+      #            duplicate it as lib.nixpkgs-unstable.mkIf and friends.
+      # Neither reason reaches overlays: nixpkgs exports none at all, and a
+      # FORK that deliberately exports `overlays.default` means it to be
+      # applied. A tree shipping a CATALOG of overlays is already handled
+      # loudly by the ambiguity throw, and inputSpecialCases can opt any
+      # channel out per input. Pinned by the tree-input assertions in
+      # checks/builders/tests/auto-loading.nix -- do not "fix" this for
+      # symmetry.
+      autoOverlays = collectChannel "overlays" (v: v.overlays or { }) (_: _: false);
 
       mkPkgs =
         npkgs:
@@ -233,31 +284,20 @@ let
       # kept out of the auto-collected set no matter how the input is named.
       homeManagerId = if home-manager == null then null else home-manager.outPath or null;
 
-      # Skip when auto-collecting NixOS modules:
+      # Skip when auto-collecting NixOS modules (absent a selection):
       # - the home-manager input (used standalone; matched by identity, not name)
       # - nixpkgs trees (isNixpkgsTree): they export helper modules like
       #   `readOnlyPkgs` that would break the system when imported blindly.
       #   `legacyPackages` alone is not enough to skip -- flakes like
       #   sops-nix export it (docs/packages) while also shipping a real
       #   `nixosModules.default` that must be imported.
-      # - anything listed in `excludeModuleInputs`
+      # To opt an input out by hand, select nothing for the channel:
+      # `inputSpecialCases."<name>".nixosModules = null;`
       skipNixosModule =
-        name: v:
-        (homeManagerId != null && (v.outPath or null) == homeManagerId)
-        || isNixpkgsTree v
-        || lib.elem name excludeModuleInputs;
+        name: v: (homeManagerId != null && (v.outPath or null) == homeManagerId) || isNixpkgsTree v;
 
       # Auto-collect NixOS modules from every input exposing `nixosModules`.
-      autoNixosModules = uniquePaths (
-        lib.concatLists (
-          lib.mapAttrsToList (
-            name: v:
-            lib.optionals (lib.isAttrs v && v ? nixosModules && !(skipNixosModule name v)) (
-              pickExported name "nixosModules" v.nixosModules
-            )
-          ) conventionInputs
-        )
-      );
+      autoNixosModules = collectChannel "nixosModules" (v: v.nixosModules or { }) skipNixosModule;
 
       # Auto-collect home-manager modules from inputs exposing them under the
       # `homeModules` convention, falling back to the older
@@ -265,22 +305,19 @@ let
       # flakes like plasma-manager keep `homeManagerModules` as a
       # deprecation alias that WARNS on access, so it must not be touched
       # when the new name exists.
-      autoHomeModules = uniquePaths (
-        lib.concatLists (
-          lib.mapAttrsToList (
-            name: v:
-            lib.optionals (lib.isAttrs v) (
-              pickExported name "homeModules" (v.homeModules or v.homeManagerModules or { })
-            )
-          ) conventionInputs
-        )
+      autoHomeModules = collectChannel "homeModules" (v: v.homeModules or v.homeManagerModules or { }) (
+        _: _: false
       );
 
       # Expose every other `nixpkgs-*` input as a `pkgs-*` specialArg, built the
       # same way as the primary (e.g. nixpkgs-unstable -> pkgs-unstable).
-      pkgsFromInputs = lib.mapAttrs' (
-        name: np: lib.nameValuePair "pkgs-${lib.removePrefix "nixpkgs-" name}" (mkPkgs np)
-      ) (lib.filterAttrs (name: v: lib.hasPrefix "nixpkgs-" name && lib.isAttrs v && v ? legacyPackages) inputs);
+      pkgsFromInputs =
+        lib.mapAttrs' (name: np: lib.nameValuePair "pkgs-${lib.removePrefix "nixpkgs-" name}" (mkPkgs np))
+          (
+            lib.filterAttrs (
+              name: v: lib.hasPrefix "nixpkgs-" name && lib.isAttrs v && v ? legacyPackages
+            ) inputs
+          );
 
       # Every input's packages, pre-selected for this system: e.g.
       # `inputPkgs.disko.disko-install`. Deliberately NOT merged into `pkgs`
@@ -323,9 +360,10 @@ let
       # a throw, not a silent nonsense default: without inputs.self the
       # old `./.` fallback pointed INSIDE this library's own store tree,
       # so the hosts/<hostname> convention searched the wrong repo
-      rootPath ?
-        (inputs.self or (throw ''
-          nixpkgs-lib-extensions: `rootPath` was not given and `inputs.self` is missing, so the hosts/<hostname> convention and the rootPath specialArg have no root. Pass `rootPath` explicitly or include `self` in `inputs`.'')),
+      rootPath ? (
+        inputs.self
+          or (throw "nixpkgs-lib-extensions: `rootPath` was not given and `inputs.self` is missing, so the hosts/<hostname> convention and the rootPath specialArg have no root. Pass `rootPath` explicitly or include `self` in `inputs`.")
+      ),
       _core ? null,
       ...
     }@args:
@@ -338,24 +376,23 @@ let
       # Note: `pkgs` deliberately not included — modules already receive it from
       # the module system, and `specialArgs.pkgs` would override that wiring
       # (nixpkgs warns about it).
-      mySpecialArguments =
-        {
-          inherit
-            hostname
-            inputs
-            rootPath
-            tags
-            extLib
-            systemType
-            ;
-          inherit (core) inputPkgs;
-        }
-        // core.pkgsFromInputs
-        // specialArgs
-        # the per-host extension slot: layered after specialArgs so that
-        # `_defaults.specialArgs` and a host's additionalSpecialArgs combine
-        # (mirroring modules/additionalModules)
-        // additionalSpecialArgs;
+      mySpecialArguments = {
+        inherit
+          hostname
+          inputs
+          rootPath
+          tags
+          extLib
+          systemType
+          ;
+        inherit (core) inputPkgs;
+      }
+      // core.pkgsFromInputs
+      // specialArgs
+      # the per-host extension slot: layered after specialArgs so that
+      # `_defaults.specialArgs` and a host's additionalSpecialArgs combine
+      # (mirroring modules/additionalModules)
+      // additionalSpecialArgs;
     in
     {
       inherit (core)
