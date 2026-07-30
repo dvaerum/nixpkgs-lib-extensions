@@ -19,6 +19,7 @@ extLib:
 let
   inherit (import ./inputs.nix extLib)
     detectHomeManager
+    entrySetChannels
     classifyCase
     resolveEntrySet
     channelEnabled
@@ -142,11 +143,6 @@ let
       # the entries themselves, so catalog tombstones stay unforced.
       selectionsChecked =
         let
-          locators = {
-            nixosModules = v: v.nixosModules or { };
-            homeModules = v: v.homeModules or v.homeManagerModules or { };
-            overlays = v: v.overlays or { };
-          };
           probe =
             name: _:
             let
@@ -156,7 +152,7 @@ let
             baseLib.optionals (baseLib.isAttrs v) (
               baseLib.mapAttrsToList (
                 channel: locate: builtins.length (resolveEntrySet name channel (locate v) case)
-              ) (builtins.intersectAttrs case.selections locators)
+              ) (builtins.intersectAttrs case.selections entrySetChannels)
             );
         in
         builtins.deepSeq (baseLib.concatLists (baseLib.mapAttrsToList probe inputSpecialCases)) null;
@@ -210,7 +206,7 @@ let
           builtins.removeAttrs raw [ "self" ] // { flake = raw.self; }
         else if raw ? self then
           builtins.warn
-            "nixpkgs-lib-extensions: not exposing the consuming flake's `lib` as `lib.flake`: an input named `flake` already claims the name."
+            "nixpkgs-lib-extensions: not exposing the consuming flake's `lib` as `lib.flake`: an input named `flake` already claims the name. Rename that input, or free the name with `inputSpecialCases.\"flake\".lib = null;`."
             (builtins.removeAttrs raw [ "self" ])
         else
           raw;
@@ -243,7 +239,7 @@ let
           if skipped == [ ] then
             x: x
           else
-            builtins.warn "nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`."
+            builtins.warn "nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`, or silence this with `inputSpecialCases.\"<name>\".lib = null;` if you never wanted it namespaced."
         )
           (
             builtins.removeAttrs libsFromInputs (builtins.attrNames existing)
@@ -277,24 +273,31 @@ let
             inherit patches;
           };
 
-      # Auto-collect overlays (package extensions) from every input exposing
-      # `overlays`. Deliberately NO built-in skips, where nixosModules and the
-      # lib namespacing both skip nixpkgs trees. The asymmetry is intentional,
-      # not an oversight -- both of those skips answer a hazard specific to
-      # their channel:
-      #   modules: a tree's nixosModules are system-breaking helpers
-      #            (readOnlyPkgs, notDetected), and nixpkgs itself would hit
-      #            the ambiguity throw on every single host without the skip.
-      #   lib:     a tree's lib IS the base lib, so namespacing it would only
-      #            duplicate it as lib.nixpkgs-unstable.mkIf and friends.
-      # Neither reason reaches overlays: nixpkgs exports none at all, and a
-      # FORK that deliberately exports `overlays.default` means it to be
-      # applied. A tree shipping a CATALOG of overlays is already handled
-      # loudly by the ambiguity throw, and inputSpecialCases can opt any
+      # Every entry-set channel, collected. Derived from `entrySetChannels`
+      # (internal/inputs.nix), which is also the allowlist for
+      # inputSpecialCases keys and the table the eager validation above
+      # walks -- one source of truth, so a channel cannot be accepted as a
+      # selection key while nothing collects it.
+      #
+      # `skipFor` is the ONLY per-channel special-casing, and the asymmetry
+      # in it is intentional rather than an oversight: nixpkgs trees are
+      # skipped for modules because their nixosModules are system-breaking
+      # helpers (readOnlyPkgs, notDetected) and nixpkgs itself would
+      # otherwise hit the ambiguity throw on every host; and skipped for the
+      # lib namespacing (below) because a tree's lib IS the base lib.
+      # Neither reason reaches OVERLAYS -- nixpkgs exports none at all, and
+      # a fork that deliberately exports `overlays.default` means it to be
+      # applied. A tree shipping a catalog of overlays is handled loudly by
+      # the ambiguity throw instead, and inputSpecialCases can opt any
       # channel out per input. Pinned by the tree-input assertions in
-      # checks/builders/tests/auto-loading.nix -- do not "fix" this for
+      # checks/builders/tests/auto-loading.nix -- do not "fix" it for
       # symmetry.
-      autoOverlays = collectChannel "overlays" (v: v.overlays or { }) (_: _: false);
+      skipFor.nixosModules = skipNixosModule;
+      collected = baseLib.mapAttrs (
+        channel: locate: collectChannel channel locate (skipFor.${channel} or (_: _: false))
+      ) entrySetChannels;
+
+      autoOverlays = collected.overlays;
 
       mkPkgs =
         npkgs:
@@ -332,18 +335,8 @@ let
       skipNixosModule =
         name: v: (homeManagerId != null && (v.outPath or null) == homeManagerId) || isNixpkgsTree v;
 
-      # Auto-collect NixOS modules from every input exposing `nixosModules`.
-      autoNixosModules = collectChannel "nixosModules" (v: v.nixosModules or { }) skipNixosModule;
-
-      # Auto-collect home-manager modules from inputs exposing them under the
-      # `homeModules` convention, falling back to the older
-      # `homeManagerModules` name only when `homeModules` is absent --
-      # flakes like plasma-manager keep `homeManagerModules` as a
-      # deprecation alias that WARNS on access, so it must not be touched
-      # when the new name exists.
-      autoHomeModules = collectChannel "homeModules" (v: v.homeModules or v.homeManagerModules or { }) (
-        _: _: false
-      );
+      autoNixosModules = collected.nixosModules;
+      autoHomeModules = collected.homeModules;
 
       # Expose every other `nixpkgs-*` input as a `pkgs-*` specialArg, built the
       # same way as the primary (e.g. nixpkgs-unstable -> pkgs-unstable).

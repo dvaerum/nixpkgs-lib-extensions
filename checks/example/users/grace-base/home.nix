@@ -1,2 +1,3 @@
-# home-manager module for the `grace@*` wildcard test fixture
+# grace's home-manager configuration, registered as "grace@*", so it
+# applies on every host.
 { ... }: { }

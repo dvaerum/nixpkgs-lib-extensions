@@ -47,21 +47,25 @@ let
   # the ones to take; single-value channels hold one value, which a selection
   # can only switch on or off.
   #
-  # WARNING: these lists only gate which KEYS are accepted. Which collector
-  # a channel actually gets is hardcoded in internal/context.nix (three
-  # `collectChannel` calls and two `channelEnabled` uses). Adding a name
-  # here without adding a collector there produces an accepted selection
-  # that nothing ever acts on.
-  entrySetChannels = [
-    "nixosModules"
-    "homeModules"
-    "overlays"
-  ];
+  # Each entry-set channel maps to HOW its exports are located on an input.
+  # internal/context.nix derives its collectors from this very table, so a
+  # channel added here gets collected by construction -- the accepted-keys
+  # list cannot drift away from the code that acts on it.
+  entrySetChannels = {
+    nixosModules = v: v.nixosModules or { };
+    # the older `homeManagerModules` name is read ONLY when `homeModules` is
+    # absent -- flakes that deprecated it (plasma-manager) warn on access
+    homeModules = v: v.homeModules or v.homeManagerModules or { };
+    overlays = v: v.overlays or { };
+  };
+  # These hold ONE value, so a selection can only switch them on or off, and
+  # each is consumed at its own site inside the lib fixed point (context.nix)
+  # rather than through a generic collector.
   singleValueChannels = [
     "extendLib"
     "lib"
   ];
-  channelNames = entrySetChannels ++ singleValueChannels;
+  channelNames = builtins.attrNames entrySetChannels ++ singleValueChannels;
 
   # From a flake's exported set for one channel, with NO selection given:
   # the `default` export is auto-loaded; without one, a set with exactly ONE
@@ -268,6 +272,7 @@ in
   # below, and re-exporting them would read as public surface.
   inherit
     detectHomeManager
+    entrySetChannels
     classifyCase
     resolveEntrySet
     channelEnabled

@@ -1,5 +1,6 @@
-# System-only test fixture: a user directory with ONLY a configuration.nix
-# (no home.nix) -- gets NixOS config but no home-manager config/bootstrap
+# eve is a SYSTEM-ONLY user: her directory has only a configuration.nix
+# and no home.nix, so she gets an account and this NixOS config, but no
+# home-manager configuration and no login bootstrap.
 { ... }:
 {
   users.groups.backup-operators = { };

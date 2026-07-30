@@ -1,4 +1,4 @@
-# PLACEHOLDER host configuration (also asserted by this repo's checks).
+# PLACEHOLDER host configuration -- REPLACE THIS BEFORE SWITCHING.
 # For a real machine, replace the contents with your actual config:
 # import the machine's hardware-configuration.nix and enable a boot
 # loader (e.g. boot.loader.systemd-boot.enable = true).

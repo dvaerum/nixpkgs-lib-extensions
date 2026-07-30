@@ -421,17 +421,32 @@ one that does not exist and *that* error lists them.)
 
 `inputSpecialCases` is keyed by input name, and each entry names the
 entries to take per channel -- `nixosModules`, `homeModules` or
-`overlays`:
+`overlays`. It is an ordinary builder argument, so it goes in
+`_defaults` (applying to every host) or on a single host entry:
 
 ```nix
-inputSpecialCases = {
-  # these entries, auto-imported in this order
-  "nixos-raspberrypi".overlays =
-    [ "bootloader" "vendor-kernel" ];
-  # every entry (alphabetically)
-  "some-input".homeModules = "*";
-  # none: a catalog you import from by hand
-  "nixos-hardware".nixosModules = null;
+hosts = {
+  _defaults = {
+    inherit inputs system userRegistry;
+
+    inputSpecialCases = {
+      # these entries, auto-imported in this order
+      "nixos-raspberrypi".overlays =
+        [ "bootloader" "vendor-kernel" ];
+      # every entry (alphabetically)
+      "some-input".homeModules = "*";
+      # none: a catalog you import from by hand
+      "nixos-hardware".nixosModules = null;
+    };
+  };
+
+  laptop = {
+    # the entries you opted out of above, imported explicitly
+    additionalModules = [
+      inputs.nixos-hardware
+        .nixosModules.dell-xps-13-9310
+    ];
+  };
 };
 ```
 

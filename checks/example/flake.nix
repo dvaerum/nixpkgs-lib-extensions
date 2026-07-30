@@ -1,19 +1,25 @@
-# EXAMPLE + TEST + TEMPLATE: a complete consumer flake for the lib/nixos
-# builders. Copy this directory (or run `nix flake init -t
-# github:dvaerum/nixpkgs-lib-extensions`) and adjust hosts/ and users/.
+# Your NixOS + home-manager flake, built with nixpkgs-lib-extensions.
+# Two hosts and a handful of users, wired by convention -- adjust hosts/
+# and users/ and this becomes yours.
 #
-# It is also evaluated by `nix flake check`: ../builders/default.nix
-# imports this file and calls `outputs` with test inputs (a flake.nix is
-# just a Nix attrset with an `outputs` function), so the example cannot rot.
-#
-# Because of that double duty, some concrete values here (direnv/git
-# settings, group names) are asserted by the checks. They are realistic
-# placeholders: when copying this example, adjust or delete them freely.
+# Start here:
+#   1. hosts/<yourhost>.nix   your machine's real config (the scaffolded
+#                             ones are PLACEHOLDERS -- see below)
+#   2. userRegistry           who exists, and on which hosts
 #
 # Layout convention: every registry value is a DIRECTORY containing
 #   home.nix           the user's home-manager configuration
 #   configuration.nix  NixOS config for that user (account, groups, ...)
-# (either may be omitted; only-configuration.nix = system-only user).
+# (either may be omitted; configuration.nix alone = system-only user).
+#
+# ---------------------------------------------------------------------
+# Note for readers of the nixpkgs-lib-extensions repo itself: this
+# directory is BOTH the `nix flake init` template and the fixture the
+# test suite evaluates (checks/builders/default.nix calls this file's
+# `outputs` with test inputs), which is why some concrete values here --
+# direnv/git settings, group names -- are asserted by the checks. As a
+# scaffolded user you can change or delete any of them freely.
+# ---------------------------------------------------------------------
 {
   description = "Example consumer of nixpkgs-lib-extensions' NixOS/home-manager builders";
 
@@ -36,6 +42,8 @@
     # `let` names exactly the values used by more than one builder call.
     let
       extLib = nixpkgs-lib-extensions.lib;
+      # The default for every host below. A host on another architecture
+      # overrides it in its own entry -- see `server`.
       system = "x86_64-linux";
 
       # One registry shared by all hosts. Key forms:
@@ -104,12 +112,26 @@
         # `userModuleFn` defaults to `extLib.normalUserModule`. Pass your own
         # `username -> module` function for richer accounts, or `null` to
         # disable account creation.
-        laptop = { };
+        laptop = {
+          # Per-host extras, layered ON TOP of the `_defaults` above rather
+          # than replacing them -- that is what the `additional*` half of
+          # each pair is for:
+          #   additionalModules = [ ./modules/desktop.nix ];
+          #   additionalSpecialArgs = { role = "workstation"; };
+          # Everything else replaces the default outright, per argument:
+          #   tags = [ "gpu" ];                      # also labels boot entries
+          #   nixpkgsConfig = { cudaSupport = true; };
+          #   allowedUnfreePackages = [ "steam" ];
+          #   extraOverlays = [ (final: prev: { myPkg = prev.hello; }) ];
+        };
 
         # A host without any user registry: no users, no bootstrap, no
         # homes -- the empty registry OVERRIDES the one from `_defaults`.
         server = {
           userRegistry = { };
+          # A machine on another architecture overrides the default
+          # `system` for itself alone:
+          #   system = "aarch64-linux";
         };
       };
     in
