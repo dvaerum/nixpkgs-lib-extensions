@@ -7,8 +7,8 @@
 let
   lib = pkgs.lib;
 
-  build =
-    args:
+  buildWith =
+    systemdInitrd: args:
     (myLib.declareZfsRootDisk (
       {
         devicePath = "/dev/disk/by-id/test-disk";
@@ -25,8 +25,9 @@ let
     ))
       {
         inherit pkgs lib;
-        config.boot.initrd.systemd.enable = true;
+        config.boot.initrd.systemd.enable = systemdInitrd;
       };
+  build = buildWith true;
 
   plain = build { enableEncryption = false; };
   plainDatasets = plain.disko.devices.zpool."zroot-testhost".datasets;
@@ -91,6 +92,30 @@ let
     ) keyWritersCode;
     # a writer only exists when encryption is on
     no-key-writer-without-encryption = plain.disko.devices.zpool."zroot-testhost".preCreateHook == "";
+
+    # WHICH initrd flavour gets which writer. The assertions above read the
+    # `mkIf` structures through `.content`, which discards `.condition` --
+    # so swapping these two conditions (systemd-initrd systems getting
+    # postDeviceCommands and vice versa) would leave every one of them green
+    # while no machine unlocks its pool. Assert the conditions themselves,
+    # in BOTH flavours.
+    systemd-initrd-gets-the-service =
+      let
+        m = buildWith true { };
+      in
+      m.boot.initrd.systemd.condition && !m.boot.initrd.postDeviceCommands.condition;
+    script-initrd-gets-the-legacy-hooks =
+      let
+        m = buildWith false { };
+      in
+      m.boot.initrd.postDeviceCommands.condition && m.boot.initrd.postResumeCommands.condition;
+    # ... and neither flavour writes a key at all without encryption
+    no-initrd-writer-without-encryption =
+      let
+        a = buildWith true { enableEncryption = false; };
+        b = buildWith false { enableEncryption = false; };
+      in
+      !a.boot.initrd.systemd.condition && !b.boot.initrd.postDeviceCommands.condition;
 
     # per-user HOME datasets, string and { username; mountpoint; } forms
     user-datasets-created = plainDatasets ? "HOME/alice" && plainDatasets ? "HOME/bob";

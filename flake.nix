@@ -123,6 +123,13 @@
             pkgs = nixpkgs.legacyPackages.${system};
             inherit myLib;
           };
+          # its own check: verifying `patches` is import-from-derivation
+          # over the whole nixpkgs tree, which inside `builders` blocked
+          # every cheap assertion there until the copy existed
+          nixpkgs-patching = import ./checks/nixpkgs-patching.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            inherit nixpkgs myLib;
+          };
           zfs-passphrase-newline = import ./checks/zfs-passphrase-newline.nix {
             pkgs = nixpkgs.legacyPackages.${system};
           };

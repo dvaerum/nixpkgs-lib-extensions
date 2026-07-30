@@ -281,26 +281,6 @@ let
     specialArgs.probeArg = "from-special-args";
   };
 
-  # A host built from a PATCHED nixpkgs; the marker file proves the system
-  # was evaluated from the patched tree (forces building the patched source).
-  markerPatch = pkgs.writeText "add-marker.patch" ''
-    --- /dev/null
-    +++ b/nixpkgs-lib-extensions-test-marker
-    @@ -0,0 +1 @@
-    +marker
-  '';
-  # Pinned to x86_64-linux: verifying the patch forces BUILDING the patched
-  # nixpkgs tree during evaluation (IFD), which must happen on the machine
-  # running the checks -- a floating system would break `--all-systems`
-  # evaluation for platforms this machine cannot build.
-  patched = myLib.nixosConfigurationsBuilder {
-    inherit inputs;
-    system = "x86_64-linux";
-    hostname = "patched";
-    modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-    patches = [ markerPatch ];
-  };
-
   # The bootstrap module used directly (without nixosConfigurationsBuilder);
   # `args` overrides the defaults below.
   bootstrapModuleFor =
@@ -350,7 +330,6 @@ let
       aliceHome
       execStart
       custom
-      patched
       bootstrapModuleFor
       applyBootstrap
       homesThrow

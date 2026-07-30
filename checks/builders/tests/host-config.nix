@@ -9,7 +9,6 @@
   laptop,
   server,
   custom,
-  patched,
   fixturesDir,
   invalidFixturesDir,
   exampleDir,
@@ -184,6 +183,7 @@
       }).laptop
     ).success;
 
-  # ── patches: the system is built from the patched nixpkgs tree ──
-  patches-applied = builtins.pathExists "${patched.pkgs.path}/nixpkgs-lib-extensions-test-marker";
+  # (the `patches` argument has its own check: checks/nixpkgs-patching.nix,
+  # split out because verifying it is import-from-derivation over the whole
+  # nixpkgs tree and blocked every cheap assertion here)
 }
