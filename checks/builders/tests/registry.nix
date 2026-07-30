@@ -32,8 +32,23 @@
   wildcard-config-applied = laptop.config.users.groups ? vpn;
   wildcard-merges-with-host-entry = laptop.config.users.groups ? scanner;
 
-  # plain "grace" is shadowed by "grace@*": its config must NOT apply
-  shadowed-plain-entry-ignored = !(laptop.config.users.groups ? grace-legacy);
+  # a plain entry shadowed by "<user>@*" must NOT apply (and warns). Built
+  # here rather than in the example: the warning fires on every evaluation
+  # of whatever registry contains it, and the example doubles as the
+  # `nix flake init` template, where four warnings on a first build look
+  # like something is broken.
+  shadowed-plain-entry-ignored =
+    !(
+      (myLib.nixosConfigurationsBuilder {
+        inherit inputs system;
+        hostname = "shadowprobe";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        userRegistry = {
+          "grace@*" = exampleDir + "/users/grace-base";
+          "grace" = exampleDir + "/users/grace-plain";
+        };
+      }).config.users.groups ? grace-legacy
+    );
 
   # ── entry validation ──
   invalid-entry-throws = homesThrow {

@@ -51,15 +51,27 @@ users/
   eve/                 system-only user (no home)
     configuration.nix
   frank-base/          wildcard entry (frank@*)
+    home.nix
+    configuration.nix
   frank-laptop/        per-host extras (frank@laptop)
-  ...
+    configuration.nix
+  bob/ carol/ grace-base/     further key forms, see the registry
 ```
 
-**Make it real before building:** the scaffolded host files are
-placeholders (a fake root filesystem, no boot loader). Replace the
-contents of `hosts/laptop.nix` with your machine's actual config --
-typically an import of its `hardware-configuration.nix` plus a boot
-loader:
+**Make it real before building**, in two places:
+
+1. The scaffolded **host files** are placeholders (a fake root
+   filesystem, no boot loader). Note that this still *activates* --
+   it does not fail safe -- so replace the contents of
+   `hosts/laptop.nix` with your machine's actual config first,
+   typically an import of its `hardware-configuration.nix` plus a boot
+   loader.
+2. The scaffolded **registry** creates six real accounts (alice, bob,
+   dave, eve, frank, grace) with their groups and, for the
+   `loginUsers`, their bootstrap services. Replace those entries with
+   your own users before the first switch.
+
+A host file then looks like:
 
 ```nix
 { ... }:
@@ -100,13 +112,11 @@ userRegistry = {
 
 Key forms:
 
-| Key form        | Applies                                     |
-|-----------------|---------------------------------------------|
-| `"user@host"`   | on that host only                           |
-| `"user@*"`      | on every host; MERGES with `"user@host"`    |
-| `"user"`        | standalone default: only when NO @-entry    |
-|                 | matched (never merged; a shadowed plain     |
-|                 | entry prints a warning)                     |
+| Key form      | Applies |
+|---------------|---------|
+| `"user@host"` | on that host only |
+| `"user@*"`    | on every host; MERGES with a matching `"user@host"` |
+| `"user"`      | standalone default, used only when NO @-entry matched -- never merged with @-entries, and a shadowed plain entry prints a warning |
 
 Every value must be a **directory** containing one or both of:
 
@@ -190,8 +200,8 @@ hostname. In your flake the full wiring looks like this (the scaffolded
 Later snippets in this guide assume these bindings (`extLib`,
 `inputs`, `system`, the registry) from this skeleton.
 
-The reserved `_defaults` entry (never a valid hostname -- hostnames
-cannot contain `_`) supplies arguments to every host. Merging is per
+The reserved `_defaults` entry (never a valid hostname -- a hostname
+cannot START with `_`) supplies arguments to every host. Merging is per
 argument and the host entry wins entirely -- lists and attrsets are
 NOT deep-merged. For "shared base plus per-host extras" use the
 layered pairs instead: `modules` and `specialArgs` in `_defaults`,
@@ -376,8 +386,9 @@ At login the service runs
 in the builder setup. Two things the standalone module does NOT do
 (they are `nixosConfigurationsBuilder` features): it never creates
 user accounts, and it never imports the registry directories'
-`configuration.nix` files -- only the registry KEYS are read, to
-know which users to bootstrap.
+`configuration.nix` files. It does read the matched registry
+directories, but only to see which users ship a `home.nix` -- so an
+entry that is not a directory, or has neither file, still throws.
 
 The module is self-gating: with no matching login user, no
 home-manager input, or no flake reference, it evaluates to an empty
@@ -390,7 +401,7 @@ For every flake input, by convention:
 | Input exports                    | Effect                       |
 |----------------------------------|------------------------------|
 | `nixosModules.default`           | imported into every host     |
-| `homeManagerModules.default` / `homeModules.default` | added to every home |
+| `homeModules.default` / `homeManagerModules.default` | added to every home |
 | `overlays.default`               | applied to `pkgs`            |
 | `extendLib`                      | merged into the system `lib` |
 | `lib`                            | namespaced: `lib.<name>.*`   |
@@ -482,7 +493,7 @@ lib = import ./common/helper-functions {
 { lib, ... }:
 {
   imports = [
-    (lib.flake.router-conf { ... })
+    (lib.flake.router-conf { /* your args */ })
   ];
 }
 ```
@@ -512,27 +523,28 @@ table keyed by input name -- currently empty (NUR, its one former
 entry, works via `overlays.default` like any other input; its
 default modules only inject that same overlay again). The
 home-manager input itself is detected by capability, whatever you
-named it, and its NixOS module is never auto-imported (the builder
+named it, and its NixOS module is never auto-imported absent an
+explicit selection (the builder
 wires it in deliberately where system-managed homes need it).
 
 ## What your modules receive (specialArgs)
 
 Both NixOS modules and home-manager modules get:
 
-| Arg                   | Content                                  |
-|-----------------------|------------------------------------------|
-| `inputs`              | the whole flake inputs set               |
-| `inputPkgs.<name>`    | every input's packages, pre-selected for |
-|                       | the host's system                        |
-| `pkgs-<variant>`      | package set per `nixpkgs-*` input        |
-| `extLib`              | this repo's lib (also merged into `lib`) |
-| `hostname`, `rootPath`, `tags`, `systemType` | call arguments |
-| `listOfUsernames`     | the host's registry-derived users        |
-| `username`            | home-manager configs only: whose home    |
+| Arg | Content |
+|-----|---------|
+| `inputs` | the whole flake inputs set |
+| `inputPkgs.<name>` | every input's packages, pre-selected for the host's system |
+| `pkgs-<variant>` | package set per `nixpkgs-*` input |
+| `extLib` | this repo's lib (also merged into `lib`) |
+| `hostname`, `rootPath`, `tags`, `systemType` | the call arguments of the same name |
+| `listOfUsernames` | the host's registry-derived users |
+| `username` | home-manager configs only: whose home |
 
 Anything you pass as `specialArgs = { ... };` is merged after
 everything the builder assembled and overrides it (only
-`additionalSpecialArgs` and `listOfUsernames` layer later still). `pkgs` is deliberately not a specialArg --
+`additionalSpecialArgs`, `listOfUsernames` and (for homes) `username`
+layer later still). `pkgs` is deliberately not a specialArg --
 modules receive it from the module system.
 
 Example -- use a package from an input without any wiring:
@@ -556,9 +568,13 @@ Add a user everywhere:
 
 ```
 mkdir -p users/carol
-git add users/carol
 $EDITOR users/carol/home.nix
+git add users/carol
 ```
+
+(`git add` last, and only once the file exists: `git add` on an empty
+directory stages nothing, which would leave the new `home.nix`
+untracked and therefore invisible to the flake.)
 
 ```nix
 # flake.nix registry
@@ -596,7 +612,7 @@ laptop = {
   # applied to the nixpkgs SOURCE via applyPatches
   patches = [ ./patches/fix.patch ];
   # on top of the auto-collected input overlays
-  extraOverlays = [ (final: prev: { ... }) ];
+  extraOverlays = [ (final: prev: { myPkg = prev.hello; }) ];
 };
 ```
 
@@ -635,8 +651,9 @@ eval-level changes.
 
 - **Untracked files are invisible to flakes.** `git add` new user
   directories and host files, or they are silently skipped.
-- A plain `"user"` entry is IGNORED (with a warning) as soon as any
-  `"user@..."` entry exists -- import its directory explicitly from
+- A plain `"user"` entry is IGNORED (with a warning) as soon as a
+  `"user@*"` or `"user@<thishost>"` entry exists -- an @-entry naming
+  some OTHER host does not shadow it -- import its directory explicitly from
   an @-entry if you want to reuse it.
 - "Every login" means every systemd user-manager instance: the
   bootstrap re-runs when the user's first session starts, not on
@@ -652,7 +669,8 @@ eval-level changes.
 
 This repo's own test suite doubles as living documentation: the
 example under [checks/example/](../checks/example/) is evaluated by
-`nix flake check`, and two further VM tests boot a machine, log a
-user in and run a real `home-manager switch`. Reading
+`nix flake check`, and three further VM tests boot a machine: two log a
+user in and run a real `home-manager switch`, one checks that a
+system-managed home activates with the system. Reading
 [checks/builders/tests/](../checks/builders/tests/) shows the exact
 guaranteed behavior of every feature described above.

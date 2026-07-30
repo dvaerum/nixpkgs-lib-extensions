@@ -42,16 +42,18 @@
       #   "<user>@<host>"  that host only
       #   "<user>@*"       every host; MERGES with a matching "<user>@<host>"
       #   "<user>"         standalone default, only when NO @-entry matched
+      #
+      # REPLACE THESE WITH YOUR OWN before the first `nixos-rebuild switch`:
+      # every key here becomes a REAL account on the host.
       userRegistry = {
         "alice" = ./users/alice; # plain default: applies (alice has no @-entries)
         "bob@laptop" = ./users/bob; # laptop only
-        "carol@otherhost" = ./users/carol; # a different machine: never on laptop
+        "carol@otherhost" = ./users/carol; # a host not in this flake: unused here
         "dave" = ./users/dave; # home.nix + configuration.nix (groups)
         "eve" = ./users/eve; # ONLY configuration.nix -> system-only user
         "frank@*" = ./users/frank-base; # on every host ...
         "frank@laptop" = ./users/frank-laptop; # ... plus laptop extras (merged)
         "grace@*" = ./users/grace-base; # on every host
-        "grace" = ./users/grace-plain; # IGNORED: shadowed by grace@* (warns)
       };
 
       # ONE host list feeds both builders below. The attribute keys are
@@ -61,12 +63,26 @@
       # only needed for anything beyond that.
       hosts = {
         # Arguments shared by every host. `_defaults` can never be a
-        # hostname (hostnames cannot contain `_`). A host entry overrides
-        # per argument -- and for "shared base plus per-host extras" use
-        # the layered pairs: `modules`/`specialArgs` here,
+        # hostname (a hostname cannot start with `_`). A host entry
+        # overrides per argument -- and for "shared base plus per-host
+        # extras" use the layered pairs: `modules`/`specialArgs` here,
         # `additionalModules`/`additionalSpecialArgs` on the host.
         _defaults = {
           inherit inputs system userRegistry;
+
+          # An input that exports a CATALOG -- many nixosModules /
+          # homeModules / overlays and no `default` -- cannot be
+          # auto-imported, and evaluation THROWS until you say which
+          # entries you want. Uncomment and adjust when you add one
+          # (nixos-hardware and nixos-raspberrypi are the usual first
+          # encounters). Keys must name inputs you actually have, so this
+          # stays commented out here:
+          #
+          #   inputSpecialCases = {
+          #     "nixos-hardware".nixosModules = null;             # none: import by hand below
+          #     "nixos-raspberrypi".overlays = [ "bootloader" ];  # these, in this order
+          #     "some-input".homeModules = "*";                   # all of them
+          #   };
           # These users' home.nix activates on their FIRST LOGIN (via the
           # bootstrap and the homeConfigurations outputs below) instead of
           # with the system. Everyone else's home is built into the

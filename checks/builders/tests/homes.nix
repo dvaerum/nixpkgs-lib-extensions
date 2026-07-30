@@ -29,6 +29,25 @@
       };
     } == { };
 
+  # an explicit `homeManager` is honored by the hosts-level builder too: it
+  # exists to BYPASS capability detection, so the per-host gate must not
+  # re-run detection over `inputs` and silently return { }
+  homes-honor-explicit-home-manager =
+    builtins.attrNames (
+      myLib.buildHomeConfigurations {
+        laptop = {
+          inputs = {
+            inherit nixpkgs;
+            self = inputs.self;
+          };
+          inherit system;
+          homeManager = inputs.home-manager;
+          userRegistry."alice" = exampleDir + "/users/alice";
+          loginUsers = [ "alice" ];
+        };
+      }
+    ) == [ "alice@laptop" ];
+
   # ... but the per-user builder THROWS: one explicitly requested home
   # that cannot be built is an error, not an empty result
   home-builder-throws-without-home-manager =

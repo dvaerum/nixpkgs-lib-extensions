@@ -9,5 +9,7 @@
     fsType = "ext4";
   };
   boot.loader.grub.enable = false;
-  system.stateVersion = "25.05";
+  # The release this host was FIRST installed with -- not the release you
+  # are on now. Set it once, then leave it alone.
+  system.stateVersion = "26.11";
 }

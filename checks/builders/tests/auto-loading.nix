@@ -61,8 +61,9 @@ in
     )).success;
   # ... and the escape hatch works: opting the channel out via
   # inputSpecialCases makes evaluation succeed with NONE of the entries
-  # imported -- which also proves the catalog's `throw` tombstone entry
-  # is never forced (the decision reads attrNames only)
+  # imported. (It says nothing about laziness -- the function form REPLACES
+  # the whole export set before any decision is made. The tombstone proof
+  # is channel-selection-skips-tombstone below.)
   catalog-opt-out-imports-nothing =
     let
       groups =
@@ -336,6 +337,26 @@ in
   # extendLib/lib hold ONE value: there is nothing to name in them
   single-value-channel-selection-throws = throwsGroups (
     probeHost "selsinglebad" { } { "fake-module-input".extendLib = [ "default" ]; }
+  );
+  # ... and that check must not hide behind "does this input even export
+  # extendLib?" -- `fenix` exports none, so a guard in the wrong order would
+  # drop the malformed selection silently
+  single-value-selection-checked-without-export = throwsGroups (
+    probeHost "selsinglenoexport" { } { "fenix".extendLib = [ "default" ]; }
+  );
+  # a list must hold entry NAMES; anything else used to die in string
+  # interpolation with an uncatchable coercion error
+  channel-selection-non-string-entry-throws = throwsGroups (
+    probeHost "selnonstring" { inherit fake-catalog-input; } {
+      "fake-catalog-input".nixosModules = [ 1 ];
+    }
+  );
+  # a typo is validated EAGERLY, even for a channel this host never
+  # collects: `probeHost` has no userRegistry, so no system-managed homes
+  # exist and autoHomeModules is never consumed -- the selection must still
+  # be checked, because the docs promise every typo fails loudly
+  channel-selection-validated-when-channel-unused = throwsGroups (
+    probeHost "selunused" { } { "fake-module-input".homeModules = [ "nope" ]; }
   );
 
   # ── inputSpecialCases: the function escape hatch ──

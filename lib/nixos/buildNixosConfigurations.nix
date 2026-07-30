@@ -14,8 +14,8 @@ in
     unique); an entry that also sets a *conflicting* inner `hostname`
     throws.
 
-    The reserved key `_defaults` (never a hostname -- hostnames cannot
-    contain `_`) provides arguments for every host. Merging is
+    The reserved key `_defaults` (never a hostname -- a hostname cannot
+    START with `_`) provides arguments for every host. Merging is
     per-argument and a host entry wins entirely: no deep-merging of lists
     or attrsets. For "shared base plus per-host extras" use the layered
     argument pairs instead -- `modules` (in `_defaults`) with

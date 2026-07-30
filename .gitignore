@@ -1,0 +1,5 @@
+# `nix build` output symlinks. They point into /nix/store, so committing
+# them ships dangling links to everyone else -- and because a flake's
+# source is the git tree, they would become part of the flake itself.
+result
+result-*

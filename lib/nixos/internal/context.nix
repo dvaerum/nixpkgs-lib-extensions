@@ -130,14 +130,48 @@ let
           )
         );
 
+      # Entry-name validation must not depend on whether this particular
+      # builder happens to COLLECT the channel: a `homeModules` typo on a
+      # host with no system-managed homes, or a `nixosModules` typo in
+      # homeConfigurationsBuilder, would otherwise never be forced -- while
+      # the docs promise every typo fails loudly. So every selection the
+      # consumer actually wrote is resolved here, eagerly. Scoped to the
+      # inputs they named, so nothing else is probed (which also keeps the
+      # deprecated `homeManagerModules` alias untouched on inputs the
+      # consumer never mentioned). `length` forces the list's shape, never
+      # the entries themselves, so catalog tombstones stay unforced.
+      selectionsChecked =
+        let
+          locators = {
+            nixosModules = v: v.nixosModules or { };
+            homeModules = v: v.homeModules or v.homeManagerModules or { };
+            overlays = v: v.overlays or { };
+          };
+          probe =
+            name: _:
+            let
+              case = caseOf name;
+              v = conventionInputs.${name};
+            in
+            baseLib.optionals (baseLib.isAttrs v) (
+              baseLib.mapAttrsToList (
+                channel: locate: builtins.length (resolveEntrySet name channel (locate v) case)
+              ) (builtins.intersectAttrs case.selections locators)
+            );
+        in
+        builtins.deepSeq (baseLib.concatLists (baseLib.mapAttrsToList probe inputSpecialCases)) null;
+
       # Extend the system lib with this repo's own extensions (`extLib`, always
       # available since the builders are part of nixpkgs-lib-extensions) plus any
       # other input that exposes an `extendLib` function.
+      # `channelEnabled` FIRST, like the `lib` channel below: behind the
+      # `v ? extendLib` guard a malformed selection on an input that exports
+      # no extendLib would be silently dropped instead of throwing.
       libExtenders = baseLib.concatLists (
         baseLib.mapAttrsToList (
           name: v:
           baseLib.optional (
-            baseLib.isAttrs v && v ? extendLib && channelEnabled name "extendLib" (caseOf name)
+            channelEnabled name "extendLib" (caseOf name) && baseLib.isAttrs v && v ? extendLib
           ) v.extendLib
         ) conventionInputs
       );
@@ -275,7 +309,10 @@ let
         };
 
       selectedSrc = patchSrc nixpkgs;
-      pkgs = mkPkgs nixpkgs;
+      # seq: `pkgs` is forced by every consumer, so hanging the eager
+      # selection validation off it makes a typo fail on any use of the
+      # context rather than only where its channel happens to be collected.
+      pkgs = builtins.seq selectionsChecked (mkPkgs nixpkgs);
 
       home-manager = if homeManager != null then homeManager else detectHomeManager inputs;
 

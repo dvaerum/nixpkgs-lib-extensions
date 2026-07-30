@@ -324,8 +324,8 @@ Duplicate hostnames are impossible by construction (attrset keys are
 unique); an entry that also sets a *conflicting* inner `hostname`
 throws.
 
-The reserved key `_defaults` (never a hostname -- hostnames cannot
-contain `_`) provides arguments for every host. Merging is
+The reserved key `_defaults` (never a hostname -- a hostname cannot
+START with `_`) provides arguments for every host. Merging is
 per-argument and a host entry wins entirely: no deep-merging of lists
 or attrsets. For "shared base plus per-host extras" use the layered
 argument pairs instead -- `modules` (in `_defaults`) with
@@ -507,7 +507,7 @@ semantics.
 
 nixpkgs, systemType, specialArgs, additionalSpecialArgs, tags, patches,
 nixpkgsConfig, extraOverlays, allowedUnfreePackages,
-- **permittedInsecurePackages, rootPath**
+- **permittedInsecurePackages, rootPath, homeManager, inputSpecialCases**
   Shared options (see `nixosConfigurationsBuilder`).
 
 
@@ -612,7 +612,9 @@ automatically when the matching input exists:
   guess, naming the selections that resolve it -- see
   `inputSpecialCases`, which also narrows a channel to named entries or
   switches it off.
-- overlays from any input exposing `overlays.default` (same rule).
+- overlays from any input exposing `overlays.default` (same
+  default/sole-entry rule, but no exclusions -- overlays are collected
+  from every input, nixpkgs trees included).
 - lib extensions from any input exposing an `extendLib` function; this repo's
   own extensions are always applied to the system `lib` and also passed as the
   `extLib` specialArg.
@@ -652,7 +654,9 @@ Setting `systemType` groups hosts one folder deeper: the lookup then
 happens under `hosts/<systemType>/` instead of `hosts/`.
 
 The host's users come from ONE `userRegistry` — every user gets an
-account and their `configuration.nix` imported into the system. How
+account (unless `userModuleFn = null`, or the account is a system one
+with a uid below 1000) and their `configuration.nix` imported into
+the system. How
 each user's `home.nix` is activated is selected by `loginUsers`:
 
 - not listed (the default) — SYSTEM-managed home: wired into the
@@ -894,9 +898,12 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   channel key, an unknown entry name, or a case keyed by an input that is
   not in `inputs` all throw, listing the valid options. An explicit
   selection also overrides the built-in skips (the home-manager input,
-  nixpkgs trees), which only exist to prevent guessing. Only the
-  AUTOMATIC contributions are affected: an input reached by hand via the
-  `inputs`/`inputPkgs` specialArgs always works.
+  nixpkgs trees), which only exist to prevent guessing. CHANNELS ONLY:
+  the `pkgs-*` specialArgs, `inputPkgs` and the home-manager capability
+  detection are computed from `inputs` directly and no case affects
+  them -- `inputSpecialCases."nixpkgs-unstable" = null;` still yields a
+  `pkgs-unstable` specialArg. An input reached by hand via the
+  `inputs`/`inputPkgs` specialArgs likewise always works.
   Example: `inputSpecialCases."nixos-raspberrypi".overlays =
   [ "bootloader" "vendor-kernel" ];`
   Default `{ }`.

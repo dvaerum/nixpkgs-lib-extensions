@@ -46,6 +46,12 @@ let
   # keys. Entry-set channels hold a SET of entries, so a selection can name
   # the ones to take; single-value channels hold one value, which a selection
   # can only switch on or off.
+  #
+  # WARNING: these lists only gate which KEYS are accepted. Which collector
+  # a channel actually gets is hardcoded in internal/context.nix (three
+  # `collectChannel` calls and two `channelEnabled` uses). Adding a name
+  # here without adding a collector there produces an accepted selection
+  # that nothing ever acts on.
   entrySetChannels = [
     "nixosModules"
     "homeModules"
@@ -169,7 +175,7 @@ let
         [ ]
       else if selection == "*" then
         builtins.attrValues exported
-      else if builtins.isList selection then
+      else if builtins.isList selection && builtins.all builtins.isString selection then
         let
           missing = builtins.filter (n: !(builtins.elem n available)) selection;
         in
@@ -180,7 +186,17 @@ let
             if available == [ ] then "(none)" else shownList available
           }.''
       else
-        throw ''nixpkgs-lib-extensions: inputSpecialCases."${name}".${channel} must be a list of entry names, `"*"` (all), or `null` / `[ ]` (none) -- got a value of type `${builtins.typeOf selection}`.'';
+        # also the landing place for a list holding something other than
+        # entry NAMES -- without the isString guard above, `[ 1 ]` would die
+        # in string interpolation with an uncatchable coercion error instead
+        # of this message.
+        throw
+          ''nixpkgs-lib-extensions: inputSpecialCases."${name}".${channel} must be a list of entry names (strings), `"*"` (all), or `null` / `[ ]` (none) -- got ${
+            if builtins.isList selection then
+              "a list holding a non-string"
+            else
+              "a value of type `${builtins.typeOf selection}`"
+          }.'';
 
   # Whether a SINGLE-VALUE channel (`extendLib`, `lib`) contributes. One
   # value holds nothing to choose between, so a selection can only switch the
@@ -247,12 +263,11 @@ let
   isNixpkgsTree = v: v ? legacyPackages && (v.lib or { }) ? nixosSystem;
 in
 {
+  # Exported = consumed elsewhere. The channel lists, pickExported and the
+  # rest stay private: they are implementation detail of the functions
+  # below, and re-exporting them would read as public surface.
   inherit
     detectHomeManager
-    entrySetChannels
-    singleValueChannels
-    channelNames
-    pickExported
     classifyCase
     resolveEntrySet
     channelEnabled

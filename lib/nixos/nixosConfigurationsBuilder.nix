@@ -22,7 +22,9 @@ in
       guess, naming the selections that resolve it -- see
       `inputSpecialCases`, which also narrows a channel to named entries or
       switches it off.
-    - overlays from any input exposing `overlays.default` (same rule).
+    - overlays from any input exposing `overlays.default` (same
+      default/sole-entry rule, but no exclusions -- overlays are collected
+      from every input, nixpkgs trees included).
     - lib extensions from any input exposing an `extendLib` function; this repo's
       own extensions are always applied to the system `lib` and also passed as the
       `extLib` specialArg.
@@ -62,7 +64,9 @@ in
     happens under `hosts/<systemType>/` instead of `hosts/`.
 
     The host's users come from ONE `userRegistry` — every user gets an
-    account and their `configuration.nix` imported into the system. How
+    account (unless `userModuleFn = null`, or the account is a system one
+    with a uid below 1000) and their `configuration.nix` imported into
+    the system. How
     each user's `home.nix` is activated is selected by `loginUsers`:
 
     - not listed (the default) — SYSTEM-managed home: wired into the
@@ -304,9 +308,12 @@ in
     : channel key, an unknown entry name, or a case keyed by an input that is
     : not in `inputs` all throw, listing the valid options. An explicit
     : selection also overrides the built-in skips (the home-manager input,
-    : nixpkgs trees), which only exist to prevent guessing. Only the
-    : AUTOMATIC contributions are affected: an input reached by hand via the
-    : `inputs`/`inputPkgs` specialArgs always works.
+    : nixpkgs trees), which only exist to prevent guessing. CHANNELS ONLY:
+    : the `pkgs-*` specialArgs, `inputPkgs` and the home-manager capability
+    : detection are computed from `inputs` directly and no case affects
+    : them -- `inputSpecialCases."nixpkgs-unstable" = null;` still yields a
+    : `pkgs-unstable` specialArg. An input reached by hand via the
+    : `inputs`/`inputPkgs` specialArgs likewise always works.
     : Example: `inputSpecialCases."nixos-raspberrypi".overlays =
     : [ "bootloader" "vendor-kernel" ];`
     : Default `{ }`.

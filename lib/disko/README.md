@@ -1,6 +1,6 @@
 # Intro
 
-Some extra notes about using disko to format diskos.
+Some extra notes about using disko to format disks.
 
 
 # Tips and Tricks

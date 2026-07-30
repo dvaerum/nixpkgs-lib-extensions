@@ -94,7 +94,7 @@ in
 
     nixpkgs, systemType, specialArgs, additionalSpecialArgs, tags, patches,
     nixpkgsConfig, extraOverlays, allowedUnfreePackages,
-    permittedInsecurePackages, rootPath
+    permittedInsecurePackages, rootPath, homeManager, inputSpecialCases
     : Shared options (see `nixosConfigurationsBuilder`).
   */
   homeConfigurationsBuilder =

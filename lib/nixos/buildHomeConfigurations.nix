@@ -108,8 +108,14 @@ in
             if builtins.intersectAttrs coreArgSet entry == { } then { _core = defaultsCore; } else { };
         in
         # a host with no login-managed users (or no home-manager input)
-        # simply contributes nothing
-        if shared.detectHomeManager (merged.inputs or { }) == null then
+        # simply contributes nothing. An explicit `homeManager` counts as
+        # having one WITHOUT re-running detection -- that argument exists to
+        # bypass it, so detecting here would both ignore an input the
+        # detection cannot see and re-trigger the ambiguity warning the
+        # argument was passed to avoid.
+        if
+          (merged.homeManager or null) == null && shared.detectHomeManager (merged.inputs or { }) == null
+        then
           { }
         else
           builtins.listToAttrs (
