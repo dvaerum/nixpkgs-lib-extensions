@@ -98,16 +98,29 @@
     in
     shadows "hostname" "not-shadowprobe" && shadows "rootPath" "/tmp" && shadows "extLib" { };
 
-  # the same check covers the per-host half of the pair
-  additional-special-args-shadow-throws =
+  # the same check covers a shadow arriving through a host's `extra` slot,
+  # which planHosts merges into specialArgs before the builder sees it
+  extra-special-args-shadow-throws =
     !(builtins.tryEval (
       builtins.attrNames
-        (myLib.nixosConfigurationsBuilder {
-          inherit inputs system;
-          hostname = "shadowprobe2";
-          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-          additionalSpecialArgs.tags = [ "nope" ];
-        })._module.specialArgs
+        (myLib.buildNixosConfigurations {
+          shadowprobe2 = {
+            inherit inputs system;
+            modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+            extra.specialArgs.tags = [ "nope" ];
+          };
+        }).shadowprobe2._module.specialArgs
+    )).success;
+
+  # ... and `extra` in a DIRECT builder call is refused rather than
+  # silently dropped: there is nothing to layer onto there
+  extra-rejected-by-direct-call =
+    !(builtins.tryEval (
+      builtins.seq (myLib.nixosConfigurationsBuilder {
+        inherit inputs system;
+        hostname = "directextra";
+        extra.modules = [ ];
+      }) true
     )).success;
 
   # no rootPath and no inputs.self: a clear throw, not a silent search
@@ -158,7 +171,7 @@
       }).config.assertions
     );
   root-path-defaults-to-self = toString laptop._module.specialArgs.rootPath == toString exampleDir;
-  additional-modules-applied = custom.config.users.groups ? from-additional-module;
+  extra-modules-applied = custom.config.users.groups ? from-additional-module;
 
   # buildNixosConfigurations keys its input by hostname; a redundant inner
   # hostname EQUAL to the key is tolerated ...

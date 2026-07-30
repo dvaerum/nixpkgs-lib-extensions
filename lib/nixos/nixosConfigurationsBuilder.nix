@@ -141,12 +141,8 @@ in
     modules
     : Extra NixOS modules, on top of those auto-collected from `inputs` and
     : the host's own `hosts/<hostname>(.nix|/configuration.nix)`. Default `[ ]`.
-
-    additionalModules
-    : Further NixOS modules, appended after `modules`. Default `[ ]`.
-    : With `buildNixosConfigurations` this is the per-host half of the
-    : layered pair: shared modules go in `_defaults.modules`, a host's
-    : extras go here.
+    : In a hosts attrset, a host adds to the shared list with
+    : `extra.modules = [ ... ];` rather than replacing it.
 
     userModule
     : A function `username -> NixOS module`, applied for each user derived
@@ -269,12 +265,6 @@ in
     : `networking.hostName` and the `hosts/<hostname>` lookup kept another.
     : Set the corresponding builder argument instead. Default `{ }`.
 
-    additionalSpecialArgs
-    : Further specialArgs merged after `specialArgs`, overriding it on
-    : conflicts. Default `{ }`. With `buildNixosConfigurations` this is
-    : the per-host half of the layered pair: shared specialArgs go in
-    : `_defaults.specialArgs`, a host's extras go here.
-
     hostGroup
     : Free-form host classification, e.g. `"vm"` or `"server"`. Passed to
     : modules as the `hostGroup` specialArg, and when non-null the host
@@ -332,7 +322,6 @@ in
       hostname,
       system,
       modules ? [ ],
-      additionalModules ? [ ],
       userModule ? extLib.normalUserModule,
       userRegistry ? { },
       loginHomes ? [ ],
@@ -510,8 +499,7 @@ in
         ++ autoHostModules
         ++ modules
         ++ perUserModules
-        ++ userNixosConfigs
-        ++ additionalModules;
+        ++ userNixosConfigs;
       }
     );
 }

@@ -256,15 +256,10 @@ let
   custom = myLib.nixosConfigurationsBuilder {
     inherit inputs system;
     hostname = "custom";
-    modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-    # selecting NOTHING for a channel is the per-input opt-out
-    inputContributions."fake-module-input".nixosModules = null;
-    extraOverlays = [ (final: prev: { from-extra-overlay = "yes"; }) ];
-    allowedUnfreePackages = [ "allowed-unfree" ];
-    tags = [ "kitchen-sink" ];
-    nixpkgsConfig.cudaSupport = true;
-    hostGroup = "server";
-    additionalModules = [
+    # a DIRECT builder call takes the merged arguments -- there is no
+    # `extra` slot here, that is a hosts-attrset key resolved by planHosts
+    modules = [
+      (exampleDir + "/hosts/server/configuration.nix")
       { users.groups.from-additional-module = { }; }
       # observable through group names: the system `lib` must carry both the
       # extension from fake-module-input's extendLib and this repo's own
@@ -276,6 +271,13 @@ let
         }
       )
     ];
+    # selecting NOTHING for a channel is the per-input opt-out
+    inputContributions."fake-module-input".nixosModules = null;
+    extraOverlays = [ (final: prev: { from-extra-overlay = "yes"; }) ];
+    allowedUnfreePackages = [ "allowed-unfree" ];
+    tags = [ "kitchen-sink" ];
+    nixpkgsConfig.cudaSupport = true;
+    hostGroup = "server";
     # user-supplied specialArgs ride alongside the builder-assembled ones;
     # a builder-OWNED name throws instead (special-args-shadow-throws)
     specialArgs.probeArg = "from-special-args";

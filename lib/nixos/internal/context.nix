@@ -294,7 +294,6 @@ let
       hostname,
       tags ? [ ],
       specialArgs ? { },
-      additionalSpecialArgs ? { },
       hostGroup ? null,
       # a throw, not a silent nonsense default: without inputs.self the
       # old `./.` fallback pointed INSIDE this library's own store tree,
@@ -348,9 +347,7 @@ let
       # override promise was never true anyway -- `listOfUsernames` and
       # `username` are layered after specialArgs and cannot be overridden.
       # So: say so. Everything NOT owned here still passes through freely.
-      shadowed = builtins.attrNames (
-        builtins.intersectAttrs builderOwned (specialArgs // additionalSpecialArgs)
-      );
+      shadowed = builtins.attrNames (builtins.intersectAttrs builderOwned specialArgs);
       shadowCheck =
         if shadowed == [ ] then
           null
@@ -359,14 +356,9 @@ let
             nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the builder-owned name(s) ${builtins.concatStringsSep ", " shadowed}. They are derived from the builder's own arguments, and overriding them here changes what MODULES see without changing what the builder did -- e.g. a `hostname` specialArg leaves networking.hostName and the hosts/<hostname> lookup on the real name. Set the corresponding builder argument instead, or pick a different specialArg name.
           '';
 
-      mySpecialArguments = builtins.seq shadowCheck (
-        builderOwned
-        // specialArgs
-        # the per-host extension slot: layered after specialArgs so that
-        # `_defaults.specialArgs` and a host's additionalSpecialArgs combine
-        # (mirroring modules/additionalModules)
-        // additionalSpecialArgs
-      );
+      # `specialArgs` already carries any per-host `extra.specialArgs`,
+      # merged by planHosts before the builder ever sees it.
+      mySpecialArguments = builtins.seq shadowCheck (builderOwned // specialArgs);
     in
     {
       inherit (core)

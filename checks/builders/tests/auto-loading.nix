@@ -125,7 +125,7 @@ in
     }).config.home.sessionVariables.PROBE == "1";
 
   # lib extensions: from an input's extendLib AND this repo's own, both
-  # reaching the system `lib` (see the additionalModules of `custom`)
+  # reaching the system `lib` (see the extra.modules of `custom`)
   input-extend-lib-applied = custom.config.users.groups ? auto-ext-marker;
   own-ext-lib-in-system-lib = custom.config.users.groups ? Ext-marker;
 

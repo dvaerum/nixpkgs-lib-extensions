@@ -17,10 +17,10 @@ in
     The reserved key `_defaults` (never a hostname -- a hostname cannot
     START with `_`) provides arguments for every host. Merging is
     per-argument and a host entry wins entirely: no deep-merging of lists
-    or attrsets. For "shared base plus per-host extras" use the layered
-    argument pairs instead -- `modules` (in `_defaults`) with
-    `additionalModules` (per host), and `specialArgs` with
-    `additionalSpecialArgs`; the pairs concatenate/merge by design.
+    or attrsets. For "shared base plus per-host extras" put the addition in
+    that host's `extra` slot instead -- ONE rule for every argument: a bare
+    key REPLACES the default, `extra.<key>` ADDS to it (lists concatenate,
+    attrsets merge with `extra` winning a conflict).
 
     The same hosts attrset is designed to also feed
     `buildHomeConfigurations`, producing the matching `homeConfigurations`
@@ -40,8 +40,8 @@ in
       # ./hosts/<hostname>.nix or
       # ./hosts/<hostname>/configuration.nix
       laptop = {
-        # extends _defaults.modules
-        additionalModules = [ ./common/laptop-extras.nix ];
+        # ADDS to _defaults.modules instead of replacing it
+        extra.modules = [ ./common/laptop-extras.nix ];
       };
       server = {
         # per-argument override: replaces the registry entirely
@@ -65,10 +65,10 @@ in
     : Attribute set mapping hostnames to `nixosConfigurationsBuilder`
     : argument sets. The key provides `hostname`, so entries do not set
     : it themselves. Host entry keys are checked against the same
-    : allowlist as `_defaults` plus the per-host-only keys
-    : (`additionalModules`, `additionalSpecialArgs`, and a redundant
-    : `hostname` equal to the attribute key); anything else throws, so
-    : typos and leftover arguments fail loudly.
+    : allowlist as `_defaults` plus the per-host-only keys (`extra`, and a
+    : redundant `hostname` equal to the attribute key); anything else
+    : throws, so typos and leftover arguments fail loudly. `extra` accepts
+    : the same argument names, and its keys are checked the same way.
 
     _defaults
     : Optional reserved entry of `hosts` (never a hostname): arguments

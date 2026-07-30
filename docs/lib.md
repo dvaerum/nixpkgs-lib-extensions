@@ -396,10 +396,10 @@ throws.
 The reserved key `_defaults` (never a hostname -- a hostname cannot
 START with `_`) provides arguments for every host. Merging is
 per-argument and a host entry wins entirely: no deep-merging of lists
-or attrsets. For "shared base plus per-host extras" use the layered
-argument pairs instead -- `modules` (in `_defaults`) with
-`additionalModules` (per host), and `specialArgs` with
-`additionalSpecialArgs`; the pairs concatenate/merge by design.
+or attrsets. For "shared base plus per-host extras" put the addition in
+that host's `extra` slot instead -- ONE rule for every argument: a bare
+key REPLACES the default, `extra.<key>` ADDS to it (lists concatenate,
+attrsets merge with `extra` winning a conflict).
 
 The same hosts attrset is designed to also feed
 `buildHomeConfigurations`, producing the matching `homeConfigurations`
@@ -419,8 +419,8 @@ nixosConfigurations = extLib.buildNixosConfigurations {
   # ./hosts/<hostname>.nix or
   # ./hosts/<hostname>/configuration.nix
   laptop = {
-    # extends _defaults.modules
-    additionalModules = [ ./common/laptop-extras.nix ];
+    # ADDS to _defaults.modules instead of replacing it
+    extra.modules = [ ./common/laptop-extras.nix ];
   };
   server = {
     # per-argument override: replaces the registry entirely
@@ -444,10 +444,10 @@ buildNixosConfigurations ::
   Attribute set mapping hostnames to `nixosConfigurationsBuilder`
   argument sets. The key provides `hostname`, so entries do not set
   it themselves. Host entry keys are checked against the same
-  allowlist as `_defaults` plus the per-host-only keys
-  (`additionalModules`, `additionalSpecialArgs`, and a redundant
-  `hostname` equal to the attribute key); anything else throws, so
-  typos and leftover arguments fail loudly.
+  allowlist as `_defaults` plus the per-host-only keys (`extra`, and a
+  redundant `hostname` equal to the attribute key); anything else
+  throws, so typos and leftover arguments fail loudly. `extra` accepts
+  the same argument names, and its keys are checked the same way.
 
 - **_defaults**
   Optional reserved entry of `hosts` (never a hostname): arguments
@@ -574,7 +574,7 @@ The home configuration gets overridable (`mkDefault`) values for
 so pin it in the user's `home.nix` if you rely on stateVersion
 semantics.
 
-nixpkgs, hostGroup, specialArgs, additionalSpecialArgs, tags, patches,
+nixpkgs, hostGroup, specialArgs, tags, patches,
 nixpkgsConfig, extraOverlays, allowedUnfreePackages,
 - **permittedInsecurePackages, rootPath, homeManager, inputContributions**
   Shared options (see `nixosConfigurationsBuilder`).
@@ -800,12 +800,8 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
 - **modules**
   Extra NixOS modules, on top of those auto-collected from `inputs` and
   the host's own `hosts/<hostname>(.nix|/configuration.nix)`. Default `[ ]`.
-
-- **additionalModules**
-  Further NixOS modules, appended after `modules`. Default `[ ]`.
-  With `buildNixosConfigurations` this is the per-host half of the
-  layered pair: shared modules go in `_defaults.modules`, a host's
-  extras go here.
+  In a hosts attrset, a host adds to the shared list with
+  `extra.modules = [ ... ];` rather than replacing it.
 
 - **userModule**
   A function `username -> NixOS module`, applied for each user derived
@@ -927,12 +923,6 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   did, so `specialArgs.hostname` gave modules one name while
   `networking.hostName` and the `hosts/<hostname>` lookup kept another.
   Set the corresponding builder argument instead. Default `{ }`.
-
-- **additionalSpecialArgs**
-  Further specialArgs merged after `specialArgs`, overriding it on
-  conflicts. Default `{ }`. With `buildNixosConfigurations` this is
-  the per-host half of the layered pair: shared specialArgs go in
-  `_defaults.specialArgs`, a host's extras go here.
 
 - **hostGroup**
   Free-form host classification, e.g. `"vm"` or `"server"`. Passed to

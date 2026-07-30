@@ -42,10 +42,13 @@ let
     "homeManager"
     "inputContributions"
   ];
+  # `extra` is the ONE per-host layering slot: a bare key REPLACES the
+  # default, `extra.<key>` ADDS to it. It replaced the two `additional*`
+  # twins, which layered exactly two of the 21 arguments and left no way to
+  # say "the shared home modules PLUS these" at all.
   allowedHostArgs = allowedDefaultArgs ++ [
     "hostname"
-    "additionalModules"
-    "additionalSpecialArgs"
+    "extra"
   ];
 
   # The PROBLEMS with a direct builder call, as a list of strings -- empty
@@ -58,7 +61,10 @@ let
   builderArgProblems =
     fnName: extraAllowed: args:
     let
-      allowed = allowedHostArgs ++ extraAllowed;
+      # `extra` is a HOSTS-ATTRSET key, resolved by planHosts before a
+      # builder ever runs. A direct call takes the already-merged arguments,
+      # so accepting it here would silently drop whatever it carried.
+      allowed = builtins.filter (k: k != "extra") allowedHostArgs ++ extraAllowed;
       bad = builtins.filter (k: !(builtins.elem k allowed) && builtins.substring 0 1 k != "_") (
         builtins.attrNames args
       );
@@ -67,7 +73,16 @@ let
       [ ]
     else
       [
-        "${fnName}: unknown argument(s): ${builtins.concatStringsSep ", " bad} (typo?). Accepted: ${builtins.concatStringsSep ", " allowed}."
+        (
+          "${fnName}: unknown argument(s): ${builtins.concatStringsSep ", " bad} (typo?)."
+          + (
+            if builtins.elem "extra" bad then
+              " `extra` is a per-host layering slot of the hosts attrset that buildConfigurations/buildNixosConfigurations take; a direct call receives the merged arguments, so pass them directly."
+            else
+              ""
+          )
+          + " Accepted: ${builtins.concatStringsSep ", " allowed}."
+        )
       ];
 
   # Direct-call argument validation for the singular builders: the same
@@ -117,7 +132,11 @@ let
         if name == "hostname" then
           "- `hostname`: never a default -- it comes from each attribute key. Drop it."
         else if builtins.substring 0 10 name == "additional" then
-          "- `${name}`: the `additional*` arguments are the per-host halves of the layered pairs (modules/additionalModules, specialArgs/additionalSpecialArgs). Set the base half in `_defaults`, the additional half on the host entry."
+          "- `${name}`: the `additional*` arguments are gone. Put the shared value in `_defaults` and the per-host addition in that host's `extra` slot: `extra.${
+            builtins.substring 10 (-1) name
+          } = [ ... ];` (a bare key replaces, `extra.<key>` adds)."
+        else if name == "extra" then
+          "- `extra`: the per-host layering slot, never a default -- `_defaults` holds the base values that `extra` adds to."
         else
           "- `${name}`: not a builder argument (typo?). `_defaults` accepts: ${builtins.concatStringsSep ", " allowedDefaultArgs}.";
       badDefaults = map defaultComplaint (
@@ -135,6 +154,15 @@ let
               k:
               "- `${hostname}`: `${k}` is not a builder argument (typo?). Host entries accept: ${builtins.concatStringsSep ", " allowedHostArgs}."
             ) (builtins.filter (k: !(builtins.elem k allowedHostArgs)) (builtins.attrNames args))
+            ++
+              map
+                (
+                  k:
+                  "- `${hostname}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults`."
+                )
+                (
+                  builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames (args.extra or { }))
+                )
             ++ (
               if args ? hostname && args.hostname != hostname then
                 [
@@ -193,7 +221,7 @@ let
           if name == "hostname" then
             "- `hostname`: never a default -- it comes from each attribute key. Drop it."
           else if builtins.substring 0 10 name == "additional" then
-            "- `${name}`: the `additional*` arguments are the per-host halves of the layered pairs (modules/additionalModules, specialArgs/additionalSpecialArgs). Set the base half in `_defaults`, the additional half on the host entry."
+            "- `${name}`: the `additional*` arguments are gone. Put the shared value in `_defaults` and the per-host addition in that host's `extra` slot -- a bare key replaces, `extra.<key>` adds."
           else
             "- `${name}`: not a builder argument (typo?). `_defaults` accepts: ${builtins.concatStringsSep ", " allowedDefaultArgs}."
         ) (builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames rawDefaults)));
@@ -230,16 +258,39 @@ let
       # "cannot tell" must fall back to "own core", never to "share".
       sharesCore =
         entry:
-        builtins.all (
+        # `extra` touching a core argument always means a new core: it ADDS
+        # to the default, so the result differs by construction.
+        builtins.intersectAttrs coreArgSet (entry.extra or { }) == { }
+        && builtins.all (
           n:
           let
             probe = builtins.tryEval (entry.${n} == (split.defaults.${n} or null));
           in
           probe.success && probe.value
         ) (builtins.attrNames (builtins.intersectAttrs coreArgSet entry));
+
+      # A bare key replaces; `extra.<key>` adds to whatever the merge
+      # produced. Lists concatenate, attrsets merge with `extra` winning a
+      # key conflict, anything else is replaced -- the same semantics the
+      # two `additional*` twins had, generalised to every argument.
+      combine =
+        base: add:
+        if builtins.isList base && builtins.isList add then
+          base ++ add
+        else if builtins.isAttrs base && builtins.isAttrs add then
+          base // add
+        else
+          add;
+      applyExtra =
+        merged: extra:
+        builtins.foldl' (
+          acc: k: acc // { ${k} = if acc ? ${k} then combine acc.${k} extra.${k} else extra.${k}; }
+        ) merged (builtins.attrNames extra);
     in
     builtins.mapAttrs (hostname: entry: {
-      args = split.defaults // entry // { inherit hostname; };
+      args = applyExtra (
+        split.defaults // (builtins.removeAttrs entry [ "extra" ]) // { inherit hostname; }
+      ) (entry.extra or { });
       core = if sharesCore entry then defaultsCore else null;
     }) split.hostEntries;
 

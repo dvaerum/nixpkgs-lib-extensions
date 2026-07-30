@@ -92,7 +92,7 @@ in
     so pin it in the user's `home.nix` if you rely on stateVersion
     semantics.
 
-    nixpkgs, hostGroup, specialArgs, additionalSpecialArgs, tags, patches,
+    nixpkgs, hostGroup, specialArgs, tags, patches,
     nixpkgsConfig, extraOverlays, allowedUnfreePackages,
     permittedInsecurePackages, rootPath, homeManager, inputContributions
     : Shared options (see `nixosConfigurationsBuilder`).

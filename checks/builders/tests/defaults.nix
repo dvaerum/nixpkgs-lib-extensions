@@ -1,6 +1,6 @@
 # buildNixosConfigurations `_defaults`: shared arguments for every host,
-# per-argument host override, the layered pairs (modules/additionalModules,
-# specialArgs/additionalSpecialArgs) and the forbidden-key throws.
+# per-argument host override, the `extra` layering slot and the
+# forbidden-key throws.
 {
   lib,
   myLib,
@@ -27,10 +27,12 @@ let
     defhost = { };
     overridehost = {
       tags = [ "host-tag" ];
-      additionalModules = [ { users.groups.from-additional-module = { }; } ];
-      additionalSpecialArgs = {
-        fromHost = "h";
-        layered = "host";
+      extra = {
+        modules = [ { users.groups.from-additional-module = { }; } ];
+        specialArgs = {
+          fromHost = "h";
+          layered = "host";
+        };
       };
     };
   };
@@ -59,14 +61,12 @@ in
   # per-argument merge, host wins entirely
   defaults-host-override-wins = built.overridehost._module.specialArgs.tags == [ "host-tag" ];
 
-  # the layered pair: _defaults.modules plus the host's additionalModules
-  # both apply
+  # `extra.modules` ADDS to _defaults.modules rather than replacing it
   defaults-modules-layering =
     built.overridehost.config.users.groups ? from-defaults-module
     && built.overridehost.config.users.groups ? from-additional-module;
 
-  # same for specialArgs/additionalSpecialArgs; on a key conflict the
-  # host's additionalSpecialArgs wins
+  # same for extra.specialArgs; on a key conflict the host's addition wins
   defaults-special-args-layering =
     built.overridehost._module.specialArgs.fromDefaults == "d"
     && built.overridehost._module.specialArgs.fromHost == "h"
@@ -82,6 +82,16 @@ in
       h = { };
     }
   );
+  # `extra` is per-host only: `_defaults` holds the base it adds to
+  defaults-extra-throws = throws (
+    myLib.buildNixosConfigurations {
+      _defaults = {
+        extra = { };
+      };
+      h = { };
+    }
+  );
+  # a leftover `additional*` says where it went
   defaults-additional-modules-throws = throws (
     myLib.buildNixosConfigurations {
       _defaults = {
@@ -90,14 +100,31 @@ in
       h = { };
     }
   );
-  defaults-additional-special-args-throws = throws (
+  # ... and an unknown key inside `extra` is checked like any other
+  host-extra-unknown-key-throws = throws (
     myLib.buildNixosConfigurations {
-      _defaults = {
-        additionalSpecialArgs = { };
+      h = {
+        extra.notAnArgument = [ ];
       };
-      h = { };
     }
   );
+  # every argument can be layered now, not just two -- homeModules could
+  # not be extended at all before
+  extra-layers-any-argument =
+    let
+      built = myLib.buildNixosConfigurations {
+        _defaults = {
+          inherit inputs system;
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+          tags = [ "base" ];
+        };
+        h.extra.tags = [ "host" ];
+      };
+    in
+    built.h._module.specialArgs.tags == [
+      "base"
+      "host"
+    ];
 
   # _defaults is an ALLOWLIST: a typo'd key throws instead of being
   # silently dropped by the builder's `...` pattern
@@ -368,7 +395,7 @@ in
       additionalModules = [ ];
     };
     h = { };
-  } "per-host halves of the layered pairs";
+  } "per-host addition in that host";
   defaults-typo-complaint = complains {
     _defaults = {
       homeConfiguration = { };

@@ -73,8 +73,8 @@
         # Arguments shared by every host. `_defaults` can never be a
         # hostname (a hostname cannot start with `_`). A host entry
         # overrides per argument -- and for "shared base plus per-host
-        # extras" use the layered pairs: `modules`/`specialArgs` here,
-        # `additionalModules`/`additionalSpecialArgs` on the host.
+        # extras" the host uses its `extra` slot: a bare key REPLACES what
+        # is here, `extra.<key>` ADDS to it.
         _defaults = {
           inherit inputs system userRegistry;
 
@@ -113,12 +113,12 @@
         # `username -> module` function for richer accounts, or `null` to
         # disable account creation.
         laptop = {
-          # Per-host extras, layered ON TOP of the `_defaults` above rather
-          # than replacing them -- that is what the `additional*` half of
-          # each pair is for:
-          #   additionalModules = [ ./modules/desktop.nix ];
-          #   additionalSpecialArgs = { role = "workstation"; };
-          # Everything else replaces the default outright, per argument:
+          # Per-host extras go in `extra`, layered ON TOP of `_defaults`
+          # (lists concatenate, attrsets merge):
+          #   extra.modules = [ ./modules/desktop.nix ];
+          #   extra.specialArgs = { role = "workstation"; };
+          #   extra.homeModules = [ ./home/desktop.nix ];
+          # A bare key replaces the default outright instead:
           #   tags = [ "gpu" ];                      # also labels boot entries
           #   nixpkgsConfig = { cudaSupport = true; };
           #   allowedUnfreePackages = [ "steam" ];

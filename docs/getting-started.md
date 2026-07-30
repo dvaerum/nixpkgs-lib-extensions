@@ -204,11 +204,21 @@ Later snippets in this guide assume these bindings (`extLib`,
 The reserved `_defaults` entry (never a valid hostname -- a hostname
 cannot START with `_`) supplies arguments to every host. Merging is per
 argument and the host entry wins entirely -- lists and attrsets are
-NOT deep-merged. For "shared base plus per-host extras" use the
-layered pairs instead: `modules` and `specialArgs` in `_defaults`,
-`additionalModules` and `additionalSpecialArgs` on the host -- the
-pairs combine by design. `_defaults` must not set `hostname` or the
-`additional*` arguments (it throws).
+NOT deep-merged. For "shared base plus per-host extras" put the
+addition in that host's `extra` slot -- ONE rule for every argument: a
+bare key REPLACES the default, `extra.<key>` ADDS to it (lists
+concatenate, attrsets merge with `extra` winning a conflict):
+
+```nix
+_defaults = { modules = [ ./base.nix ]; homeModules = [ direnv ]; };
+laptop = {
+  extra.modules = [ ./desktop.nix ];   # base.nix AND desktop.nix
+  extra.homeModules = [ ./extra.nix ]; # direnv AND extra.nix
+  nixpkgsConfig = { cudaSupport = true; };  # replaces outright
+};
+```
+
+`_defaults` must not set `hostname` or `extra` (it throws).
 
 The host's own configuration is imported by convention, relative to
 your flake root:
@@ -443,7 +453,7 @@ hosts = {
 
   laptop = {
     # the entries you opted out of above, imported explicitly
-    additionalModules = [
+    extra.modules = [
       inputs.nixos-hardware
         .nixosModules.dell-xps-13-9310
     ];
@@ -558,7 +568,7 @@ Both NixOS modules and home-manager modules get:
 | `username` | home-manager configs only: whose home |
 
 Anything you pass as `specialArgs = { ... };` is merged alongside these,
-with `additionalSpecialArgs` layering after it. The names in the table
+(a host adds to it with `extra.specialArgs`). The names in the table
 above are **builder-owned**: redefining one throws, because overriding
 it would change only what modules see and not what the builder did --
 a `hostname` specialArg used to give modules one name while
