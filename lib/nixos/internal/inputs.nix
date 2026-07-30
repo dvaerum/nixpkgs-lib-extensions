@@ -300,7 +300,6 @@ let
       list
     ).out;
 
-
   # Everything an input contributes automatically, resolved in one place:
   # the consumer's cases (validated against the real input names), the
   # function-form remap, the per-channel selections, the eager validation
