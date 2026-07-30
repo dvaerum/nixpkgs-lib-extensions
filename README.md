@@ -56,6 +56,21 @@ Highlights:
   instead of breaking evaluation.
 - Small string/attrset helpers (`stringToTitle`, `recursiveMerge`, ...).
 
+## Working on this repo
+
+Two files are generated or enforced rather than hand-maintained, and
+`nix flake check` fails when either has drifted. Nothing fixes them for
+you, so run both before pushing:
+
+```
+nix fmt              # nixfmt the tree             (check: formatting)
+nix run .#gen-docs   # rebuild docs/lib.md from    (check: docs-up-to-date)
+                     # the doc comments in lib/
+```
+
+The full suite is `nix flake check`; three of its checks boot a VM and
+need `/dev/kvm`.
+
 ## Use the extra library on its own
 
 Three host examples for including the extra library in a NixOS config

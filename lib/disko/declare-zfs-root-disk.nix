@@ -110,6 +110,34 @@
         else
           throw "The argument `enableEncryption` must be of type `boolean`";
 
+      # The encryption key file is written in THREE places -- at pool
+      # creation (preCreateHook) and at boot by either initrd flavor -- and
+      # all three must produce the exact same bytes: the passphrase that
+      # `zpool create` stores is what `zfs load-key` has to reproduce, so a
+      # trailing newline in one of them and not the others means the pool
+      # cannot be unlocked. They used to be three copies, and they had
+      # already drifted (`cat <<<` appends a newline, `echo -n` does not),
+      # so there is now ONE definition, used by all three. It expects `KEY`
+      # to be set by the caller.
+      write_key_file = ''
+        SECRET_FOLDER_PATH="/tmp/secrets"
+        KEY_FILE_PATH="$SECRET_FOLDER_PATH/zpool.key"
+
+        # A leftover NON-directory here (a file, or a dangling symlink)
+        # would make the mkdir below fail, so it is removed; an existing
+        # directory is kept and its key file simply overwritten.
+        if ! [[ -d "$SECRET_FOLDER_PATH" ]]; then
+          rm -rf "$SECRET_FOLDER_PATH"
+        fi
+
+        mkdir -p "$SECRET_FOLDER_PATH"
+        chmod 700 "$SECRET_FOLDER_PATH"
+
+        # printf, never `echo -n` or a here-string: the key must land in the
+        # file verbatim, with no trailing newline.
+        printf '%s' "$KEY" > "$KEY_FILE_PATH"
+      '';
+
       swap_size =
         if (builtins.isInt swapSize && swapSize >= 0) then
           swapSize
@@ -285,16 +313,7 @@
           };
           script = ''
             KEY="$(dmidecode --string system-uuid | tr -d '\n')"
-            SECRET_FOLDER_PATH="/tmp/secrets"
-            KEY_FILE_PATH="$SECRET_FOLDER_PATH/zpool.key"
-
-            if ! [[ -d "$SECRET_FOLDER_PATH" ]]; then
-              rm -rf "$SECRET_FOLDER_PATH"
-            fi
-
-            mkdir -p "$SECRET_FOLDER_PATH"
-            chmod 700 "$SECRET_FOLDER_PATH"
-            echo -n "$KEY" > "$KEY_FILE_PATH"
+            ${write_key_file}
           '';
         };
 
@@ -336,16 +355,7 @@
       # encryption keys via the legacy initrd hooks
       boot.initrd.postDeviceCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) ''
         KEY="$(${pkgs.dmidecode}/bin/dmidecode --string system-uuid | tr -d '\n')"
-        SECRET_FOLDER_PATH="/tmp/secrets"
-        KEY_FILE_PATH="$SECRET_FOLDER_PATH/zpool.key"
-
-        if ! [[ -d "$SECRET_FOLDER_PATH" ]]; then
-          rm -rf "$SECRET_FOLDER_PATH"
-        fi
-
-        mkdir -p "$SECRET_FOLDER_PATH"
-        chmod 700 "$SECRET_FOLDER_PATH"
-        echo -n "$KEY" > "$KEY_FILE_PATH"
+        ${write_key_file}
       '';
 
       boot.initrd.postResumeCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) (
@@ -515,16 +525,7 @@
                 # Needed in case the kexec image does not have dmidecode when using nixos-anythere or if booting from an ISO
                 KEY="$(nix run nixpkgs#dmidecode -- --string system-uuid | tr -d '\n')"
               fi
-              SECRET_FOLDER_PATH="/tmp/secrets"
-              KEY_FILE_PATH="$SECRET_FOLDER_PATH/zpool.key"
-
-              if ! [[ -d "$SECRET_FOLDER_PATH" ]]; then
-                rm -rf "$SECRET_FOLDER_PATH"
-              fi
-
-              mkdir -p "$SECRET_FOLDER_PATH"
-              chmod 700 "$SECRET_FOLDER_PATH"
-              cat <<<"$KEY" > "$KEY_FILE_PATH"
+              ${write_key_file}
             '';
 
             postMountHook = ''

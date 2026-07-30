@@ -58,11 +58,39 @@ let
 
   # does forcing the selected part of the layout with these arguments throw?
   buildThrows =
-    args: select:
-    !(builtins.tryEval (builtins.deepSeq (select (build args)) true)).success;
+    args: select: !(builtins.tryEval (builtins.deepSeq (select (build args)) true)).success;
+
+  # The three places that write the encryption key file. Their BEHAVIOR is
+  # tested in checks/zfs-key-file.nix; these eval-only assertions catch the
+  # drift that once happened (a here-string appending a newline where the
+  # others wrote none) without building anything.
+  encrypted = build { };
+  keyWriters = [
+    encrypted.disko.devices.zpool."zroot-testhost".preCreateHook
+    encrypted.boot.initrd.systemd.content.services.zfs-key-file-setup.script
+    encrypted.boot.initrd.postDeviceCommands.content
+  ];
+  # Comment lines dropped first: the snippet's own comment NAMES the banned
+  # forms ("printf, never `echo -n` ..."), so a substring search over the
+  # whole script would match the warning against writing them.
+  keyWritersCode = map (
+    w:
+    builtins.concatStringsSep "\n" (
+      builtins.filter (l: builtins.match "[[:space:]]*#.*" l == null) (lib.splitString "\n" w)
+    )
+  ) keyWriters;
 
   assertions = {
     pool-named-after-hostname = plain.disko.devices.zpool ? zroot-testhost;
+
+    # every writer uses the ONE shared snippet ...
+    key-writers-use-printf = builtins.all (w: lib.hasInfix "printf '%s' \"$KEY\"" w) keyWritersCode;
+    # ... and none of the newline-appending forms it replaced
+    key-writers-add-no-newline = builtins.all (
+      w: !(lib.hasInfix "cat <<<" w) && !(lib.hasInfix "echo -n" w)
+    ) keyWritersCode;
+    # a writer only exists when encryption is on
+    no-key-writer-without-encryption = plain.disko.devices.zpool."zroot-testhost".preCreateHook == "";
 
     # per-user HOME datasets, string and { username; mountpoint; } forms
     user-datasets-created = plainDatasets ? "HOME/alice" && plainDatasets ? "HOME/bob";
@@ -87,27 +115,23 @@ let
       );
 
     # encryption is on by default and reaches the pool root options
-    encryption-on-by-default = (build { }).disko.devices.zpool."zroot-testhost".rootFsOptions.encryption == "on";
-    no-encryption-when-disabled = !(plain.disko.devices.zpool."zroot-testhost".rootFsOptions ? encryption);
+    encryption-on-by-default =
+      (build { }).disko.devices.zpool."zroot-testhost".rootFsOptions.encryption == "on";
+    no-encryption-when-disabled =
+      !(plain.disko.devices.zpool."zroot-testhost".rootFsOptions ? encryption);
 
     # argument validation throws
     invalid-encryption-throws = buildThrows { enableEncryption = "yes"; } (
       r: r.disko.devices.zpool."zroot-testhost".rootFsOptions
     );
-    invalid-swap-size-throws =
-      buildThrows
-        {
-          enableEncryption = false;
-          swapSize = -1;
-        }
-        (r: r.disko.devices.disk.main.content.partitions);
-    invalid-extra-datasets-throws =
-      buildThrows
-        {
-          enableEncryption = false;
-          extraDatasets = 42;
-        }
-        (r: r.disko.devices.zpool."zroot-testhost".datasets);
+    invalid-swap-size-throws = buildThrows {
+      enableEncryption = false;
+      swapSize = -1;
+    } (r: r.disko.devices.disk.main.content.partitions);
+    invalid-extra-datasets-throws = buildThrows {
+      enableEncryption = false;
+      extraDatasets = 42;
+    } (r: r.disko.devices.zpool."zroot-testhost".datasets);
   };
 
   failed = lib.attrNames (lib.filterAttrs (_: ok: ok != true) assertions);
