@@ -264,6 +264,10 @@ let
       );
     in
     {
+      # marker: mkContext refuses a `_core` it did not produce, so a
+      # hand-passed one cannot silently swap the package set the whole
+      # system is built from
+      __mkContextCore = true;
       inherit
         lib
         pkgs
@@ -303,7 +307,20 @@ let
       ...
     }@args:
     let
-      core = if _core != null then _core else mkContextCore args;
+      # `_core` is internal plumbing between planHosts and the builders, and
+      # the ONE thing a consumer must not be able to do is hand in a core
+      # built from different arguments -- the system would then be built
+      # against a `pkgs` that has nothing to do with what it asked for, with
+      # no error anywhere. mkContextCore stamps every core it produces;
+      # anything else is refused. (It cannot catch a STALE core of our own,
+      # which is why planHosts is the only thing that ever passes one.)
+      core =
+        if _core == null then
+          mkContextCore args
+        else if _core.__mkContextCore or false then
+          _core
+        else
+          throw "nixpkgs-lib-extensions: `_core` is internal plumbing of buildConfigurations/buildNixosConfigurations/buildHomeConfigurations and must not be passed by hand; it selects the package set the whole system is built from.";
 
       # The whole `inputs` set is exposed so modules can reach anything not
       # covered by the generic conventions (e.g. inputs.fenix) themselves --
