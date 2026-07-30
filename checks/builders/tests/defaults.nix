@@ -171,6 +171,67 @@ in
     in
     homes ? "alice@hostA" && homes ? "bob@hostB" && !(homes ? "alice@hostB") && !(homes ? "dave@hostB");
 
+  # buildConfigurations is the two build functions over ONE plan: same
+  # hosts attrset in, both flake outputs out. The point is that a flake
+  # cannot then export the systems while forgetting the homes the login
+  # bootstrap resolves at runtime.
+  build-configurations-produces-both =
+    let
+      hosts = {
+        _defaults = {
+          inherit inputs system;
+          userRegistry."alice" = exampleDir + "/users/alice";
+          loginUsers = [ "alice" ];
+        };
+        hostA = { };
+        hostB = { };
+      };
+      both = myLib.buildConfigurations hosts;
+    in
+    builtins.attrNames both == [
+      "homeConfigurations"
+      "nixosConfigurations"
+    ]
+    &&
+      builtins.attrNames both.nixosConfigurations == [
+        "hostA"
+        "hostB"
+      ]
+    &&
+      builtins.attrNames both.homeConfigurations == [
+        "alice@hostA"
+        "alice@hostB"
+      ]
+    # and it agrees with the separate functions, host for host
+    &&
+      both.nixosConfigurations.hostA.config.networking.hostName == (myLib.buildNixosConfigurations hosts)
+      .hostA.config.networking.hostName
+    &&
+      (both.homeConfigurations."alice@hostA").config.home.username
+      == ((myLib.buildHomeConfigurations hosts)."alice@hostA").config.home.username;
+
+  # restating a core argument with the SAME VALUE must still share the
+  # defaults' context core: presence alone used to disqualify a host, so
+  # `inherit inputs system;` in every entry -- the natural thing to write --
+  # silently gave each host its own nixpkgs evaluation
+  core-sharing-is-by-value =
+    let
+      built = myLib.buildNixosConfigurations {
+        _defaults = {
+          inherit inputs system;
+          nixpkgsConfig.cudaSupport = true;
+        };
+        restated = {
+          # identical values, spelled out again
+          inherit inputs system;
+        };
+        different = {
+          nixpkgsConfig.cudaSupport = false;
+        };
+      };
+    in
+    built.restated.pkgs.config.cudaSupport && !built.different.pkgs.config.cudaSupport;
+
   # cross-mechanism partition: ONE hosts attrset feeds BOTH build
   # functions -- where alice is a login user (hostA) she gets the flake
   # output and NO system home; where she is not (hostB) she gets the

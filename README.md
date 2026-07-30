@@ -13,8 +13,9 @@ Some I wrote myself and some I found on the internet.
 
 The main feature of this repo: build your `nixosConfigurations` and
 standalone `homeConfigurations` from one per-user directory convention.
-See [docs/lib.md](docs/lib.md) for the full reference of
-`buildNixosConfigurations`, `buildHomeConfigurations`,
+One `buildConfigurations` call produces both outputs from one hosts
+attrset. See [docs/lib.md](docs/lib.md) for the full reference of
+`buildConfigurations`, `buildNixosConfigurations`, `buildHomeConfigurations`,
 `nixosConfigurationsBuilder`, `homeConfigurationsBuilder`,
 `homeManagerBootstrapModule` and `normalUserModule`.
 

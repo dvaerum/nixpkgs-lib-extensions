@@ -80,66 +80,9 @@ in
   */
   buildHomeConfigurations =
     hosts:
-    let
-      split = shared.splitHostsArgs "buildHomeConfigurations" hosts;
-      # CONTEXT SHARING: same rule as in buildNixosConfigurations -- the
-      # host-independent context core is computed ONCE from `_defaults`
-      # and passed as `_core` to every home whose host entry overrides
-      # none of the core arguments (shared.coreArgNames); otherwise the
-      # host's homes get their own context from the merged arguments.
-      defaultsCore = shared.mkContextCore split.defaults;
-      # Same check as buildNixosConfigurations: a loginUsers typo yields no
-      # output here and a silently system-managed home there, and neither
-      # says anything. Both doors validate, since either may be called alone.
-      loginUsersChecked = shared.validateLoginUsers "buildHomeConfigurations" (
-        builtins.attrValues (
-          builtins.mapAttrs (hostname: args: {
-            inherit hostname;
-            registry = (split.defaults // args).userRegistry or { };
-            loginUsers = (split.defaults // args).loginUsers or [ ];
-          }) split.hostEntries
-        )
-      );
-      coreArgSet = builtins.listToAttrs (
-        map (n: {
-          name = n;
-          value = null;
-        }) shared.coreArgNames
-      );
-      hostHomes =
-        hostname:
-        let
-          entry = split.hostEntries.${hostname};
-          merged = split.defaults // entry // { inherit hostname; };
-          rawRegistry = merged.userRegistry or { };
-          registry = if rawRegistry == null then { } else rawRegistry;
-          loginUsers = merged.loginUsers or [ ];
-          # login-managed users with an actual home.nix on this host
-          usersHome = shared.loginUsersWithHome registry hostname loginUsers;
-          coreAttr =
-            if builtins.intersectAttrs coreArgSet entry == { } then { _core = defaultsCore; } else { };
-        in
-        # a host with no login-managed users (or no home-manager input)
-        # simply contributes nothing. An explicit `homeManager` counts as
-        # having one WITHOUT re-running detection -- that argument exists to
-        # bypass it, so detecting here would both ignore an input the
-        # detection cannot see and re-trigger the ambiguity warning the
-        # argument was passed to avoid.
-        if
-          (merged.homeManager or null) == null && shared.detectHomeManager (merged.inputs or { }) == null
-        then
-          { }
-        else
-          builtins.listToAttrs (
-            map (username: {
-              name = "${username}@${hostname}";
-              value = extLib.homeConfigurationsBuilder (merged // { inherit username; } // coreAttr);
-            }) usersHome
-          );
-    in
-    builtins.seq loginUsersChecked (
-      builtins.foldl' (acc: hostname: acc // hostHomes hostname) { } (
-        builtins.attrNames split.hostEntries
-      )
-    );
+    # The very same plan buildNixosConfigurations uses: one split, one
+    # `_defaults` merge, one context core. Previously each build* computed
+    # its own core from the same `_defaults`, so a flake exporting both
+    # outputs paid for two full nixpkgs evaluations.
+    shared.homesFromPlan "buildHomeConfigurations" (shared.planHosts "buildHomeConfigurations" hosts);
 }

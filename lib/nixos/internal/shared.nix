@@ -35,5 +35,8 @@ extLib: {
     allowedDefaultArgs
     validateBuilderArgs
     splitHostsArgs
+    planHosts
+    systemsFromPlan
+    homesFromPlan
     ;
 }

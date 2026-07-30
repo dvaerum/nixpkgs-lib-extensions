@@ -3,6 +3,7 @@
 {
   all-functions-exported = builtins.all (n: builtins.isFunction myLib.${n}) [
     "nixosConfigurationsBuilder"
+    "buildConfigurations"
     "buildNixosConfigurations"
     "buildHomeConfigurations"
     "homeConfigurationsBuilder"

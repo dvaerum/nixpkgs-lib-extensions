@@ -135,11 +135,12 @@
         };
       };
     in
-    {
-      nixosConfigurations = extLib.buildNixosConfigurations hosts;
-
-      # The standalone home-manager outputs for every host's loginUsers,
-      # "user@host" keyed -- exactly what the login bootstrap activates.
-      homeConfigurations = extLib.buildHomeConfigurations hosts;
-    };
+    # ONE call, BOTH outputs: `nixosConfigurations` for the hosts, and the
+    # "user@host" keyed `homeConfigurations` that the login bootstrap
+    # activates for every `loginUsers` user. Exporting only the first is
+    # the classic mistake -- it fails at that user's FIRST LOGIN, not at
+    # build time -- so this entry point produces both from one plan.
+    # (`buildNixosConfigurations` / `buildHomeConfigurations` still exist
+    # if you ever want just one half.)
+    extLib.buildConfigurations hosts;
 }

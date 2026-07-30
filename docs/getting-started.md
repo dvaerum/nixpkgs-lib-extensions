@@ -182,20 +182,21 @@ hostname. In your flake the full wiring looks like this (the scaffolded
         };
       };
     in
-    {
-      nixosConfigurations =
-        extLib.buildNixosConfigurations
-          hosts;
-
-      # "user@host" outputs for the
-      # loginUsers: what the
-      # bootstrap activates
-      homeConfigurations =
-        extLib.buildHomeConfigurations
-          hosts;
-    };
+    # ONE call, BOTH outputs:
+    # nixosConfigurations for the hosts,
+    # and the "user@host"
+    # homeConfigurations the login
+    # bootstrap activates
+    extLib.buildConfigurations hosts;
 }
 ```
+
+`buildConfigurations` is the entry point to reach for. The two halves
+are also available separately as `buildNixosConfigurations` and
+`buildHomeConfigurations` (same hosts attrset), but exporting only the
+first is a trap: a `loginUsers` user's home is resolved at their first
+login, so a missing `homeConfigurations` output fails *then*, on a
+booted machine, rather than at build time. One call cannot forget half.
 
 Later snippets in this guide assume these bindings (`extLib`,
 `inputs`, `system`, the registry) from this skeleton.

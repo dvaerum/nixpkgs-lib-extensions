@@ -109,48 +109,10 @@ in
     hosts:
     # validation (allowlists, hostname conflicts) is shared with
     # buildHomeConfigurations: one hosts attrset feeds both
-    let
-      split = shared.splitHostsArgs "buildNixosConfigurations" hosts;
-      # CONTEXT SHARING: the expensive host-independent part of the
-      # evaluation context (one `import nixpkgs { ... }` per context) is
-      # computed ONCE from `_defaults` and passed as `_core` to every
-      # host that overrides NONE of the core arguments
-      # (shared.coreArgNames); a host overriding any of them gets its own
-      # context from its merged arguments, exactly as before. Lazy, so it
-      # is never forced when every host overrides a core argument.
-      defaultsCore = shared.mkContextCore split.defaults;
-      # A loginUsers typo is otherwise silent: the home flips to the
-      # system-managed mechanism and everything still builds. Only checkable
-      # HERE, where every host's registry is in view -- a name that matches
-      # no user on one host is legal (one shared list across a fleet), a
-      # name matching none anywhere is a typo.
-      loginUsersChecked = shared.validateLoginUsers "buildNixosConfigurations" (
-        builtins.attrValues (
-          builtins.mapAttrs (hostname: args: {
-            inherit hostname;
-            registry = (split.defaults // args).userRegistry or { };
-            loginUsers = (split.defaults // args).loginUsers or [ ];
-          }) split.hostEntries
-        )
-      );
-      coreArgSet = builtins.listToAttrs (
-        map (n: {
-          name = n;
-          value = null;
-        }) shared.coreArgNames
-      );
-    in
-    builtins.seq loginUsersChecked (
-      builtins.mapAttrs (
-        hostname: args:
-        extLib.nixosConfigurationsBuilder (
-          split.defaults
-          // args
-          // {
-            inherit hostname;
-          }
-          // (if builtins.intersectAttrs coreArgSet args == { } then { _core = defaultsCore; } else { })
-        )
-      ) split.hostEntries
+    # `planHosts` does the split, the `_defaults` merge and the
+    # context-core decision once; `buildHomeConfigurations` and
+    # `buildConfigurations` use the very same plan.
+    shared.systemsFromPlan "buildNixosConfigurations" (
+      shared.planHosts "buildNixosConfigurations" hosts
     );
 }

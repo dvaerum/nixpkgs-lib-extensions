@@ -8,6 +8,10 @@
 # file keeps the same shape so their imports stay uniform).
 extLib:
 let
+  inherit (import ./context.nix extLib) coreArgNames mkContextCore;
+  inherit (import ./registry.nix extLib) validateLoginUsers loginUsersWithHome;
+  inherit (import ./inputs.nix extLib) detectHomeManager;
+
   # ONE hosts attrset is meant to feed BOTH buildNixosConfigurations and
   # buildHomeConfigurations, so both validate against the same allowlists:
   # arguments only one side uses (modules, userModuleFn, ...) are accepted
@@ -137,6 +141,109 @@ let
       ''
     else
       { inherit defaults hostEntries; };
+
+  # ONE plan per hosts attrset, shared by every hosts-level builder: split
+  # and validate, merge `_defaults` under each entry, and decide once
+  # whether the host can reuse the defaults' context core. Returns
+  # `{ <hostname> = { args; core; }; }` with `core = null` meaning "build
+  # your own from args".
+  #
+  # Doing this once is not only deduplication: buildNixosConfigurations and
+  # buildHomeConfigurations each used to compute their own core from the
+  # SAME `_defaults`, so the documented "define hosts once, pass to both"
+  # pattern paid for two full nixpkgs evaluations. Nix memoizes
+  # `import <path>` but never the application, so both were held live.
+  planHosts =
+    fnName: hosts:
+    let
+      split = splitHostsArgs fnName hosts;
+      defaultsCore = mkContextCore split.defaults;
+      coreArgSet = builtins.listToAttrs (
+        map (n: {
+          name = n;
+          value = null;
+        }) coreArgNames
+      );
+      # A host shares the defaults' core when every core argument it
+      # mentions has the SAME VALUE as the default. Mere PRESENCE used to
+      # disqualify it, so writing `inherit inputs system;` inside each host
+      # entry -- the most natural thing to write -- silently gave every host
+      # its own nixpkgs evaluation: 25 of them on a 25-host fleet, with no
+      # signal. The comparison is tryEval-guarded because two structurally
+      # equal attrsets holding functions cannot be compared at all, and
+      # "cannot tell" must fall back to "own core", never to "share".
+      sharesCore =
+        entry:
+        builtins.all (
+          n:
+          let
+            probe = builtins.tryEval (entry.${n} == (split.defaults.${n} or null));
+          in
+          probe.success && probe.value
+        ) (builtins.attrNames (builtins.intersectAttrs coreArgSet entry));
+    in
+    builtins.mapAttrs (hostname: entry: {
+      args = split.defaults // entry // { inherit hostname; };
+      core = if sharesCore entry then defaultsCore else null;
+    }) split.hostEntries;
+
+  # A plan entry's arguments, with the shared core attached when it has one.
+  # `_core` is internal plumbing, never something a consumer writes.
+  withCore = p: p.args // (if p.core != null then { _core = p.core; } else { });
+
+  # A loginUsers typo is otherwise silent: the home flips to the
+  # system-managed mechanism and everything still builds and boots. Only
+  # checkable from a PLAN, where every host's registry is in view -- a name
+  # that matches no user on one host is legal, a name no registry mentions
+  # at all is a typo.
+  planLoginUsers =
+    fnName: plan:
+    validateLoginUsers fnName (
+      builtins.attrValues (
+        builtins.mapAttrs (hostname: p: {
+          inherit hostname;
+          registry = p.args.userRegistry or { };
+          loginUsers = p.args.loginUsers or [ ];
+        }) plan
+      )
+    );
+
+  # The two projections of a plan. Kept here so buildNixosConfigurations,
+  # buildHomeConfigurations and buildConfigurations are literally the same
+  # code applied to the same plan.
+  systemsFromPlan =
+    fnName: plan:
+    builtins.seq (planLoginUsers fnName plan) (
+      builtins.mapAttrs (_: p: extLib.nixosConfigurationsBuilder (withCore p)) plan
+    );
+
+  homesFromPlan =
+    fnName: plan:
+    builtins.seq (planLoginUsers fnName plan) (
+      builtins.foldl' (
+        acc: hostname:
+        let
+          p = plan.${hostname};
+          rawRegistry = p.args.userRegistry or { };
+          registry = if rawRegistry == null then { } else rawRegistry;
+          # login-managed users that actually ship a home.nix on this host
+          usersHome = loginUsersWithHome registry hostname (p.args.loginUsers or [ ]);
+        in
+        # a host with no home-manager contributes nothing. An explicit
+        # `homeManager` counts as having one WITHOUT re-running detection --
+        # that argument exists to bypass it.
+        if (p.args.homeManager or null) == null && detectHomeManager (p.args.inputs or { }) == null then
+          acc
+        else
+          acc
+          // builtins.listToAttrs (
+            map (username: {
+              name = "${username}@${hostname}";
+              value = extLib.homeConfigurationsBuilder (withCore p // { inherit username; });
+            }) usersHome
+          )
+      ) { } (builtins.attrNames plan)
+    );
 in
 {
   inherit
@@ -144,5 +251,8 @@ in
     allowedHostArgs
     validateBuilderArgs
     splitHostsArgs
+    planHosts
+    systemsFromPlan
+    homesFromPlan
     ;
 }
