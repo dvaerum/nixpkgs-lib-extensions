@@ -233,6 +233,11 @@ let
   # The example is a REAL flake.nix; a flake.nix is just an attrset with an
   # `outputs` function, so we import it and call `outputs` with our test
   # inputs -- the same way Nix itself would with the locked inputs.
+  moduleLevel = import (repoDir + "/lib/nixos/internal/module-level.nix") {
+    lib = nixpkgs.lib;
+    self = myLib;
+  };
+
   example = (import (exampleDir + "/flake.nix")).outputs (
     inputs
     // {
@@ -240,7 +245,10 @@ let
       nixpkgs-lib-extensions = {
         outPath = "/nix/store/fake-nixpkgs-lib-extensions";
         lib = myLib;
-        extendLib = lib': nixpkgs.lib.recursiveUpdate lib' myLib;
+        # mirrors flake.nix exactly, via the same shared rule -- a fixture
+        # that merged differently from the real export would test a
+        # consumer setup nobody has
+        extendLib = lib': lib' // moduleLevel.addOwnLib lib' myLib;
       };
     }
   );

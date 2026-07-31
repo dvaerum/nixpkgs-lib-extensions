@@ -17,6 +17,12 @@
     let
 
       myLib = import ./lib { inherit (nixpkgs) lib; };
+      # the module-level/flake-level split and its merge rule, shared with
+      # the builders' own module lib (lib/nixos/internal/context.nix)
+      moduleLevel = import ./lib/nixos/internal/module-level.nix {
+        inherit (nixpkgs) lib;
+        self = myLib;
+      };
 
       # The platforms this lib is realistically used on. Keep the list short:
       # every entry multiplies the cost of `nix flake check --all-systems`
@@ -94,11 +100,15 @@
       lib = myLib;
 
       # Helper for consumers
-      extendLib = lib: nixpkgs.lib.recursiveUpdate lib myLib;
+      # Only the module-level half, and it can only ADD -- see
+      # lib/nixos/internal/module-level.nix. `extendLib` feeds a consuming
+      # flake's module `lib`, where the system builders have no meaning.
+      extendLib = lib: lib // moduleLevel.addOwnLib lib myLib;
 
       # Keep overlay for pkgs.lib (works in some contexts)
+      # ... and the same for pkgs.lib.
       overlays.default = final: prev: {
-        lib = prev.lib.recursiveUpdate prev.lib myLib;
+        lib = prev.lib // moduleLevel.addOwnLib prev.lib myLib;
       };
 
       # Scaffold the example into a new repo: `nix flake init -t <this flake>`.

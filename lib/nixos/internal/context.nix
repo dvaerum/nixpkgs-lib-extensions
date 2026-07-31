@@ -17,6 +17,7 @@
 # assembled nixpkgs-lib-extensions lib.
 { lib, self, ... }:
 let
+  inherit (import ./module-level.nix { inherit lib self; }) addOwnLib;
   inherit (import ./inputs.nix { inherit lib self; })
     detectHomeManager
     libOf
@@ -90,8 +91,15 @@ let
           ) v.extendLib
         ) conventionInputs
       );
+
+      # Only the MODULE-LEVEL half of this repo's lib goes into the system
+      # lib, merged under the "existing side wins" rule. Both the split and
+      # the rule live in ./module-level.nix, because the flake's own
+      # `extendLib` and `overlays.default` must apply the identical one.
+      ownAdditions = addOwnLib baseLib self;
+
       extendedLib = baseLib.foldl' (acc: ext: acc.extend (final: prev: ext prev)) (baseLib.extend (
-        final: prev: baseLib.recursiveUpdate prev self
+        final: prev: ownAdditions
       )) libExtenders;
 
       # Each input's standalone `lib` export, namespaced by input name:

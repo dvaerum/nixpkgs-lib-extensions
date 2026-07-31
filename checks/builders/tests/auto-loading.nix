@@ -18,6 +18,33 @@
   ...
 }:
 let
+  moduleLib =
+    (myLib.nixosConfigurationsBuilder {
+      inherit inputs system;
+      hostname = "libprobe";
+      modules = [
+        (exampleDir + "/hosts/server/configuration.nix")
+        (
+          { lib, ... }:
+          {
+            users.groups = lib.genAttrs (
+              lib.optional (lib ? buildConfigurations) "flake-buildConfigurations"
+              ++ lib.optional (lib ? nixosConfigurationsBuilder) "flake-nixosConfigurationsBuilder"
+              ++ lib.optional (lib.nixos ? buildConfigurations) "flake-nixos-namespace-polluted"
+              ++ lib.optional (lib.nixos ? evalModules) "nixpkgs-nixos-evalModules"
+              ++ lib.optional (lib ? declareZfsRootDisk) "mod-declareZfsRootDisk"
+              ++ lib.optional (lib ? importIfNix) "mod-importIfNix"
+              ++ lib.optional (lib ? recursiveMerge) "mod-recursiveMerge"
+              ++ lib.optional (lib.attrsets ? recursiveMerge) "mod-attrsets-recursiveMerge"
+              ++ lib.optional (lib.strings ? stringToTitle) "mod-strings-stringToTitle"
+              ++ lib.optional (lib.attrsets ? filterAttrs) "nixpkgs-attrsets-filterAttrs"
+              ++ lib.optional (lib.strings ? hasInfix) "nixpkgs-strings-hasInfix"
+            ) (_: { });
+          }
+        )
+      ];
+    }).config.users.groups;
+
   # A minimal host whose only interesting part is its inputContributions.
   probeHost =
     hostname: extraInputs: cases:
@@ -442,4 +469,37 @@ in
       userRegistry."alice" = exampleDir + "/users/alice";
       homeManager = inputs.home-manager;
     }).config.home.username == "alice";
+
+  # ── module-level vs flake-level lib ──
+  # What a MODULE's `lib` argument holds. Not `pkgs.lib`, which is a
+  # different value (nixpkgs' own lib plus the namespaced input libs, see
+  # the overlay in context.nix) -- so this probes it where modules see it.
+  # The `nixos` namespace builds SYSTEMS; a module is already inside one.
+  # It used to be merged into the module `lib` anyway, so every NixOS and
+  # home-manager module carried lib.buildConfigurations and friends.
+  module-lib-omits-flake-level-api =
+    !(moduleLib ? flake-buildConfigurations)
+    && !(moduleLib ? flake-nixosConfigurationsBuilder)
+    # nixpkgs has its OWN `lib.nixos` (evalModules and friends). This repo's
+    # `nixos` namespace used to be recursiveUpdate'd straight into it.
+    && !(moduleLib ? flake-nixos-namespace-polluted)
+    && moduleLib ? nixpkgs-nixos-evalModules;
+
+  # ... while the module-level helpers are still there, both flat and in
+  # their namespace, and joining a namespace nixpkgs also defines does not
+  # displace what nixpkgs put in it
+  module-lib-keeps-module-level-helpers =
+    moduleLib ? mod-declareZfsRootDisk
+    && moduleLib ? mod-importIfNix
+    && moduleLib ? mod-recursiveMerge
+    && moduleLib ? mod-attrsets-recursiveMerge
+    && moduleLib ? mod-strings-stringToTitle
+    && moduleLib ? nixpkgs-attrsets-filterAttrs
+    && moduleLib ? nixpkgs-strings-hasInfix;
+
+  # the flake-level half is reachable from a module through the specialArg,
+  # which is what it is for
+  ext-lib-special-arg-has-flake-level-api =
+    laptop._module.specialArgs.extLib ? buildConfigurations
+    && laptop._module.specialArgs.extLib ? nixosConfigurationsBuilder;
 }
