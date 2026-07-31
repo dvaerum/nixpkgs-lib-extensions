@@ -238,20 +238,25 @@ let
     self = myLib;
   };
 
-  example = (import (exampleDir + "/flake.nix")).outputs (
-    inputs
-    // {
-      # what the resolved nixpkgs-lib-extensions input looks like to a consumer
-      nixpkgs-lib-extensions = {
-        outPath = "/nix/store/fake-nixpkgs-lib-extensions";
-        lib = myLib;
-        # mirrors flake.nix exactly, via the same shared rule -- a fixture
-        # that merged differently from the real export would test a
-        # consumer setup nobody has
-        extendLib = lib': lib' // moduleLevel.addOwnLib lib' myLib;
-      };
-    }
-  );
+  # What the resolved nixpkgs-lib-extensions input looks like to a consumer.
+  # It mirrors flake.nix exactly, through the same shared rule: a fixture that
+  # merged differently from the real export would test a setup nobody has.
+  selfInput = {
+    outPath = "/nix/store/fake-nixpkgs-lib-extensions";
+    lib = myLib;
+    extendLib = lib': nixpkgs.lib.recursiveUpdate (moduleLevel.addOwnLib nixpkgs.lib myLib) lib';
+  };
+
+  # Every host in the suite sees this repo as one of its own inputs, exactly
+  # as a consumer's does. That matters: the builders merge this repo's lib
+  # additions themselves AND then run every input's extendLib, so leaving the
+  # self-input out of a probe host hid a double-application bug that fired for
+  # real consumers.
+  inputsWithSelf = inputs // {
+    nixpkgs-lib-extensions = selfInput;
+  };
+
+  example = (import (exampleDir + "/flake.nix")).outputs inputsWithSelf;
 
   laptop = example.nixosConfigurations.laptop;
   server = example.nixosConfigurations.server;
@@ -347,6 +352,7 @@ let
       fake-catalog-input
       fake-overlay-catalog
       fake-tree-input
+      inputsWithSelf
       exampleDir
       fixturesDir
       invalidFixturesDir

@@ -8,6 +8,7 @@
   system,
   laptop,
   server,
+  inputsWithSelf,
   aliceHome,
   custom,
   fake-multi-module-input,
@@ -20,7 +21,11 @@
 let
   moduleLib =
     (myLib.nixosConfigurationsBuilder {
-      inherit inputs system;
+      # inputsWithSelf, not inputs: this repo's own `extendLib` must run over
+      # a lib that already holds its additions, which is the case a consumer
+      # actually hits
+      inputs = inputsWithSelf;
+      inherit system;
       hostname = "libprobe";
       modules = [
         (exampleDir + "/hosts/server/configuration.nix")

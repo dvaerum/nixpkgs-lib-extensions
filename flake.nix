@@ -24,6 +24,21 @@
         self = myLib;
       };
 
+      # The collision decision is made against PRISTINE nixpkgs -- never
+      # against the lib being extended. `extendLib` is applied to a lib that
+      # may ALREADY hold these additions: the builders merge them in
+      # themselves (lib/nixos/internal/context.nix) and then run every
+      # input's extendLib, this repo's included. Judging against the
+      # accumulated lib made every name collide with its own earlier self and
+      # get "skipped" with a warning naming nixpkgs for functions nixpkgs has
+      # never defined.
+      #
+      # `recursiveUpdate ours l`, not `l // ours`: whatever is already in `l`
+      # wins at the leaves (so an addition still cannot displace anything,
+      # including a previous application of itself) while namespaces merge, so
+      # `attrsets.recursiveMerge` survives alongside nixpkgs' own attrsets.
+      ownLibAdditions = moduleLevel.addOwnLib nixpkgs.lib myLib;
+
       # The platforms this lib is realistically used on. Keep the list short:
       # every entry multiplies the cost of `nix flake check --all-systems`
       # (each system evaluates nixpkgs and instantiates the example hosts).
@@ -103,12 +118,12 @@
       # Only the module-level half, and it can only ADD -- see
       # lib/nixos/internal/module-level.nix. `extendLib` feeds a consuming
       # flake's module `lib`, where the system builders have no meaning.
-      extendLib = lib: lib // moduleLevel.addOwnLib lib myLib;
+      extendLib = lib: nixpkgs.lib.recursiveUpdate ownLibAdditions lib;
 
       # Keep overlay for pkgs.lib (works in some contexts)
       # ... and the same for pkgs.lib.
       overlays.default = final: prev: {
-        lib = prev.lib // moduleLevel.addOwnLib prev.lib myLib;
+        lib = nixpkgs.lib.recursiveUpdate ownLibAdditions prev.lib;
       };
 
       # Scaffold the example into a new repo: `nix flake init -t <this flake>`.
