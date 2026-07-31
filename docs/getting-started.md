@@ -132,8 +132,8 @@ The registry keys define the host's users -- there is no separate
 
 ## Hosts
 
-Each host is one entry in `buildNixosConfigurations`; the key is the
-hostname. In your flake the full wiring looks like this (the scaffolded
+Each host is one entry in the hosts attrset you hand to
+`buildConfigurations`; the key is the hostname. In your flake the full wiring looks like this (the scaffolded
 `flake.nix` is exactly this shape):
 
 ```nix
@@ -210,10 +210,10 @@ bare key REPLACES the default, `extra.<key>` ADDS to it (lists
 concatenate, attrsets merge with `extra` winning a conflict):
 
 ```nix
-_defaults = { modules = [ ./base.nix ]; homeModules = [ direnv ]; };
+_defaults = { modules = [ ./base.nix ]; homeModules = [ ./direnv.nix ]; };
 laptop = {
   extra.modules = [ ./desktop.nix ];   # base.nix AND desktop.nix
-  extra.homeModules = [ ./extra.nix ]; # direnv AND extra.nix
+  extra.homeModules = [ ./extra.nix ]; # direnv.nix AND extra.nix
   nixpkgsConfig = { cudaSupport = true; };  # replaces outright
 };
 ```
@@ -313,8 +313,8 @@ EVERY host where they appear -- the bootstrap on host X activates
 `<loginFlakeRef>#<user>@X`, which must exist. If that output is
 missing, the service fails with "flake ... does not provide attribute
 homeConfigurations..." on first login. The skeleton above covers it:
-`buildHomeConfigurations hosts` produces them from the same host
-list. (The underlying single-user function is
+`buildConfigurations hosts` produces the homeConfigurations half from
+that same host list. (The underlying single-user function is
 `homeConfigurationsBuilder`, if you need one specific home.)
 
 ### The bootstrap without the builders
@@ -621,8 +621,8 @@ Give a user extra groups on one host only: create
 Rename or add a host -- three places move together:
 
 1. the attrset key in the hosts attrset (also becomes
-   `networking.hostName` by default; with the shared attrset,
-   `buildHomeConfigurations` follows automatically)
+   `networking.hostName` by default; since both outputs come from the
+   one hosts attrset, the homeConfigurations follow automatically)
 2. the host file: `hosts/<name>.nix` or
    `hosts/<name>/configuration.nix`
 3. any `"user@<name>"` registry keys

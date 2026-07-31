@@ -358,17 +358,18 @@ in
     && built.cudahost._module.specialArgs.hostname == "cudahost"
     && built.plainhost._module.specialArgs.tags == reference._module.specialArgs.tags;
 
-  # the core-sharing decision is driven by mkContextCore's own formals, so
-  # a parameter added there can never be missing from the list -- which
-  # would have made hosts overriding it silently share a core built without
-  # it. Pinned here because the derivation is the whole point.
-  core-arg-names-cover-context-core =
+  # The core-sharing decision is driven by mkContextCore's own formals
+  # (coreArgNames is derived from them), so a parameter added there can
+  # never be missing from the list. What the derivation cannot guarantee is
+  # that those names are things a host can actually SET: a core parameter
+  # outside the builder allowlist never appears in a host entry, so
+  # sharesCore would never see it change and every host would share a core
+  # built without their value.
+  core-args-are-settable-by-hosts =
     let
       shared = import (repoDir + "/lib/nixos/internal/shared.nix") myLib;
     in
-    builtins.sort builtins.lessThan shared.coreArgNames == builtins.sort builtins.lessThan (
-      builtins.attrNames (builtins.functionArgs shared.mkContextCore)
-    );
+    builtins.all (n: builtins.elem n shared.allowedDefaultArgs) shared.coreArgNames;
 
   # the allowlist and its documentation cannot drift: every allowlisted
   # name must appear backtick-quoted in the buildNixosConfigurations doc

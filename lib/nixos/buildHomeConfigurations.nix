@@ -80,9 +80,10 @@ in
   */
   buildHomeConfigurations =
     hosts:
-    # The very same plan buildNixosConfigurations uses: one split, one
-    # `_defaults` merge, one context core. Previously each build* computed
-    # its own core from the same `_defaults`, so a flake exporting both
-    # outputs paid for two full nixpkgs evaluations.
+    # Built from a plan, exactly as buildNixosConfigurations is: one split,
+    # one `_defaults` merge, one context core per host. Calling both
+    # builders still plans twice -- `buildConfigurations` is the entry point
+    # that plans ONCE and projects both outputs from it, and is what a flake
+    # exporting nixosConfigurations and homeConfigurations should use.
     shared.homesFromPlan "buildHomeConfigurations" (shared.planHosts "buildHomeConfigurations" hosts);
 }

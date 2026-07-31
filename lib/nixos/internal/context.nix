@@ -264,9 +264,11 @@ let
       );
     in
     {
-      # marker: mkContext refuses a `_core` it did not produce, so a
-      # hand-passed one cannot silently swap the package set the whole
-      # system is built from
+      # marker: mkContext refuses any `_core` without it. That catches the
+      # accident (a `_core` key copied into a host entry, an attrset passed
+      # through by mistake) rather than a forgery -- someone who sets this
+      # marker by hand has read this line and chosen to swap the package
+      # set the whole system is built from.
       __mkContextCore = true;
       inherit
         lib

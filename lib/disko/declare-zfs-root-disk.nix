@@ -212,10 +212,20 @@
         }
       );
 
+      # A bare `listOfUsernames = "foo"` -- the natural typo, since a lone
+      # string is a legal ELEMENT -- otherwise reached forEach and produced
+      # Nix's own "expected a list but found a string", which names neither
+      # the argument nor this function and cannot be caught by tryEval.
+      checked_listOfUsernames =
+        if builtins.isList listOfUsernames then
+          listOfUsernames
+        else
+          throw "declareZfsRootDisk: `listOfUsernames` must be a list, but is a value of type `${builtins.typeOf listOfUsernames}`. A single user is still a list: `listOfUsernames = [ \"foo\" ];`.";
+
       # listToAttrs keeps the LAST entry for a repeated key, so two entries
       # for the same user -- with different mountpoints, say -- would have
       # silently collapsed into whichever came last.
-      zfs_user_folders = lib.lists.forEach listOfUsernames gen_zfs_user_folder;
+      zfs_user_folders = lib.lists.forEach checked_listOfUsernames gen_zfs_user_folder;
       duplicate_user_datasets =
         let
           names = map (e: e.name) zfs_user_folders;

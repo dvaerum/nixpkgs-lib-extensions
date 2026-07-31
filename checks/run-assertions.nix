@@ -24,9 +24,13 @@ let
   lib = pkgs.lib;
 
   # A value that neither passes nor explains itself is reported as a plain
-  # failure; `tryEval` keeps a throwing assertion from taking the rest with
-  # it. Only WHNF is forced -- an assertion returning a deep structure is
-  # the check author's business, not ours.
+  # failure; `tryEval` keeps a THROWING assertion from taking the rest with
+  # it. Only `throw` and `assert` are catchable -- a type error (attrNames
+  # on a list, calling a non-function) still aborts the whole check with
+  # Nix's own message and no assertion name. That is why the library
+  # validates argument SHAPE with `throw` rather than letting a bad value
+  # reach the code that indexes it: it is the difference between a named
+  # failure here and an unattributable one.
   verdict =
     value:
     let
