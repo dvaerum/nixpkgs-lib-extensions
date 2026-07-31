@@ -269,8 +269,29 @@ let
     cases: name: v:
     let
       case = classifyCase cases name;
+      # The function form was the ONE unvalidated shape: a typo in a
+      # returned channel name (`nixosModuls`) contributed nothing, silently,
+      # while the identical typo in the attrset form throws by name -- and
+      # the whole point of the function form is exports under nonstandard
+      # paths, so silence is the worst possible answer. Returning the
+      # modules directly instead of wrapping them gave a bare "expected a
+      # set but found a list" naming neither the input nor the argument.
+      remapped =
+        let
+          r = case.remap v;
+        in
+        if !(builtins.isAttrs r) then
+          throw ''nixpkgs-lib-extensions: inputContributions."${name}" is a function, so it must RETURN an attrset mapping this input onto the convention attributes (e.g. `v: { nixosModules = v.modules.nixos; }`) -- it returned a value of type `${builtins.typeOf r}`.''
+        else
+          let
+            bad = builtins.filter (k: !(builtins.elem k channelNames)) (builtins.attrNames r);
+          in
+          if bad == [ ] then
+            r
+          else
+            throw ''nixpkgs-lib-extensions: inputContributions."${name}" returned unknown channel(s) ${shownList bad} (typo?). Valid channels: ${shownList channelNames}.'';
     in
-    if builtins.isAttrs v && case.remap != null then v // case.remap v else v;
+    if builtins.isAttrs v && case.remap != null then v // remapped else v;
 
   # Deduplicate the PATH elements of a collected module/overlay list,
   # keeping every non-path element as-is (order preserved). A blanket

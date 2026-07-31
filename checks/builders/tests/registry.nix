@@ -135,4 +135,53 @@
     in
     sys._module.specialArgs.listOfUsernames == [ ]
     && !(sys.config.systemd.user.services ? home-manager-bootstrap);
+
+  # ── registry keys that cannot match anything ──
+  # `"alice@"` was dropped by usersFromRegistry (its host part matches no
+  # host and not `*`) while registryUserNames kept `alice`, so the two
+  # parsers disagreed: loginHomes = [ "alice" ] passed validation for a user
+  # no host had, and the system built and booted WITHOUT the user.
+  registry-key-empty-host-throws =
+    !(builtins.tryEval (
+      builtins.attrNames (
+        myLib.buildNixosConfigurations {
+          h = {
+            inherit inputs system;
+            userRegistry."alice@" = exampleDir + "/users/alice";
+            loginHomes = [ "alice" ];
+          };
+        }
+      )
+    )).success;
+
+  # `"@laptop"` is the mirror image: it produced a real account named "",
+  # a group named "", and (via declareZfsRootDisk) a dataset `HOME/`
+  registry-key-empty-user-throws =
+    !(builtins.tryEval (
+      builtins.attrNames (
+        myLib.buildNixosConfigurations {
+          laptop = {
+            inherit inputs system;
+            userRegistry."@laptop" = exampleDir + "/users/alice";
+          };
+        }
+      )
+    )).success;
+
+  # ... while the legitimate forms keep working
+  registry-key-forms-still-accepted =
+    (myLib.buildNixosConfigurations {
+      laptop = {
+        inherit inputs system;
+        userRegistry = {
+          "alice" = exampleDir + "/users/alice";
+          "bob@laptop" = exampleDir + "/users/bob";
+          "frank@*" = exampleDir + "/users/frank-base";
+        };
+      };
+    }).laptop._module.specialArgs.listOfUsernames == [
+      "alice"
+      "bob"
+      "frank"
+    ];
 }

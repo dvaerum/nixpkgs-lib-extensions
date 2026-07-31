@@ -8,8 +8,66 @@
 # file keeps the same shape so their imports stay uniform).
 extLib:
 let
+  # for lowercasing the first character of a suggested key name
+  upperAZ = [
+    "A"
+    "B"
+    "C"
+    "D"
+    "E"
+    "F"
+    "G"
+    "H"
+    "I"
+    "J"
+    "K"
+    "L"
+    "M"
+    "N"
+    "O"
+    "P"
+    "Q"
+    "R"
+    "S"
+    "T"
+    "U"
+    "V"
+    "W"
+    "X"
+    "Y"
+    "Z"
+  ];
+  lowerAZ = [
+    "a"
+    "b"
+    "c"
+    "d"
+    "e"
+    "f"
+    "g"
+    "h"
+    "i"
+    "j"
+    "k"
+    "l"
+    "m"
+    "n"
+    "o"
+    "p"
+    "q"
+    "r"
+    "s"
+    "t"
+    "u"
+    "v"
+    "w"
+    "x"
+    "y"
+    "z"
+  ];
+
   inherit (import ./context.nix extLib) coreArgNames mkContextCore;
-  inherit (import ./registry.nix extLib) validateLoginUsers loginUsersWithHome;
+  inherit (import ./registry.nix extLib) validateLoginUsers validateRegistryKeys loginUsersWithHome;
   inherit (import ./inputs.nix extLib) detectHomeManager;
 
   # ONE hosts attrset is meant to feed BOTH buildNixosConfigurations and
@@ -146,35 +204,61 @@ let
       hostEntries = builtins.removeAttrs hosts (
         builtins.filter (k: builtins.substring 0 1 k == "_") (builtins.attrNames hosts)
       );
+      badHostShapes = builtins.concatLists (
+        builtins.attrValues (
+          builtins.mapAttrs (
+            hostname: args:
+            if !(builtins.isAttrs args) then
+              [
+                "- `${hostname}`: a host entry must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf args}`. (The host's own configuration is found by convention at hosts/${hostname}.nix -- it is not passed here.)"
+              ]
+            else if args ? extra && !(builtins.isAttrs args.extra) then
+              [
+                "- `${hostname}`: `extra` must be an attribute set of builder arguments to ADD, but is a value of type `${builtins.typeOf args.extra}`."
+              ]
+            else
+              [ ]
+          ) hostEntries
+        )
+      );
       badHostKeys = builtins.concatLists (
         builtins.attrValues (
           builtins.mapAttrs (
             hostname: args:
-            map (
-              k:
-              "- `${hostname}`: `${k}` is not a builder argument (typo?). Host entries accept: ${builtins.concatStringsSep ", " allowedHostArgs}."
-            ) (builtins.filter (k: !(builtins.elem k allowedHostArgs)) (builtins.attrNames args))
-            ++
-              map
-                (
-                  k:
-                  "- `${hostname}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults`."
-                )
-                (
-                  builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames (args.extra or { }))
-                )
-            ++ (
-              if args ? hostname && args.hostname != hostname then
-                [
-                  "- `${hostname}`: also sets `hostname = \"${args.hostname}\"`. The attribute key is the hostname; drop the inner one."
-                ]
-              else
-                [ ]
-            )
+            if !(builtins.isAttrs args) then
+              [ ]
+            else
+              map (
+                k:
+                "- `${hostname}`: `${k}` is not a builder argument (typo?). Host entries accept: ${builtins.concatStringsSep ", " allowedHostArgs}."
+              ) (builtins.filter (k: !(builtins.elem k allowedHostArgs)) (builtins.attrNames args))
+              ++
+                map
+                  (
+                    k:
+                    "- `${hostname}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults`."
+                  )
+                  (
+                    builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (
+                      # guarded: a non-attrset `extra` is reported by
+                      # badHostShapes, and attrNames on it here would be an
+                      # uncatchable TYPE error raised while the problem list is
+                      # still being assembled
+                      if builtins.isAttrs (args.extra or { }) then builtins.attrNames (args.extra or { }) else [ ]
+                    )
+                  )
+              ++ (
+                if args ? hostname && args.hostname != hostname then
+                  [
+                    "- `${hostname}`: also sets `hostname = \"${args.hostname}\"`. The attribute key is the hostname; drop the inner one."
+                  ]
+                else
+                  [ ]
+              )
           ) hostEntries
         )
       );
-      problems = badReserved ++ badDefaults ++ badHostKeys;
+      problems = badReserved ++ badDefaults ++ badHostShapes ++ badHostKeys;
     in
     if problems != [ ] then
       throw ''
@@ -249,13 +333,51 @@ let
         }) coreArgNames
       );
       # A host shares the defaults' core when every core argument it
-      # mentions has the SAME VALUE as the default. Mere PRESENCE used to
-      # disqualify it, so writing `inherit inputs system;` inside each host
-      # entry -- the most natural thing to write -- silently gave every host
-      # its own nixpkgs evaluation: 25 of them on a 25-host fleet, with no
-      # signal. The comparison is tryEval-guarded because two structurally
-      # equal attrsets holding functions cannot be compared at all, and
-      # "cannot tell" must fall back to "own core", never to "share".
+      # mentions resolves to the SAME VALUE the defaults would give. Mere
+      # PRESENCE used to disqualify it, so writing `inherit inputs system;`
+      # inside each host entry -- the most natural thing to write --
+      # silently gave every host its own nixpkgs evaluation.
+      #
+      # Compared against the EFFECTIVE default, not against `null`: when
+      # `_defaults` omits a core argument, a host writing the builder's own
+      # documented default (`nixpkgsConfig = { }`, `extraOverlays = [ ]`,
+      # `patches = [ ]`) would otherwise be compared with null and lose the
+      # core for documenting itself.
+      coreDefaults = builtins.functionArgs mkContextCore;
+      effectiveDefault =
+        n:
+        if split.defaults ? ${n} then
+          { v = split.defaults.${n}; }
+        # functionArgs reports `true` for a formal WITH a default but cannot
+        # give its value, so only the ones we can name are compared.
+        else if n == "nixpkgsConfig" then
+          { v = { }; }
+        else if n == "extraOverlays" || n == "patches" || n == "allowedUnfreePackages" then
+          { v = [ ]; }
+        else if n == "permittedInsecurePackages" then
+          { v = [ ]; }
+        else if n == "inputContributions" then
+          { v = { }; }
+        else if n == "homeManager" then
+          { v = null; }
+        else
+          null;
+      # Cheap identity first: flake inputs carry `outPath`, so two of them
+      # are the same tree iff those match. Plain `==` on genuinely different
+      # same-size attrsets descends arbitrarily deep -- a probe comparing
+      # two nixpkgs instantiations took ~6 seconds and forced thousands of
+      # attributes this library is otherwise careful never to force.
+      sameValue =
+        a: b:
+        if builtins.isAttrs a && builtins.isAttrs b && a ? outPath && b ? outPath then
+          a.outPath == b.outPath
+        else
+          # `==` does NOT throw on functions (it returns false); tryEval is
+          # here only for a `throw` embedded in the compared data.
+          let
+            probe = builtins.tryEval (a == b);
+          in
+          probe.success && probe.value;
       sharesCore =
         entry:
         # `extra` touching a core argument always means a new core: it ADDS
@@ -264,39 +386,84 @@ let
         && builtins.all (
           n:
           let
-            probe = builtins.tryEval (entry.${n} == (split.defaults.${n} or null));
+            d = effectiveDefault n;
           in
-          probe.success && probe.value
+          d != null && sameValue entry.${n} d.v
         ) (builtins.attrNames (builtins.intersectAttrs coreArgSet entry));
 
       # A bare key replaces; `extra.<key>` adds to whatever the merge
       # produced. Lists concatenate, attrsets merge with `extra` winning a
       # key conflict, anything else is replaced -- the same semantics the
       # two `additional*` twins had, generalised to every argument.
+      # like lib.recursiveUpdate, which internal files cannot reach
+      recursiveUpdateAttrs =
+        lhs: rhs:
+        lhs
+        // builtins.mapAttrs (
+          k: v:
+          if builtins.isAttrs v && builtins.isAttrs (lhs.${k} or null) then
+            recursiveUpdateAttrs lhs.${k} v
+          else
+            v
+        ) rhs;
       combine =
-        base: add:
+        hostname: key: base: add:
         if builtins.isList base && builtins.isList add then
           base ++ add
         else if builtins.isAttrs base && builtins.isAttrs add then
-          base // add
+          # recursiveUpdate, not `//`: `inputContributions` is two levels
+          # (input -> channel), so a shallow merge let
+          # `extra.inputContributions.vendor.overlays = null;` replace the
+          # whole per-input entry and silently drop a sibling
+          # `nixosModules` selection -- the wrong modules got imported with
+          # no error, because the fallback rule happens to succeed.
+          recursiveUpdateAttrs base add
+        # `else add` is right for scalars (hostGroup, userModule, ...), but
+        # it also used to catch base and add being DIFFERENT container
+        # kinds, which is never a deliberate "add" -- it silently threw the
+        # fleet-wide base away.
+        else if
+          builtins.isList base != builtins.isList add || builtins.isAttrs base != builtins.isAttrs add
+        then
+          throw "${fnName}: host `${hostname}`: `extra.${key}` is a ${builtins.typeOf add} but the value it must add to is a ${builtins.typeOf base}. `extra` ADDS to the merged value (lists concatenate, attrsets merge); to replace it outright, set `${key}` directly on the host."
         else
           add;
       applyExtra =
-        merged: extra:
+        hostname: merged: extra:
         builtins.foldl' (
-          acc: k: acc // { ${k} = if acc ? ${k} then combine acc.${k} extra.${k} else extra.${k}; }
+          acc: k:
+          acc
+          // {
+            ${k} = if acc ? ${k} then combine hostname k acc.${k} extra.${k} else extra.${k};
+          }
         ) merged (builtins.attrNames extra);
     in
-    builtins.mapAttrs (hostname: entry: {
-      args = applyExtra (
-        split.defaults // (builtins.removeAttrs entry [ "extra" ]) // { inherit hostname; }
-      ) (entry.extra or { });
-      core = if sharesCore entry then defaultsCore else null;
-    }) split.hostEntries;
+    builtins.mapAttrs (
+      hostname: entry:
+      let
+        args = applyExtra hostname (
+          split.defaults // (builtins.removeAttrs entry [ "extra" ]) // { inherit hostname; }
+        ) (entry.extra or { });
+        rawRegistry = args.userRegistry or { };
+      in
+      {
+        inherit args;
+        # ALWAYS a core, never null. With null the builder recomputed one --
+        # and so did EVERY homeConfigurationsBuilder call for that host, so
+        # a non-sharing host with 4 login homes paid for 5 nixpkgs
+        # evaluations. Computing it once per plan entry moves that back to
+        # one. Lazy, so a host nobody forces still costs nothing.
+        core = if sharesCore entry then defaultsCore else mkContextCore args;
+        # `null` is a documented value for userRegistry; normalized ONCE
+        # here so every consumer of the plan sees an attrset.
+        registry = if rawRegistry == null then { } else rawRegistry;
+      }
+    ) split.hostEntries;
 
-  # A plan entry's arguments, with the shared core attached when it has one.
-  # `_core` is internal plumbing, never something a consumer writes.
-  withCore = p: p.args // (if p.core != null then { _core = p.core; } else { });
+  # A plan entry's arguments with its context core attached. `_core` is
+  # internal plumbing, never something a consumer writes -- mkContext
+  # refuses one it did not produce.
+  withCore = p: p.args // { _core = p.core; };
 
   # A loginHomes typo is otherwise silent: the home flips to the
   # system-managed mechanism and everything still builds and boots. Only
@@ -305,15 +472,18 @@ let
   # at all is a typo.
   planLoginUsers =
     fnName: plan:
-    validateLoginUsers fnName (
-      builtins.attrValues (
-        builtins.mapAttrs (hostname: p: {
-          inherit hostname;
-          registry = p.args.userRegistry or { };
-          loginHomes = p.args.loginHomes or [ ];
-        }) plan
-      )
-    );
+    builtins.seq (validateRegistryKeys fnName (map (p: p.registry) (builtins.attrValues plan)))
+      validateLoginUsers
+      fnName
+      (
+        builtins.attrValues (
+          builtins.mapAttrs (hostname: p: {
+            inherit hostname;
+            registry = p.args.userRegistry or { };
+            loginHomes = p.args.loginHomes or [ ];
+          }) plan
+        )
+      );
 
   # The two projections of a plan. Kept here so buildNixosConfigurations,
   # buildHomeConfigurations and buildConfigurations are literally the same
@@ -331,10 +501,8 @@ let
         acc: hostname:
         let
           p = plan.${hostname};
-          rawRegistry = p.args.userRegistry or { };
-          registry = if rawRegistry == null then { } else rawRegistry;
           # login-managed users that actually ship a home.nix on this host
-          usersHome = loginUsersWithHome registry hostname (p.args.loginHomes or [ ]);
+          usersHome = loginUsersWithHome p.registry hostname (p.args.loginHomes or [ ]);
         in
         # a host with no home-manager contributes nothing. An explicit
         # `homeManager` counts as having one WITHOUT re-running detection --

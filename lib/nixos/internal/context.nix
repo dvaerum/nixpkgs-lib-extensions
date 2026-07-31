@@ -347,7 +347,17 @@ let
       # override promise was never true anyway -- `listOfUsernames` and
       # `username` are layered after specialArgs and cannot be overridden.
       # So: say so. Everything NOT owned here still passes through freely.
-      shadowed = builtins.attrNames (builtins.intersectAttrs builderOwned specialArgs);
+      # `listOfUsernames` and `username` are layered AFTER specialArgs by
+      # both builders, so a specialArg of either name is silently discarded
+      # -- the two names this check's own comment cites as proof the
+      # override promise was false. Reserved here so they throw like the
+      # rest instead of being the exception that teaches "silence means
+      # accepted".
+      reserved = builderOwned // {
+        listOfUsernames = null;
+        username = null;
+      };
+      shadowed = builtins.attrNames (builtins.intersectAttrs reserved specialArgs);
       shadowCheck =
         if shadowed == [ ] then
           null

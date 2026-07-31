@@ -92,6 +92,55 @@ let
       nixosModules = nonNull (map (p: p.nixosModule) parts);
     };
 
+  # A registry key that can never match anything, or that names an empty
+  # user. `usersFromRegistry` drops `"alice@"` (its host part matches no
+  # host and not `*`) while `registryUserNames` keeps `alice` -- so the two
+  # parsers disagreed and `loginHomes = [ "alice" ]` passed validation for a
+  # user no host had. `"@laptop"` is the mirror image: it produced a real
+  # account named "" , a group named "", and a ZFS dataset `HOME/`.
+  badRegistryKey =
+    key:
+    let
+      m = builtins.match "(.*)@(.*)" key;
+    in
+    if key == "" then
+      "the empty string is not a user name"
+    else if m == null then
+      null
+    else if builtins.head m == "" then
+      "it has no user before the `@`"
+    else if builtins.elemAt m 1 == "" then
+      "it has no host after the `@` (write `${builtins.head m}` for every host, or `${builtins.head m}@*`)"
+    else
+      null;
+
+  validateRegistryKeys =
+    fnName: registries:
+    let
+      problems = builtins.concatLists (
+        map (
+          r:
+          builtins.concatLists (
+            map (
+              key:
+              let
+                bad = badRegistryKey key;
+              in
+              if bad == null then [ ] else [ "- `${key}`: ${bad}." ]
+            ) (builtins.attrNames r)
+          )
+        ) registries
+      );
+    in
+    if problems == [ ] then
+      null
+    else
+      throw ''
+        ${fnName}: unusable userRegistry key(s):
+        ${builtins.concatStringsSep "
+" problems}
+      '';
+
   # The users of a host, derived from the registry keys: "<user>@<host>" entries
   # for this host, "<user>@*" wildcard entries (every host), plus plain
   # "<user>" fallback entries (any host). Deduplicated (and sorted) via the
@@ -207,5 +256,6 @@ in
     usersWithHome
     loginUsersWithHome
     validateLoginUsers
+    validateRegistryKeys
     ;
 }

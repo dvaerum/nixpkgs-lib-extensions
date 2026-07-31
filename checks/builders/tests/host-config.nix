@@ -199,4 +199,53 @@
   # (the `patches` argument has its own check: checks/nixpkgs-patching.nix,
   # split out because verifying it is import-from-derivation over the whole
   # nixpkgs tree and blocked every cheap assertion here)
+
+  # `listOfUsernames` and `username` are layered AFTER specialArgs, so a
+  # specialArg of either name was silently discarded -- the two names the
+  # shadow check's own comment cites as proof the override promise was
+  # false, and the only ones it did not cover
+  reserved-layered-names-shadow-throws =
+    let
+      shadows =
+        name: value:
+        !(builtins.tryEval (
+          builtins.attrNames
+            (myLib.nixosConfigurationsBuilder {
+              inherit inputs system;
+              hostname = "reservedprobe";
+              modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+              specialArgs.${name} = value;
+            })._module.specialArgs
+        )).success;
+    in
+    shadows "listOfUsernames" [ "injected" ] && shadows "username" "root";
+
+  # a host entry that is not an attrset used to die with a bare
+  # "expected a set but found a path" naming neither the function nor the
+  # host -- and `laptop = ./hosts/laptop.nix;` is a natural thing to write
+  # given this library's own hosts/<hostname>.nix convention
+  host-entry-shape-throws =
+    !(builtins.tryEval (
+      builtins.attrNames (myLib.buildNixosConfigurations { laptop = exampleDir + "/hosts/laptop.nix"; })
+    )).success;
+  host-extra-shape-throws =
+    !(builtins.tryEval (builtins.attrNames (myLib.buildNixosConfigurations { laptop.extra = [ 1 ]; })))
+    .success;
+
+  # `extra.<key>` ADDS; a type mismatch is never a deliberate add, and it
+  # used to silently REPLACE the fleet-wide base (a forgotten pair of
+  # brackets turned allowedUnfreePackages into a string, with the malformed
+  # nixpkgs.config only biting much later)
+  extra-type-mismatch-throws =
+    !(builtins.tryEval (
+      (myLib.buildNixosConfigurations {
+        _defaults = {
+          inherit inputs system;
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+          allowedUnfreePackages = [ "vscode" ];
+        };
+        laptop.extra.allowedUnfreePackages = "steam";
+      }).laptop.pkgs.config.allowUnfreePredicate
+        { pname = "steam"; }
+    )).success;
 }
