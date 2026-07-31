@@ -7,9 +7,9 @@
 #   mkContextCore  the host-INDEPENDENT part, a function of the core
 #                  arguments only (coreArgNames below) -- this is where
 #                  the expensive `import nixpkgs { ... }` happens
-#   mkContext      the per-host layer on top (mySpecialArguments); it
-#                  either computes a core itself or reuses one passed in
-#                  via the internal `_core` argument, which is how
+#   mkContext      the per-host layer on top (mySpecialArguments); its
+#                  FIRST parameter is the core -- `null` to compute one,
+#                  or one planHosts already built, which is how
 #                  buildNixosConfigurations/buildHomeConfigurations share
 #                  ONE core across all hosts that stick to the defaults
 #
@@ -264,12 +264,6 @@ let
       );
     in
     {
-      # marker: mkContext refuses any `_core` without it. That catches the
-      # accident (a `_core` key copied into a host entry, an attrset passed
-      # through by mistake) rather than a forgery -- someone who sets this
-      # marker by hand has read this line and chosen to swap the package
-      # set the whole system is built from.
-      __mkContextCore = true;
       inherit
         lib
         pkgs
@@ -287,10 +281,20 @@ let
   # Shared context: everything the builders need (lib, pkgs, specialArgs and the
   # auto-collected module/overlay sets). Builder-specific arguments are ignored
   # here via `...`. Adds the per-host layer (mySpecialArguments) on top of a
-  # context core -- one passed in via `_core` (internal plumbing of the
-  # build* functions; MUST have been built from the same core arguments),
-  # or computed here from the arguments otherwise.
+  # context core, which arrives as the FIRST parameter: `null` to compute one
+  # from these arguments, or a core planHosts already built from the same
+  # ones, so hosts sharing `_defaults` share one nixpkgs evaluation.
+  #
+  # It used to arrive as a `_core` KEY in the argument attrset, which meant it
+  # was reachable from any public builder call: the argument allowlist had to
+  # wave every `_`-prefixed key through, and a core needed a marker attribute
+  # plus a throw so a hand-passed one could not silently swap the package set
+  # the whole system is built from. As a parameter of an internal function it
+  # is simply out of reach, and all three could go.
+  mkContextCoreOrGiven = core: args: if core == null then mkContextCore args else core;
+
   mkContext =
+    givenCore:
     {
       inputs,
       hostname,
@@ -304,24 +308,13 @@ let
         inputs.self
           or (throw "nixpkgs-lib-extensions: `rootPath` was not given and `inputs.self` is missing, so the hosts/<hostname> convention and the rootPath specialArg have no root. Pass `rootPath` explicitly or include `self` in `inputs`.")
       ),
-      _core ? null,
       ...
     }@args:
     let
-      # `_core` is internal plumbing between planHosts and the builders, and
-      # the ONE thing a consumer must not be able to do is hand in a core
-      # built from different arguments -- the system would then be built
-      # against a `pkgs` that has nothing to do with what it asked for, with
-      # no error anywhere. mkContextCore stamps every core it produces;
-      # anything else is refused. (It cannot catch a STALE core of our own,
-      # which is why planHosts is the only thing that ever passes one.)
-      core =
-        if _core == null then
-          mkContextCore args
-        else if _core.__mkContextCore or false then
-          _core
-        else
-          throw "nixpkgs-lib-extensions: `_core` is internal plumbing of buildConfigurations/buildNixosConfigurations/buildHomeConfigurations and must not be passed by hand; it selects the package set the whole system is built from.";
+      # A STALE core -- one built from DIFFERENT arguments than these -- is
+      # still not detectable here, which is why planHosts is the only caller
+      # that ever passes one.
+      core = mkContextCoreOrGiven givenCore args;
 
       # The whole `inputs` set is exposed so modules can reach anything not
       # covered by the generic conventions (e.g. inputs.fenix) themselves --

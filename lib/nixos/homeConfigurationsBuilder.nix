@@ -97,68 +97,9 @@ in
     permittedInsecurePackages, rootPath, homeManager, inputContributions
     : Shared options (see `nixosConfigurationsBuilder`).
   */
+  # See nixosConfigurationsBuilder: validate here, delegate with no core.
+  # `username` is this builder's own argument, hence the extra allowance.
   homeConfigurationsBuilder =
-    {
-      inputs,
-      hostname,
-      system,
-      username,
-      userRegistry ? { },
-      homeModules ? [ ],
-      ...
-    }@args:
-    let
-      # throws on unknown argument names -- forced via the seq below
-      validArgs = shared.validateBuilderArgs "homeConfigurationsBuilder" [ "username" ] args;
-      ctx = shared.mkContext validArgs;
-      inherit (ctx)
-        lib
-        pkgs
-        mySpecialArguments
-        home-manager
-        autoHomeModules
-        ;
-
-      registry = if userRegistry == null then { } else userRegistry;
-      registryHomeModules = (shared.resolveUser registry hostname username).homeModules;
-    in
-    builtins.seq validArgs (
-      if home-manager == null then
-        throw ''
-          homeConfigurationsBuilder: no home-manager input found (detected
-          by capability: an input whose `lib` has `homeManagerConfiguration`).
-        ''
-      else if registryHomeModules == [ ] then
-        throw ''
-          homeConfigurationsBuilder: `${username}` has no home.nix in
-          `userRegistry` matching host `${hostname}` (unmatched keys,
-          or a system-only entry shipping just a configuration.nix).
-        ''
-      else
-        home-manager.lib.homeManagerConfiguration {
-          # `lib` explicitly: home-manager re-fixes the module lib via
-          # lib.extend, so it must start from the context lib (extLib,
-          # input extendLibs and namespaced input libs are all inside its
-          # fixed point) -- with the default pkgs.lib the namespaced input
-          # libs would be lost in that re-fix
-          inherit pkgs lib;
-          extraSpecialArgs = mySpecialArguments // {
-            inherit username;
-            listOfUsernames = shared.usersFromRegistry registry hostname;
-          };
-          modules =
-            autoHomeModules
-            ++ homeModules
-            # all matched home.nix files: "<user>@*" and "<user>@<host>" merge
-            ++ registryHomeModules
-            ++ [
-              {
-                _file = ./homeConfigurationsBuilder.nix;
-                home.username = lib.mkDefault username;
-                home.homeDirectory = lib.mkDefault "/home/${username}";
-                home.stateVersion = lib.mkDefault lib.trivial.release;
-              }
-            ];
-        }
-    );
+    args:
+    shared.mkHome null (shared.validateBuilderArgs "homeConfigurationsBuilder" [ "username" ] args);
 }

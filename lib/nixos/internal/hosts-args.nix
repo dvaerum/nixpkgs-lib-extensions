@@ -66,6 +66,8 @@ let
   ];
 
   inherit (import ./context.nix { inherit lib self; }) coreArgNames mkContextCore;
+  inherit (import ./mk-system.nix { inherit lib self; }) mkSystem;
+  inherit (import ./mk-home.nix { inherit lib self; }) mkHome;
   inherit (import ./registry.nix { inherit lib self; })
     validateLoginUsers
     validateRegistryKeys
@@ -126,9 +128,12 @@ let
       # builder ever runs. A direct call takes the already-merged arguments,
       # so accepting it here would silently drop whatever it carried.
       allowed = builtins.filter (k: k != "extra") allowedHostArgs ++ extraAllowed;
-      bad = builtins.filter (k: !(builtins.elem k allowed) && builtins.substring 0 1 k != "_") (
-        builtins.attrNames args
-      );
+      # No `_`-prefix escape hatch. It existed so planHosts could pass
+      # `_core` through this very allowlist; the core is an explicit
+      # parameter of the internal mkSystem/mkHome now, so every unknown key
+      # is reported -- including a `_defaults` written inside a host entry
+      # instead of beside it, which used to be accepted and ignored.
+      bad = builtins.filter (k: !(builtins.elem k allowed)) (builtins.attrNames args);
     in
     if bad == [ ] then
       [ ]
@@ -463,11 +468,6 @@ let
       }
     ) split.hostEntries;
 
-  # A plan entry's arguments with its context core attached. `_core` is
-  # internal plumbing, never something a consumer writes -- mkContext
-  # refuses one it did not produce.
-  withCore = p: p.args // { _core = p.core; };
-
   # A loginHomes typo is otherwise silent: the home flips to the
   # system-managed mechanism and everything still builds and boots. Only
   # checkable from a PLAN, where every host's registry is in view -- a name
@@ -493,9 +493,7 @@ let
   # code applied to the same plan.
   systemsFromPlan =
     fnName: plan:
-    builtins.seq (planLoginUsers fnName plan) (
-      builtins.mapAttrs (_: p: self.nixosConfigurationsBuilder (withCore p)) plan
-    );
+    builtins.seq (planLoginUsers fnName plan) (builtins.mapAttrs (_: p: mkSystem p.core p.args) plan);
 
   homesFromPlan =
     fnName: plan:
@@ -517,7 +515,7 @@ let
           // builtins.listToAttrs (
             map (username: {
               name = "${username}@${hostname}";
-              value = self.homeConfigurationsBuilder (withCore p // { inherit username; });
+              value = mkHome p.core (p.args // { inherit username; });
             }) usersHome
           )
       ) { } (builtins.attrNames plan)

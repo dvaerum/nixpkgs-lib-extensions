@@ -12,8 +12,15 @@
   fixturesDir,
   invalidFixturesDir,
   exampleDir,
+  repoDir,
   ...
 }:
+let
+  shared = import (repoDir + "/lib/nixos/internal/shared.nix") {
+    inherit lib;
+    self = myLib;
+  };
+in
 {
   hostname-set = laptop.config.networking.hostName == "laptop";
 
@@ -111,6 +118,19 @@
           };
         }).shadowprobe2._module.specialArgs
     )).success;
+
+  # `_`-prefixed keys are no longer waved through the builder allowlist.
+  # They were, so that planHosts could smuggle `_core` past it; the core is
+  # an explicit parameter of the internal mkSystem now, so a `_defaults`
+  # written INSIDE a host entry (rather than beside it) is reported instead
+  # of silently accepted and ignored.
+  underscore-key-not-waved-through =
+    let
+      problems = shared.builderArgProblems "probe" [ ] {
+        _defaults = { };
+      };
+    in
+    builtins.any (p: lib.hasInfix "_defaults" p) problems;
 
   # ... and `extra` in a DIRECT builder call is refused rather than
   # silently dropped: there is nothing to layer onto there

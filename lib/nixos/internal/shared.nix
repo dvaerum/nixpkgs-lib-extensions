@@ -16,6 +16,8 @@
 #                  conventions, inputContributions classification/selection)
 #   registry.nix   userRegistry resolution (matching, validation, user lists)
 #   context.nix    the shared evaluation context (mkContext)
+#   mk-system.nix  the nixosConfigurationsBuilder implementation (mkSystem)
+#   mk-home.nix    the homeConfigurationsBuilder implementation (mkHome)
 #   hosts-args.nix argument allowlists and hosts-attrset validation
 #
 # Like the builder files each of them takes the loader's `{ lib, self, ... }`:
@@ -34,6 +36,8 @@
     validateLoginUsers
     ;
   inherit (import ./context.nix { inherit lib self; }) coreArgNames mkContextCore mkContext;
+  inherit (import ./mk-system.nix { inherit lib self; }) mkSystem;
+  inherit (import ./mk-home.nix { inherit lib self; }) mkHome;
   inherit (import ./hosts-args.nix { inherit lib self; })
     allowedDefaultArgs
     validateBuilderArgs
