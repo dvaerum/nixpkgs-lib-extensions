@@ -107,11 +107,11 @@ in
   */
   buildNixosConfigurations =
     hosts:
-    # validation (allowlists, hostname conflicts) is shared with
-    # buildHomeConfigurations: one hosts attrset feeds both
-    # `planHosts` does the split, the `_defaults` merge and the
-    # context-core decision once; `buildHomeConfigurations` and
-    # `buildConfigurations` use the very same plan.
+    # `planHosts` does the split, the `_defaults` merge, the validation and
+    # the context-core decision; `systemsFromPlan` is one of its two
+    # projections. buildHomeConfigurations runs the SAME code over its own
+    # plan of the same hosts attrset -- only `buildConfigurations` plans
+    # once and takes both projections from it.
     shared.systemsFromPlan "buildNixosConfigurations" (
       shared.planHosts "buildNixosConfigurations" hosts
     );

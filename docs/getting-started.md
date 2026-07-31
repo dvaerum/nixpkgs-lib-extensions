@@ -197,6 +197,10 @@ are also available separately as `buildNixosConfigurations` and
 first is a trap: a `loginHomes` user's home is resolved at their first
 login, so a missing `homeConfigurations` output fails *then*, on a
 booted machine, rather than at build time. One call cannot forget half.
+It is also cheaper: each build function plans its hosts independently, so
+calling both by hand evaluates the shared host-independent context twice
+-- for a fleet, two full nixpkgs evaluations. `buildConfigurations` plans
+once and takes both outputs from that one plan.
 
 Later snippets in this guide assume these bindings (`extLib`,
 `inputs`, `system`, the registry) from this skeleton.
