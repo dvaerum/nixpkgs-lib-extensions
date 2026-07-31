@@ -1,3 +1,6 @@
+# Loaded by lib/default.nix under the one calling convention: `self` is the
+# fully assembled nixpkgs-lib-extensions lib (a fixed point), `lib` is nixpkgs'.
+{ ... }:
 {
   /**
     Import a path only when it contains valid, importable Nix; otherwise

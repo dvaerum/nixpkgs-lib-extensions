@@ -1,8 +1,8 @@
-# This file is a function-file: the lib loader (lib/default.nix) applies it to
-# `extLib` — the fully assembled nixpkgs-lib-extensions lib.
-extLib:
+# Loaded by lib/default.nix under the one calling convention: `self` is the
+# fully assembled nixpkgs-lib-extensions lib (a fixed point), `lib` is nixpkgs'.
+{ self, lib, ... }:
 let
-  shared = import ./internal/shared.nix extLib;
+  shared = import ./internal/shared.nix { inherit lib self; };
 in
 {
   /**

@@ -1,6 +1,6 @@
-# This file is a function-file: the lib loader (lib/default.nix) applies it
-# to `extLib` so it can delegate to its sibling `importIfNixOr`.
-extLib: {
+# Loaded by lib/default.nix under the one calling convention: `self` is the
+# fully assembled nixpkgs-lib-extensions lib (a fixed point), `lib` is nixpkgs'.
+{ self, ... }: {
   /**
     Import a path only when it contains valid, importable Nix; otherwise
     return `{ }` (a harmless no-op module) with a warning naming the
@@ -43,5 +43,5 @@ extLib: {
     path
     : The path (or absolute path string) to inspect and maybe import.
   */
-  importIfNix = pkgs: path: extLib.importIfNixOr pkgs path { };
+  importIfNix = pkgs: path: self.importIfNixOr pkgs path { };
 }

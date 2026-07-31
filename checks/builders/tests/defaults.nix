@@ -39,7 +39,10 @@ let
 
   throws = expr: !(builtins.tryEval (builtins.attrNames expr)).success;
 
-  shared = import (repoDir + "/lib/nixos/internal/shared.nix") myLib;
+  shared = import (repoDir + "/lib/nixos/internal/shared.nix") {
+    inherit lib;
+    self = myLib;
+  };
   # `throws` alone cannot say WHICH error fired -- tryEval discards the
   # message, so an unrelated failure elsewhere in the expression satisfies
   # it just as well. These assert on the complaint itself.
@@ -367,7 +370,10 @@ in
   # built without their value.
   core-args-are-settable-by-hosts =
     let
-      shared = import (repoDir + "/lib/nixos/internal/shared.nix") myLib;
+      shared = import (repoDir + "/lib/nixos/internal/shared.nix") {
+        inherit lib;
+        self = myLib;
+      };
     in
     builtins.all (n: builtins.elem n shared.allowedDefaultArgs) shared.coreArgNames;
 
@@ -378,7 +384,10 @@ in
   allowlist-documented =
     let
       doc = builtins.readFile (repoDir + "/lib/nixos/buildNixosConfigurations.nix");
-      shared = import (repoDir + "/lib/nixos/internal/shared.nix") myLib;
+      shared = import (repoDir + "/lib/nixos/internal/shared.nix") {
+        inherit lib;
+        self = myLib;
+      };
     in
     builtins.all (n: lib.hasInfix "`${n}`" doc) shared.allowedDefaultArgs;
 

@@ -4,10 +4,9 @@
 # `inputContributions` entry narrows or replaces them. One of the four
 # concern-files aggregated by ./shared.nix.
 #
-# Like the builder files it is a function of `extLib` — the fully
-# assembled nixpkgs-lib-extensions lib (unused here, but every internal
-# file keeps the same shape so their imports stay uniform).
-extLib:
+# Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully
+# assembled nixpkgs-lib-extensions lib.
+{ lib, self, ... }:
 let
   shownList = names: builtins.concatStringsSep ", " names;
 

@@ -1,10 +1,12 @@
 # Shared helpers for the builders in lib/nixos (nixosConfigurationsBuilder,
 # homeConfigurationsBuilder and homeManagerBootstrapModule).
 #
-# This file lives in a subfolder so the lib loader (lib/default.nix) does not
-# pick it up as part of the public lib; the builder files import it directly:
+# This file is PRIVATE because lib/default.nix does not list it: the loader
+# publishes exactly the files it names, and nothing under internal/ is named.
+# The builder files import it directly:
 #
-#   extLib: let shared = import ./internal/shared.nix extLib; in { ... }
+#   { self, lib, ... }:
+#   let shared = import ./internal/shared.nix { inherit lib self; }; in { ... }
 #
 # It is a thin AGGREGATOR: the implementations live in sibling files,
 # grouped by concern, and this file only re-exports their union so the
@@ -16,22 +18,23 @@
 #   context.nix    the shared evaluation context (mkContext)
 #   hosts-args.nix argument allowlists and hosts-attrset validation
 #
-# Like the builder files each of them is a function of `extLib` — the fully
-# assembled nixpkgs-lib-extensions lib.
+# Like the builder files each of them takes the loader's `{ lib, self, ... }`:
+# nixpkgs' lib, and the fully assembled nixpkgs-lib-extensions lib.
 # Only what the builder files (and the tests) actually consume is
 # re-exported: a name here that nothing imports is dead weight that reads
 # like public surface.
-extLib: {
-  inherit (import ./inputs.nix extLib) detectHomeManager;
-  inherit (import ./registry.nix extLib)
+{ lib, self, ... }:
+{
+  inherit (import ./inputs.nix { inherit lib self; }) detectHomeManager;
+  inherit (import ./registry.nix { inherit lib self; })
     resolveUser
     usersFromRegistry
     usersWithHome
     loginUsersWithHome
     validateLoginUsers
     ;
-  inherit (import ./context.nix extLib) coreArgNames mkContextCore mkContext;
-  inherit (import ./hosts-args.nix extLib)
+  inherit (import ./context.nix { inherit lib self; }) coreArgNames mkContextCore mkContext;
+  inherit (import ./hosts-args.nix { inherit lib self; })
     allowedDefaultArgs
     validateBuilderArgs
     builderArgProblems

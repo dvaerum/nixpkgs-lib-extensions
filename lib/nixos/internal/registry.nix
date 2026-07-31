@@ -3,9 +3,9 @@
 # user lists from the registry keys. One of the four concern-files
 # aggregated by ./shared.nix.
 #
-# Like the builder files it is a function of `extLib` — the fully
+# Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully
 # assembled nixpkgs-lib-extensions lib.
-extLib:
+{ lib, self, ... }:
 let
 
   # Registry values must be directories: a path literal or an absolute string

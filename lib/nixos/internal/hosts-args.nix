@@ -3,10 +3,9 @@
 # by buildNixosConfigurations/buildHomeConfigurations. One of the four
 # concern-files aggregated by ./shared.nix.
 #
-# Like the builder files it is a function of `extLib` — the fully
-# assembled nixpkgs-lib-extensions lib (unused here, but every internal
-# file keeps the same shape so their imports stay uniform).
-extLib:
+# Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully
+# assembled nixpkgs-lib-extensions lib.
+{ lib, self, ... }:
 let
   # for lowercasing the first character of a suggested key name
   upperAZ = [
@@ -66,9 +65,13 @@ let
     "z"
   ];
 
-  inherit (import ./context.nix extLib) coreArgNames mkContextCore;
-  inherit (import ./registry.nix extLib) validateLoginUsers validateRegistryKeys loginUsersWithHome;
-  inherit (import ./inputs.nix extLib) detectHomeManager;
+  inherit (import ./context.nix { inherit lib self; }) coreArgNames mkContextCore;
+  inherit (import ./registry.nix { inherit lib self; })
+    validateLoginUsers
+    validateRegistryKeys
+    loginUsersWithHome
+    ;
+  inherit (import ./inputs.nix { inherit lib self; }) detectHomeManager;
 
   # ONE hosts attrset is meant to feed BOTH buildNixosConfigurations and
   # buildHomeConfigurations, so both validate against the same allowlists:
@@ -491,7 +494,7 @@ let
   systemsFromPlan =
     fnName: plan:
     builtins.seq (planLoginUsers fnName plan) (
-      builtins.mapAttrs (_: p: extLib.nixosConfigurationsBuilder (withCore p)) plan
+      builtins.mapAttrs (_: p: self.nixosConfigurationsBuilder (withCore p)) plan
     );
 
   homesFromPlan =
@@ -514,7 +517,7 @@ let
           // builtins.listToAttrs (
             map (username: {
               name = "${username}@${hostname}";
-              value = extLib.homeConfigurationsBuilder (withCore p // { inherit username; });
+              value = self.homeConfigurationsBuilder (withCore p // { inherit username; });
             }) usersHome
           )
       ) { } (builtins.attrNames plan)

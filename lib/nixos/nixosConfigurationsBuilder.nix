@@ -1,9 +1,9 @@
-# This file is a function-file: the lib loader (lib/default.nix) applies it to
-# `extLib` — the fully assembled nixpkgs-lib-extensions lib. Shared machinery
-# lives in ./internal/shared.nix.
-extLib:
+# Loaded by lib/default.nix under the one calling convention: `self` is the
+# fully assembled nixpkgs-lib-extensions lib (a fixed point), `lib` is nixpkgs'.
+# Shared machinery lives in ./internal/shared.nix.
+{ self, lib, ... }:
 let
-  shared = import ./internal/shared.nix extLib;
+  shared = import ./internal/shared.nix { inherit lib self; };
 in
 {
   /**
@@ -322,7 +322,7 @@ in
       hostname,
       system,
       modules ? [ ],
-      userModule ? extLib.normalUserModule,
+      userModule ? self.normalUserModule,
       userRegistry ? { },
       loginHomes ? [ ],
       homeModules ? [ ],
@@ -444,7 +444,7 @@ in
       # first login -- the flake must export those homeConfigurations
       # outputs (see buildHomeConfigurations). Self-gating: empty module
       # when no login user matches or no home-manager input exists.
-      bootstrapModule = extLib.homeManagerBootstrapModule {
+      bootstrapModule = self.homeManagerBootstrapModule {
         inherit
           inputs
           hostname

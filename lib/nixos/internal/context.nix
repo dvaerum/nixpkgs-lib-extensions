@@ -13,11 +13,11 @@
 #                  buildNixosConfigurations/buildHomeConfigurations share
 #                  ONE core across all hosts that stick to the defaults
 #
-# Like the builder files it is a function of `extLib` — the fully
+# Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully
 # assembled nixpkgs-lib-extensions lib.
-extLib:
+{ lib, self, ... }:
 let
-  inherit (import ./inputs.nix extLib)
+  inherit (import ./inputs.nix { inherit lib self; })
     detectHomeManager
     libOf
     channelEnabled
@@ -76,7 +76,7 @@ let
         selectionsChecked
         ;
 
-      # Extend the system lib with this repo's own extensions (`extLib`, always
+      # Extend the system lib with this repo's own extensions (`self`, always
       # available since the builders are part of nixpkgs-lib-extensions) plus any
       # other input that exposes an `extendLib` function.
       # `channelEnabled` FIRST, like the `lib` channel below: behind the
@@ -91,7 +91,7 @@ let
         ) conventionInputs
       );
       extendedLib = baseLib.foldl' (acc: ext: acc.extend (final: prev: ext prev)) (baseLib.extend (
-        final: prev: baseLib.recursiveUpdate prev extLib
+        final: prev: baseLib.recursiveUpdate prev self
       )) libExtenders;
 
       # Each input's standalone `lib` export, namespaced by input name:
@@ -125,12 +125,12 @@ let
         else
           raw;
 
-      # Namespaces this repo OWNS: extLib's folder namespaces that nixpkgs'
+      # Namespaces this repo OWNS: this lib's own namespaces that nixpkgs'
       # lib does not also define (e.g. `disko`, `nixos`, `imports` -- but
       # not `strings` or `attrsets`, which exist in nixpkgs too). These are
       # the only legitimate merge targets for an input's lib export.
-      ownedNamespaces = builtins.filter (n: baseLib.isAttrs extLib.${n} && !(baseLib ? ${n})) (
-        builtins.attrNames extLib
+      ownedNamespaces = builtins.filter (n: baseLib.isAttrs self.${n} && !(baseLib ? ${n})) (
+        builtins.attrNames self
       );
 
       # Overwrite detection, per collision class:
@@ -335,10 +335,12 @@ let
           inputs
           rootPath
           tags
-          extLib
           hostGroup
           ;
         inherit (core) inputPkgs;
+        # the specialArg keeps its user-facing name; its value is the lib
+        # loader's fixed point
+        extLib = self;
       }
       // core.pkgsFromInputs;
 
