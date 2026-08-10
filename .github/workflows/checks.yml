@@ -3,11 +3,13 @@ name: Flake Checks
 on:
   # push covers only main (the merge target); pull_request covers PR
   # branches. The old `push: branches: '**'` ran every PR twice -- once
-  # per trigger.
+  # per trigger. Deliberate consequence: a branch push without an open PR
+  # gets no CI -- open a PR, or use the manual dispatch below.
   push:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 
 # a superseded run of the same ref is cancelled, not raced
 concurrency:
@@ -29,6 +31,13 @@ jobs:
         uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+          # for the aarch64 EVALUATION step below: the suite contains IFD
+          # (importIfNix parse probes, applyPatches), so evaluating the
+          # aarch64 checks must BUILD those derivations as aarch64-linux --
+          # nix only accepts them as local builds with the platform listed
+          # here (the daemon reads this at install time)
+          extra_nix_config: |
+            extra-platforms = aarch64-linux
 
       # Nix store persisted through the GitHub Actions cache -- the
       # zero-config option: no secrets, unlike cachix (auth token), and
@@ -49,6 +58,17 @@ jobs:
       - name: Run flake checks
         run: |
           nix --extra-experimental-features 'nix-command flakes' flake check --print-build-logs
+
+      # the aarch64 evaluation is NOT pure evaluation: its IFD derivations
+      # (see the Install Nix comment) actually run aarch64 binaries, and
+      # stock ubuntu runners ship no aarch64 binfmt -- register qemu user
+      # emulation so those builds can execute. The action installs the
+      # handlers with the fix-binary (F) flag, so they keep working inside
+      # nix build sandboxes.
+      - name: Register qemu user emulation for aarch64
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
 
       # cross-system coverage: evaluate (not build) every check for the
       # other supported systems -- the check names are derived from the
