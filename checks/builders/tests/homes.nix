@@ -76,6 +76,26 @@
       "bob@laptop"
     ];
 
+  # `userRegistry = null` is a documented value: a null-registry host in
+  # the same plan as a loginHomes host must not crash the plan-wide
+  # loginHomes validation (it read the RAW argument, and null slipped
+  # through `or` into lib.attrNames as a bare type error)
+  null-registry-host-beside-login-host =
+    builtins.attrNames (
+      myLib.buildHomeConfigurations {
+        _defaults = {
+          inherit inputs system;
+        };
+        laptop = {
+          userRegistry."alice" = exampleDir + "/users/alice";
+          loginHomes = [ "alice" ];
+        };
+        bare = {
+          userRegistry = null;
+        };
+      }
+    ) == [ "alice@laptop" ];
+
   # an explicit `homeManager` is honored by the hosts-level builder too: it
   # exists to BYPASS capability detection, so the per-host gate must not
   # re-run detection over `inputs` and silently return { }
@@ -143,6 +163,29 @@
     && probe.config.home.stateVersion == lib.trivial.release;
   # homeModules (set in the example's _defaults) reach login homes
   home-shared-modules-applied = aliceHome.config.programs.direnv.enable;
+
+  # the warning's own fleet-wide recipe -- a shared homeModules entry
+  # pinning via mkDefault -- must BEAT the builder's default, not collide
+  # with it at equal priority: the default sits below mkDefault (1250)
+  home-state-version-mkdefault-pin-wins =
+    let
+      probe = myLib.mkHomeConfiguration {
+        inherit inputs system;
+        hostname = "laptop";
+        username = "unpinned";
+        userRegistry."unpinned" = fixturesDir + "/unpinned-home";
+        homeModules = [
+          (
+            { lib, ... }:
+            {
+              home.stateVersion = lib.mkDefault "25.05";
+            }
+          )
+        ];
+      };
+    in
+    probe.config.home.stateVersion == "25.05"
+    && !(builtins.any (w: lib.hasInfix "home.stateVersion" w) probe.config.warnings);
 
   # ... and throws when the matched registry entries ship no home.nix at
   # all (eve is a system-only user: configuration.nix, no home.nix)

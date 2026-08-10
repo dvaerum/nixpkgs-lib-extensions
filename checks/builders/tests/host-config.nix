@@ -228,6 +228,21 @@ in
     # ... and only then: an untouched host carries no such warning
     && !(builtins.any (w: lib.hasInfix "nixpkgs.hostPlatform" w) laptop.config.warnings);
 
+  # a module's own mkDefault definition must WARN too, not collide with
+  # the builder's pin at equal priority: the pin sits below mkDefault
+  # (mkOverride 1250), so the module's value wins the (ignored) option and
+  # the priority probe still sees a foreign definition
+  module-level-host-platform-mkdefault-warns =
+    builtins.any (w: lib.hasInfix "nixpkgs.hostPlatform" w)
+      (myLib.mkNixosSystem {
+        inherit inputs system;
+        hostname = "platformprobe2";
+        modules = [
+          (exampleDir + "/hosts/server/configuration.nix")
+          ({ lib, ... }: { nixpkgs.hostPlatform = lib.mkDefault "aarch64-linux"; })
+        ];
+      }).config.warnings;
+
   # ... while `nixpkgs.config` genuinely cannot be set that way: nixpkgs
   # asserts it must be empty when an externally built pkgs is passed in, so
   # the `nixpkgsConfig` builder argument is the only route for it.

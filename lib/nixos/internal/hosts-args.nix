@@ -505,7 +505,11 @@ let
         lib.attrValues (
           lib.mapAttrs (hostname: p: {
             inherit hostname;
-            registry = p.args.userRegistry or { };
+            # the plan's NORMALIZED registry: `userRegistry = null` is a
+            # documented value, and `p.args.userRegistry or { }` waves the
+            # null through `or` -- straight into lib.attrNames, as a bare
+            # type error naming no function and no host
+            registry = p.registry;
             loginHomes = p.args.loginHomes or [ ];
           }) plan
         )

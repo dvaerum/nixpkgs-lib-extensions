@@ -210,7 +210,11 @@ in
             {
               _file = ../mk-nixos-system.nix;
               networking.hostName = lib.mkDefault hostname;
-              nixpkgs.hostPlatform = lib.mkDefault system;
+              # mkOverride 1250, not mkDefault: a module's own mkDefault
+              # definition would otherwise sit at EQUAL priority and
+              # collide with this pin instead of winning it (and then
+              # being warned about below)
+              nixpkgs.hostPlatform = lib.mkOverride 1250 system;
               # host tags label the boot entry too -- the MERGED option value,
               # so tags contributed by modules land there as well; a host
               # setting the option itself overrides this
@@ -233,12 +237,13 @@ in
               # injected, so a module defining one deserves a word.
               # Detected by definition PRIORITY, not isDefined: an option
               # DEFAULT registers as an (mkOptionDefault) definition too,
-              # so anything beating the builder's own mkDefault pin above
+              # so anything beating the builder's own 1250 pin above
               # (for hostPlatform) or the option default (for
               # buildPlatform; upstream's hasBuildPlatform does the same)
-              # is a foreign definition.
+              # is a foreign definition -- a module's plain or mkDefault
+              # definition alike.
               warnings =
-                lib.optional (options.nixpkgs.hostPlatform.highestPrio < (lib.mkDefault null).priority)
+                lib.optional (options.nixpkgs.hostPlatform.highestPrio < (lib.mkOverride 1250 null).priority)
                   "mkNixosSystem: host `${hostname}`: a module sets `nixpkgs.hostPlatform`, which is IGNORED: the builder passes an externally built package set (`nixpkgs.pkgs`), whose platform comes from the builder's `system` argument. Set that argument instead."
                 ++
                   lib.optional (options.nixpkgs.buildPlatform.highestPrio < (lib.mkOptionDefault null).priority)
