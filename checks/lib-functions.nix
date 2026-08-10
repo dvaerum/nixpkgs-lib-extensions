@@ -19,6 +19,9 @@ let
     string-to-title-sentence = myLib.stringToTitle "hello world" == "Hello world";
     string-to-title-word = myLib.stringToTitle "foobar" == "Foobar";
     string-to-title-empty = myLib.stringToTitle "" == "";
+    # the documented difference from nixpkgs' toSentenceCase: the tail is
+    # preserved, not lower-cased
+    string-to-title-tail-preserved = myLib.stringToTitle "fooBar" == "FooBar";
 
     recursive-merge-mixed =
       myLib.recursiveMerge [

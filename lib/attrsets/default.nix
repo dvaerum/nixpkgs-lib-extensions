@@ -14,7 +14,9 @@
     - Mixed types: last value wins (rightmost)
 
     # Type
+    ```
     recursiveMerge :: [AttrSet] -> AttrSet
+    ```
 
     # Arguments
     attrList

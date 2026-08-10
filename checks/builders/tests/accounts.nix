@@ -7,6 +7,7 @@
   system,
   laptop,
   exampleDir,
+  fixturesDir,
   ...
 }:
 let
@@ -83,6 +84,45 @@ in
     && cfg.users.users.root.group == "root"
     && cfg.users.users.root.shell != null
     && builtins.all (a: a.assertion) cfg.assertions;
+  # normalUserModule reads the MERGED uid (config.users.users.<name>.uid)
+  # while defining entries the same merge feeds, so recursion-freedom is a
+  # property to PIN, not to assume: a registry user whose own
+  # configuration.nix pins a uid must still evaluate, on either side of
+  # the 1000 boundary. Below it (999) the module contributes nothing --
+  # no isNormalUser on a system account; at 1000 it must still fire.
+  # `builtins.all` over cfg.assertions forces the full account wiring.
+  uid-999-registry-pin-stays-system =
+    let
+      cfg =
+        (myLib.mkNixosSystem {
+          inherit inputs system;
+          hostname = "uid999";
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+          userRegistry."svc" = fixturesDir + "/uid-999";
+        }).config;
+    in
+    cfg.users.users.svc.uid == 999
+    && !cfg.users.users.svc.isNormalUser
+    && cfg.users.users.svc.isSystemUser
+    && cfg.users.users.svc.group == "svc"
+    && builtins.all (a: a.assertion) cfg.assertions;
+
+  uid-1000-registry-pin-gets-normal =
+    let
+      cfg =
+        (myLib.mkNixosSystem {
+          inherit inputs system;
+          hostname = "uid1000";
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+          userRegistry."meg" = fixturesDir + "/uid-1000";
+        }).config;
+    in
+    cfg.users.users.meg.uid == 1000
+    && cfg.users.users.meg.isNormalUser
+    && cfg.users.users.meg.group == "meg"
+    && cfg.users.groups ? meg
+    && builtins.all (a: a.assertion) cfg.assertions;
+
   # the default userModule (normalUserModule) creates an account for
   # every derived user, including system-only eve
   user-accounts-created =

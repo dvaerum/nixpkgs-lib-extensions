@@ -737,6 +737,30 @@ When NOT to use it: to change or fix a single package, an overlay
 for what overlays cannot express: NixOS module fixes and other
 eval-level changes.
 
+## Deploying the fleet
+
+The outputs are standard `nixosConfigurations` -- nothing about them is
+specific to this library -- so anything that consumes a flake's
+`nixosConfigurations` composes as-is:
+
+```
+# plain nixos-rebuild from an admin machine
+nixos-rebuild switch --flake .#server --target-host root@server
+```
+
+deploy-rs and colmena work the same way: point their node definitions at
+the same flake (deploy-rs activates a `nixosConfigurations` entry
+directly; colmena's flake mode can wrap one via
+`colmena.<name>.imports`), and derive the node list from the one hosts
+attrset instead of maintaining a second copy of the fleet.
+
+For selection conventions, each host's tags are readable from the
+outside as
+`nixosConfigurations.<host>.config.nixpkgsLibExtensions.tags` (the
+merged option value, also labeling the boot menu via
+`system.nixos.tags`) -- a deploy script can pick "every host tagged
+`server`" by filtering the flake outputs over that list.
+
 ## Gotchas
 
 - **Untracked files are invisible to flakes.** `git add` new user
