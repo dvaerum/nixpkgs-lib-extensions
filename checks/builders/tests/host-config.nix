@@ -38,12 +38,12 @@ in
   # `modules` in the example
   auto-host-file-module = laptop.config.fileSystems."/".device == "/dev/sda1";
   auto-host-dir-module = server.config.fileSystems."/".device == "/dev/vda1";
-  # with hostGroup set the lookup moves under hosts/<hostGroup>/ ...
+  # with `group` set the lookup moves under hosts/<group>/ ...
   typed-host-convention =
     (myLib.mkNixosSystem {
       inherit inputs system;
       hostname = "typedhost";
-      hostGroup = "vm";
+      group = "vm";
       rootPath = fixturesDir + "/typed-root";
     }).config.users.groups ? typed-host-marker;
   # ... and without it the type folders are NOT searched (the same host
@@ -56,6 +56,33 @@ in
         rootPath = fixturesDir + "/typed-root";
       }).config.users.groups ? typed-host-marker
     );
+  # `hostFolder` decouples the two jobs `group` bundles: it alone selects
+  # the folder segment, while the classification keeps saying whatever
+  # `group` says (here: something with NO folder of its own)
+  host-folder-overrides-group =
+    let
+      sys = myLib.mkNixosSystem {
+        inherit inputs system;
+        hostname = "typedhost";
+        group = "does-not-exist-as-folder";
+        hostFolder = "vm";
+        rootPath = fixturesDir + "/typed-root";
+      };
+    in
+    sys.config.users.groups ? typed-host-marker
+    && sys.config.nixpkgsLibExtensions.group == "does-not-exist-as-folder";
+  # ... and works without any `group` at all: folder selection with a
+  # null classification
+  host-folder-without-group =
+    let
+      sys = myLib.mkNixosSystem {
+        inherit inputs system;
+        hostname = "typedhost";
+        hostFolder = "vm";
+        rootPath = fixturesDir + "/typed-root";
+      };
+    in
+    sys.config.users.groups ? typed-host-marker && sys.config.nixpkgsLibExtensions.group == null;
 
   # both forms existing for one host is ambiguous -> throw
   ambiguous-host-config-throws =
@@ -87,7 +114,11 @@ in
   # tags also label the boot entry (mkDefault); no tags -> NixOS default []
   tags-set-as-system-nixos-tags =
     custom.config.system.nixos.tags == [ "kitchen-sink" ] && laptop.config.system.nixos.tags == [ ];
-  host-group-option = custom.config.nixpkgsLibExtensions.hostGroup == "server";
+  host-group-option = custom.config.nixpkgsLibExtensions.group == "server";
+  # the option's pre-1.0.0 path is a tombstone: reading it throws (with
+  # the renamed path in the message; text pinned in ext-options.nix tests)
+  host-group-option-tombstone =
+    !(builtins.tryEval custom.config.nixpkgsLibExtensions.hostGroup).success;
   # a specialArg the builder does not own passes through untouched
   special-args-passed-through = custom._module.specialArgs.probeArg == "from-special-args";
 

@@ -291,11 +291,11 @@ let
     ];
     # selecting NOTHING for a channel is the per-input opt-out
     inputContributions."fake-module-input".nixosModules = null;
-    extraOverlays = [ (final: prev: { from-extra-overlay = "yes"; }) ];
+    overlays = [ (final: prev: { from-extra-overlay = "yes"; }) ];
     allowedUnfreePackages = [ "allowed-unfree" ];
     tags = [ "kitchen-sink" ];
     nixpkgsConfig.cudaSupport = true;
-    hostGroup = "server";
+    group = "server";
     # user-supplied specialArgs ride alongside the builder-assembled ones;
     # a builder-OWNED name throws instead (special-args-shadow-throws)
     specialArgs.probeArg = "from-special-args";

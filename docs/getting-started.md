@@ -232,13 +232,39 @@ your flake root:
 
 Both existing at once is an error. Anything extra goes in `modules`.
 
-With many machines, group them by kind: set `hostGroup = "vm";` on a
+With many machines, group them by kind: set `group = "vm";` on a
 host and the lookup moves one folder deeper, to
 `hosts/vm/<hostname>.nix` (or `hosts/vm/<hostname>/configuration.nix`).
 The value also reaches your modules as
-`config.nixpkgsLibExtensions.hostGroup`, so shared modules can branch
-on it. Without `hostGroup` nothing changes -- no extra subfolder is
-consulted.
+`config.nixpkgsLibExtensions.group`, so shared modules can branch
+on it. Without `group` nothing changes -- no extra subfolder is
+consulted. When the folder layout should NOT follow the
+classification, `hostFolder = "vm";` selects the folder segment on its
+own, whatever `group` says. (Before 1.0.0 both jobs were one argument,
+`hostGroup`; the old name throws naming `group`.)
+
+A group can also carry shared ARGUMENTS: a reserved `_groups.<name>`
+entry in the hosts attrset is merged between `_defaults` and every
+host declaring `group = "<name>";` -- later layers win per argument,
+and a group entry's `extra` slot ADDS to the `_defaults` values just
+like a host's does:
+
+```nix
+hosts = {
+  _defaults = { inherit inputs system; };
+  _groups.server = {
+    tags = [ "headless" ];
+    extra.modules = [ ./common/server.nix ];  # _defaults.modules PLUS this
+  };
+  web1 = { group = "server"; };
+  web2 = { group = "server"; };
+  laptop = { };                               # no group, no layer
+};
+```
+
+When `_groups` is present, a host's `group` must name one of its
+entries (a typo throws, listing the declared groups); without
+`_groups`, `group` is just the free-form classification.
 
 ## Accounts
 
@@ -581,7 +607,7 @@ in every home (both mechanisms):
 | Option | Content |
 |--------|---------|
 | `nixpkgsLibExtensions.tags` | host tags; modules can ADD tags (list definitions merge) |
-| `nixpkgsLibExtensions.hostGroup` | the call argument of the same name (read-only) |
+| `nixpkgsLibExtensions.group` | the call argument of the same name (read-only; `nixpkgsLibExtensions.hostGroup` is its pre-1.0.0 path and throws) |
 | `nixpkgsLibExtensions.users` | the host's registry-derived users (read-only) |
 | `nixpkgsLibExtensions.inputPkgs.<name>` | every input's packages, pre-selected for the host's system (read-only) |
 | `nixpkgsLibExtensions.channels.<variant>` | package set per `nixpkgs-*` input (read-only) |
@@ -661,12 +687,16 @@ laptop = {
   tags = [ "gpu" ];
   # merged into nixpkgs.config
   nixpkgsConfig = { cudaSupport = true; };
-  # unfree package names to allow
+  # unfree package names to allow -- shorthand for the nixpkgsConfig
+  # recipe: nixpkgsConfig.allowUnfreePredicate =
+  #   pkg: builtins.elem (lib.getName pkg) [ "steam" ];
   allowedUnfreePackages = [ "steam" ];
+  # (permittedInsecurePackages is the same kind of shorthand, for
+  #  nixpkgsConfig.permittedInsecurePackages = [ ... ];)
   # applied to the nixpkgs SOURCE via applyPatches
   patches = [ ./patches/fix.patch ];
   # on top of the auto-collected input overlays
-  extraOverlays = [ (final: prev: { myPkg = prev.hello; }) ];
+  overlays = [ (final: prev: { myPkg = prev.hello; }) ];
 };
 ```
 
@@ -701,7 +731,7 @@ same reason a host with `patches` fails to evaluate at all under
 during-evaluation build).
 
 When NOT to use it: to change or fix a single package, an overlay
-(`extraOverlays`) is lighter and needs no source copy. Patches are
+(`overlays`) is lighter and needs no source copy. Patches are
 for what overlays cannot express: NixOS module fixes and other
 eval-level changes.
 

@@ -20,7 +20,7 @@ in
       userRegistry ? { },
       homeModules ? [ ],
       tags ? [ ],
-      hostGroup ? null,
+      group ? null,
       ...
     }@args:
     let
@@ -66,7 +66,7 @@ in
               # the same `nixpkgsLibExtensions.*` options a SYSTEM-managed
               # home gets via home-manager.sharedModules (mk-system.nix)
               (extHomeOptionsModule {
-                inherit hostname hostGroup tags;
+                inherit hostname group tags;
                 users = usersFromRegistry registry hostname;
                 inherit (ctx) inputPkgs channels;
               })

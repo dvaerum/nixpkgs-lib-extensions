@@ -122,7 +122,11 @@
           #   tags = [ "gpu" ];                      # also labels boot entries
           #   nixpkgsConfig = { cudaSupport = true; };
           #   allowedUnfreePackages = [ "steam" ];
-          #   extraOverlays = [ (final: prev: { myPkg = prev.hello; }) ];
+          #   overlays = [ (final: prev: { myPkg = prev.hello; }) ];
+          # With many similar hosts, shared per-kind arguments can live in
+          # a reserved `_groups.<name>` entry (merged between `_defaults`
+          # and the host), selected here with:
+          #   group = "server";
         };
 
         # A host without any user registry: no users, no bootstrap, no

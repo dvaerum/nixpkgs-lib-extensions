@@ -41,7 +41,8 @@ in
       loginFlakeRef ? null,
       loginReactivateEveryLogin ? false,
       tags ? [ ],
-      hostGroup ? null,
+      group ? null,
+      hostFolder ? null,
       ...
     }@args:
     let
@@ -62,7 +63,7 @@ in
       # `nixpkgsLibExtensions.*` options (plus `hostname` for the home
       # variant, where no networking.hostName exists).
       extOptionValues = {
-        inherit hostGroup tags users;
+        inherit group tags users;
         inherit (ctx) inputPkgs channels;
       };
 
@@ -138,12 +139,15 @@ in
       # The host's own configuration, by convention relative to `rootPath`
       # (default: the consuming flake, `inputs.self`): either
       # hosts/<hostname>.nix or hosts/<hostname>/configuration.nix -- and
-      # when `hostGroup` is set, grouped one level deeper under
-      # hosts/<hostGroup>/.
+      # when `group` (or its override `hostFolder`, which decouples the
+      # folder from the classification) is set, grouped one level deeper
+      # under hosts/<segment>/.
       autoHostModules =
         let
+          folderSegment = if hostFolder != null then hostFolder else group;
           hostsDir =
-            mySpecialArguments.rootPath + (if hostGroup == null then "/hosts" else "/hosts/${hostGroup}");
+            mySpecialArguments.rootPath
+            + (if folderSegment == null then "/hosts" else "/hosts/${folderSegment}");
           file = hostsDir + "/${hostname}.nix";
           dir = hostsDir + "/${hostname}/configuration.nix";
           fileExists = builtins.pathExists file;

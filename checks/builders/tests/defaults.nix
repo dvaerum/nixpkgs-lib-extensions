@@ -345,7 +345,7 @@ in
       built = myLib.buildNixosConfigurations {
         _defaults = {
           inherit inputs system;
-          extraOverlays = [ identityProbe ];
+          overlays = [ identityProbe ];
         };
         # overrides no core argument (tags is per-host layer): shares the core
         plainhost = {
@@ -364,7 +364,7 @@ in
         inherit inputs system;
         hostname = "plainhost";
         tags = [ "shared-core" ];
-        extraOverlays = [ identityProbe ];
+        overlays = [ identityProbe ];
       };
     in
     built.cudahost.pkgs.config.cudaSupport
@@ -471,4 +471,179 @@ in
       homesharedmodules = [ ];
     }
   );
+
+  # ── the 1.0.0 renames: tombstones at every argument door ──
+  # the old names are not typos, they are RENAMES -- the complaint names
+  # the replacement, in `_defaults` ...
+  renamed-extra-overlays-complaint = complains {
+    _defaults = {
+      extraOverlays = [ ];
+    };
+    h = { };
+  } "renamed to `overlays`";
+  # ... on a host entry ...
+  renamed-host-group-complaint = complains { h.hostGroup = "vm"; } "renamed to `group`";
+  # ... inside a host's `extra` slot ...
+  renamed-in-extra-complaint = complains {
+    h.extra.extraOverlays = [ ];
+  } "renamed to `overlays`";
+  # ... and at the direct-call door
+  direct-call-renamed-complaint = builtins.any (p: lib.hasInfix "renamed to `group`" p) (
+    shared.builderArgProblems "probe" [ ] {
+      inherit inputs system;
+      hostname = "x";
+      hostGroup = "vm";
+    }
+  );
+  # the tombstones THROW, not just complain
+  renamed-argument-throws = throws (
+    myLib.buildNixosConfigurations {
+      h = {
+        inherit inputs system;
+        hostGroup = "vm";
+      };
+    }
+  );
+
+  # ── `_groups.<name>`: the defaults layer between `_defaults` and the host ──
+  # the layer applies to hosts declaring the group, hosts win over it, it
+  # wins over `_defaults`, and hosts without a group are untouched
+  groups-layer-applies =
+    let
+      built = myLib.buildNixosConfigurations {
+        _defaults = {
+          inherit inputs system;
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+          tags = [ "default-tag" ];
+        };
+        _groups.server = {
+          tags = [ "server-tag" ];
+        };
+        web = {
+          group = "server";
+        };
+        override = {
+          group = "server";
+          tags = [ "host-tag" ];
+        };
+        plain = { };
+      };
+    in
+    built.web.config.nixpkgsLibExtensions.tags == [ "server-tag" ]
+    && built.web.config.nixpkgsLibExtensions.group == "server"
+    && built.override.config.nixpkgsLibExtensions.tags == [ "host-tag" ]
+    && built.plain.config.nixpkgsLibExtensions.tags == [ "default-tag" ]
+    && built.plain.config.nixpkgsLibExtensions.group == null;
+
+  # a group's `extra` ADDS to `_defaults` (like a host's does), and a
+  # host's own `extra` then layers on top of the combined value
+  groups-extra-layers =
+    let
+      built = myLib.buildNixosConfigurations {
+        _defaults = {
+          inherit inputs system;
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+          tags = [ "base" ];
+        };
+        _groups.server.extra.tags = [ "server" ];
+        web = {
+          group = "server";
+          extra.tags = [ "web" ];
+        };
+      };
+    in
+    built.web.config.nixpkgsLibExtensions.tags == [
+      "base"
+      "server"
+      "web"
+    ];
+
+  # `_defaults.group` opts every host into a layer; a host picks a
+  # different one (or none) by overriding `group`
+  groups-default-group-applies =
+    let
+      built = myLib.buildNixosConfigurations {
+        _defaults = {
+          inherit inputs system;
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+          group = "server";
+        };
+        _groups.server.tags = [ "server-tag" ];
+        web = { };
+        odd = {
+          group = null;
+        };
+      };
+    in
+    built.web.config.nixpkgsLibExtensions.tags == [ "server-tag" ]
+    && built.odd.config.nixpkgsLibExtensions.tags == [ ];
+
+  # a group layer can carry CORE arguments (nixpkgsConfig, ...): hosts of
+  # one group share one context core distinct from the defaults class
+  groups-carry-core-args =
+    let
+      built = myLib.buildNixosConfigurations {
+        _defaults = {
+          inherit inputs system;
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        };
+        _groups.cuda.nixpkgsConfig.cudaSupport = true;
+        gpu1 = {
+          group = "cuda";
+        };
+        plain = { };
+      };
+    in
+    built.gpu1.pkgs.config.cudaSupport && !built.plain.pkgs.config.cudaSupport;
+
+  # when `_groups` exists, a host's group must name one of its entries
+  groups-unknown-group-throws = throws (
+    myLib.buildNixosConfigurations {
+      _groups.server = { };
+      h = {
+        inherit inputs system;
+        group = "sever";
+      };
+    }
+  );
+  groups-unknown-group-complaint = complains {
+    _groups.server = { };
+    h.group = "sever";
+  } "names no `_groups` entry";
+  # ... while WITHOUT `_groups`, `group` stays the free-form
+  # classification it always was
+  groups-absent-keeps-group-free-form =
+    (myLib.buildNixosConfigurations {
+      h = {
+        inherit inputs system;
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        group = "anything";
+      };
+    }).h.config.nixpkgsLibExtensions.group == "anything";
+
+  # `_groups` entries are validated like `_defaults` ...
+  groups-entry-typo-complaint = complains {
+    _groups.server.homeConfiguration = { };
+    h = { };
+  } "Group entries accept the same names as `_defaults`";
+  # ... except `group` itself: a layer cannot re-classify
+  groups-entry-group-key-complaint = complains {
+    _groups.server.group = "other";
+    h = { };
+  } "cannot set `group`";
+  # ... and their `extra` keys are checked too
+  groups-extra-typo-complaint = complains {
+    _groups.server.extra.notAnArgument = [ ];
+    h = { };
+  } "`extra.notAnArgument` is not a builder argument";
+  # a non-attrset `_groups` (or entry) is named, not left to die inside
+  # builtins.attrNames
+  groups-non-attrset-complaint = complains {
+    _groups = [ "no" ];
+    h = { };
+  } "`_groups` must be an attribute set";
+  groups-entry-non-attrset-complaint = complains {
+    _groups.server = "no";
+    h = { };
+  } "`_groups.server`: must be an attribute set";
 }

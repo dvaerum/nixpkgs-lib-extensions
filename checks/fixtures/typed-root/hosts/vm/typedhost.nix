@@ -1,5 +1,5 @@
-# Host config for the hostGroup test: found via the typed convention
-# hosts/<hostGroup>/<hostname>.nix (here: hostGroup = "vm")
+# Host config for the `group`/`hostFolder` tests: found via the typed
+# convention hosts/<segment>/<hostname>.nix (here: segment = "vm")
 { ... }:
 {
   users.groups.typed-host-marker = { };

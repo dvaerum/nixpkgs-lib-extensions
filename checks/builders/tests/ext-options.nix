@@ -56,9 +56,9 @@ in
 {
   # ── the options hold the builder's values, in NixOS modules ──
   ext-options-hold-builder-values =
-    custom.config.nixpkgsLibExtensions.hostGroup == "server"
+    custom.config.nixpkgsLibExtensions.group == "server"
     && custom.config.nixpkgsLibExtensions.tags == [ "kitchen-sink" ]
-    && laptop.config.nixpkgsLibExtensions.hostGroup == null
+    && laptop.config.nixpkgsLibExtensions.group == null
     && laptop.config.nixpkgsLibExtensions.users == exampleUsers;
 
   # the canonical channels path mirrors the (legacy) pkgs-* specialArgs:
@@ -72,13 +72,13 @@ in
     (myLib.mkNixosSystem {
       inherit inputs system;
       hostname = "optread";
-      hostGroup = "vm";
+      group = "vm";
       modules = [
         (exampleDir + "/hosts/server/configuration.nix")
         (
           { config, ... }:
           {
-            users.groups."group-of-${config.nixpkgsLibExtensions.hostGroup}" = { };
+            users.groups."group-of-${config.nixpkgsLibExtensions.group}" = { };
           }
         )
       ];
@@ -124,8 +124,7 @@ in
   # read, so the probe forces the option itself.
   ext-host-group-read-only =
     !(builtins.tryEval
-      (probeSystem "roprobe" [ { nixpkgsLibExtensions.hostGroup = "vm"; } ])
-      .config.nixpkgsLibExtensions.hostGroup
+      (probeSystem "roprobe" [ { nixpkgsLibExtensions.group = "vm"; } ]).config.nixpkgsLibExtensions.group
     ).success;
   ext-users-read-only =
     !(builtins.tryEval
@@ -168,7 +167,7 @@ in
     extOpts.movedNixosSpecialArgs == {
       hostname = "config.networking.hostName";
       tags = "config.nixpkgsLibExtensions.tags";
-      hostGroup = "config.nixpkgsLibExtensions.hostGroup";
+      hostGroup = "config.nixpkgsLibExtensions.group";
       listOfUsernames = "config.nixpkgsLibExtensions.users";
       inputPkgs = "config.nixpkgsLibExtensions.inputPkgs";
     }
@@ -181,4 +180,11 @@ in
         extOpts.movedSpecialArgMessage name extOpts.movedNixosSpecialArgs.${name}
       )
     ) (builtins.attrNames extOpts.movedNixosSpecialArgs);
+
+  # the renamed OPTION path (`nixpkgsLibExtensions.hostGroup` ->
+  # `nixpkgsLibExtensions.group`, 1.0.0) is a tombstone too; tryEval
+  # discards the thrown text, so the pointer is pinned at the source
+  ext-host-group-option-tombstone-names-replacement =
+    lib.hasInfix "renamed to `nixpkgsLibExtensions.group`"
+      (builtins.readFile (repoDir + "/lib/nixos/internal/ext-options.nix"));
 }

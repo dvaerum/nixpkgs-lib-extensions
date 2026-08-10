@@ -53,7 +53,7 @@ let
   # cannot drift apart.
   coreDefaults = {
     patches = [ ];
-    extraOverlays = [ ];
+    overlays = [ ];
     allowedUnfreePackages = [ ];
     permittedInsecurePackages = [ ];
     nixpkgsConfig = { };
@@ -72,7 +72,7 @@ let
       system,
       nixpkgs ? inputs.nixpkgs,
       patches ? coreDefaults.patches,
-      extraOverlays ? coreDefaults.extraOverlays,
+      overlays ? coreDefaults.overlays,
       allowedUnfreePackages ? coreDefaults.allowedUnfreePackages,
       permittedInsecurePackages ? coreDefaults.permittedInsecurePackages,
       nixpkgsConfig ? coreDefaults.nixpkgsConfig,
@@ -260,10 +260,9 @@ let
         import src {
           inherit system;
           # the input-lib namespacing overlay sits between the collected
-          # input overlays and the caller's extraOverlays, so extraOverlays
-          # can still override pkgs.lib entirely
-          overlays =
-            autoOverlays ++ [ (final: prev: { lib = prev.lib // inputLibAdditions; }) ] ++ extraOverlays;
+          # input overlays and the caller's `overlays` argument, so the
+          # caller can still override pkgs.lib entirely
+          overlays = autoOverlays ++ [ (final: prev: { lib = prev.lib // inputLibAdditions; }) ] ++ overlays;
           config = pkgsConfig;
         };
 

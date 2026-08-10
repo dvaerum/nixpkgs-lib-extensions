@@ -41,9 +41,10 @@ let
     "loginFlakeRef"
     "loginReactivateEveryLogin"
     "tags"
-    "hostGroup"
+    "group"
+    "hostFolder"
     "patches"
-    "extraOverlays"
+    "overlays"
     "allowedUnfreePackages"
     "permittedInsecurePackages"
     "nixpkgsConfig"
@@ -51,6 +52,18 @@ let
     "homeManager"
     "inputContributions"
   ];
+
+  # Arguments renamed in 1.0.0: old name -> new name. The old names are
+  # tombstones at every door a builder argument can enter (direct calls,
+  # `_defaults`, host entries, `extra`): the complaint names the
+  # replacement instead of calling the name a typo.
+  renamedArgs = {
+    extraOverlays = "overlays";
+    hostGroup = "group";
+  };
+  renamedComplaint =
+    name:
+    "`${name}` was renamed to `${renamedArgs.${name}}` in 1.0.0 -- same behavior, new name (see CHANGELOG.md).";
   # `extra` is the ONE per-host layering slot: a bare key REPLACES the
   # default, `extra.<key>` ADDS to it. It replaced the two `additional*`
   # twins, which layered exactly two of the 21 arguments and left no way to
@@ -93,6 +106,10 @@ let
             else
               ""
           )
+          # a RENAMED name deserves its pointer, not just the typo verdict
+          + builtins.concatStringsSep "" (
+            map (n: " ${renamedComplaint n}") (builtins.filter (n: renamedArgs ? ${n}) bad)
+          )
           + " Accepted: ${builtins.concatStringsSep ", " allowed}."
         )
       ];
@@ -127,18 +144,21 @@ let
     fnName: hosts:
     let
       rawDefaults = hosts._defaults or { };
+      rawGroups = hosts._groups or { };
       # A hostname cannot START with `_`, which is what makes `_defaults`
-      # safe as a reserved key -- but nothing enforced the other direction,
-      # so `_default` / `_Defaults` / `_defualts` silently became a HOST and
-      # took every real host's shared arguments with it.
+      # and `_groups` safe as reserved keys -- but nothing enforced the
+      # other direction, so `_default` / `_Defaults` / `_defualts` silently
+      # became a HOST and took every real host's shared arguments with it.
       badReserved =
         map
           (
             k:
-            "- `${k}`: keys starting with `_` are reserved; a hostname cannot start with one. Did you mean `_defaults`?"
+            "- `${k}`: keys starting with `_` are reserved; a hostname cannot start with one. Did you mean `_defaults` or `_groups`?"
           )
           (
-            builtins.filter (k: k != "_defaults" && builtins.substring 0 1 k == "_") (builtins.attrNames hosts)
+            builtins.filter (k: k != "_defaults" && k != "_groups" && builtins.substring 0 1 k == "_") (
+              builtins.attrNames hosts
+            )
           );
       defaultComplaint =
         name:
@@ -150,12 +170,95 @@ let
           } = [ ... ];` (a bare key replaces, `extra.<key>` adds)."
         else if name == "extra" then
           "- `extra`: the per-host layering slot, never a default -- `_defaults` holds the base values that `extra` adds to."
+        else if renamedArgs ? ${name} then
+          "- ${renamedComplaint name}"
         else
           "- `${name}`: not a builder argument (typo?). `_defaults` accepts: ${builtins.concatStringsSep ", " allowedDefaultArgs}.";
       badDefaults = map defaultComplaint (
         builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames rawDefaults)
       );
+      # `_groups.<name>` entries take the `_defaults` allowlist plus an
+      # `extra` slot (layering onto `_defaults`, like a host's) -- minus
+      # `group` itself: a group layer cannot re-classify, its attribute
+      # name IS the group.
+      groupComplaint =
+        groupName: name:
+        if name == "group" then
+          "- `_groups.${groupName}`: a group layer cannot set `group` -- its attribute name IS the group; hosts opt in with `group = \"${groupName}\";`."
+        else if name == "extra" then
+          null
+        else if builtins.elem name allowedDefaultArgs then
+          null
+        else if renamedArgs ? ${name} then
+          "- `_groups.${groupName}`: ${renamedComplaint name}"
+        else
+          "- `_groups.${groupName}`: `${name}` is not a builder argument (typo?). Group entries accept the same names as `_defaults`, plus `extra`.";
+      badGroups = builtins.concatLists (
+        builtins.attrValues (
+          builtins.mapAttrs (
+            groupName: entry:
+            if !(builtins.isAttrs entry) then
+              [
+                "- `_groups.${groupName}`: must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf entry}`."
+              ]
+            else if entry ? extra && !(builtins.isAttrs entry.extra) then
+              [
+                "- `_groups.${groupName}`: `extra` must be an attribute set of builder arguments to ADD, but is a value of type `${builtins.typeOf entry.extra}`."
+              ]
+            else
+              builtins.filter (c: c != null) (
+                map (groupComplaint groupName) (builtins.attrNames entry)
+                ++ map (
+                  k:
+                  if k == "group" || !(builtins.elem k allowedDefaultArgs) then
+                    "- `_groups.${groupName}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults` (minus `group`)."
+                  else
+                    null
+                ) (builtins.attrNames (if builtins.isAttrs (entry.extra or { }) then entry.extra or { } else { }))
+              )
+          ) rawGroups
+        )
+      );
       hostEntries = hostEntriesOf hosts;
+      # The group a host would take its `_groups` layer from -- the same
+      # precedence planHosts applies (a host's own `group`, else the
+      # `_defaults` one; `extra.group`, a scalar add, replaces). Judged
+      # here so a typo'd group name is reported WITH the other complaints
+      # instead of surfacing as a missing layer.
+      effectiveGroupOf =
+        args:
+        if builtins.isAttrs (args.extra or null) && args.extra ? group then
+          args.extra.group
+        else
+          args.group or (rawDefaults.group or null);
+      badGroupRefs =
+        if !(hosts ? _groups) then
+          [ ]
+        else
+          builtins.concatLists (
+            builtins.attrValues (
+              builtins.mapAttrs (
+                hostname: args:
+                let
+                  g = if builtins.isAttrs args then effectiveGroupOf args else null;
+                in
+                if g == null then
+                  [ ]
+                else if !(builtins.isString g) then
+                  [
+                    "- `${hostname}`: `group` must be a string naming a `_groups` entry, but is a value of type `${builtins.typeOf g}`."
+                  ]
+                else if !(builtins.isAttrs rawGroups) || rawGroups ? ${g} then
+                  [ ]
+                else
+                  [
+                    "- `${hostname}`: `group = \"${g}\"` names no `_groups` entry (typo?). Declared groups: ${
+                      if rawGroups == { } then "(none)" else builtins.concatStringsSep ", " (builtins.attrNames rawGroups)
+                    }."
+                  ]
+              ) hostEntries
+            )
+          );
       badHostShapes = builtins.concatLists (
         builtins.attrValues (
           builtins.mapAttrs (
@@ -182,13 +285,19 @@ let
             else
               map (
                 k:
-                "- `${hostname}`: `${k}` is not a builder argument (typo?). Host entries accept: ${builtins.concatStringsSep ", " allowedHostArgs}."
+                if renamedArgs ? ${k} then
+                  "- `${hostname}`: ${renamedComplaint k}"
+                else
+                  "- `${hostname}`: `${k}` is not a builder argument (typo?). Host entries accept: ${builtins.concatStringsSep ", " allowedHostArgs}."
               ) (builtins.filter (k: !(builtins.elem k allowedHostArgs)) (builtins.attrNames args))
               ++
                 map
                   (
                     k:
-                    "- `${hostname}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults`."
+                    if renamedArgs ? ${k} then
+                      "- `${hostname}`: `extra.${k}`: ${renamedComplaint k}"
+                    else
+                      "- `${hostname}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults`."
                   )
                   (
                     builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (
@@ -211,16 +320,20 @@ let
         )
       );
     in
-    # A non-attrset `_defaults` otherwise dies inside builtins.attrNames
-    # with no mention of which flake, function or key is at fault. The ONE
-    # complaint that preempts all others: nothing else can be judged
-    # without reading `_defaults` keys.
+    # A non-attrset `_defaults` (or `_groups`) otherwise dies inside
+    # builtins.attrNames with no mention of which flake, function or key is
+    # at fault. The ONE complaint that preempts all others: nothing else
+    # can be judged without reading those keys.
     if !(builtins.isAttrs rawDefaults) then
       [
         "${fnName}: `_defaults` must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf rawDefaults}`."
       ]
+    else if !(builtins.isAttrs rawGroups) then
+      [
+        "${fnName}: `_groups` must be an attribute set of group-name -> builder-argument sets, but is a value of type `${builtins.typeOf rawGroups}`."
+      ]
     else
-      badReserved ++ badDefaults ++ badHostShapes ++ badHostKeys;
+      badReserved ++ badDefaults ++ badGroups ++ badGroupRefs ++ badHostShapes ++ badHostKeys;
 
   # Validate a hosts attrset (the shared input of both build* functions)
   # and split it into { defaults, hostEntries }. The throwing face of
@@ -239,9 +352,12 @@ let
     if problems == [ ] then
       {
         defaults = hosts._defaults or { };
+        groups = hosts._groups or { };
         hostEntries = hostEntriesOf hosts;
       }
-    else if !(builtins.isAttrs (hosts._defaults or { })) then
+    else if
+      !(builtins.isAttrs (hosts._defaults or { })) || !(builtins.isAttrs (hosts._groups or { }))
+    then
       # already a complete sentence naming fnName; no list around it
       throw (builtins.head problems)
     else
@@ -320,7 +436,7 @@ let
           # `nixosModules` selection -- the wrong modules got imported with
           # no error, because the fallback rule happens to succeed.
           lib.recursiveUpdate base add
-        # `else add` is right for scalars (hostGroup, userModule, ...), but
+        # `else add` is right for scalars (group, userModule, ...), but
         # it also used to catch base and add being DIFFERENT container
         # kinds, which is never a deliberate "add" -- it silently threw the
         # fleet-wide base away.
@@ -339,13 +455,30 @@ let
             ${k} = if acc ? ${k} then combine hostname k acc.${k} extra.${k} else extra.${k};
           }
         ) merged (builtins.attrNames extra);
-      # `_defaults` merged under each entry, `extra` layered on top -- the
-      # arguments each builder finally receives.
+      # `_defaults` merged under each entry, the host's `_groups` layer (if
+      # it declares a `group` that has one) BETWEEN the two, `extra` layered
+      # on top -- the arguments each builder finally receives. The group
+      # layer behaves like a host entry sitting under the real one: its bare
+      # keys replace `_defaults` per argument, its `extra` ADDS to them, and
+      # the host wins over the lot. The group is read from the FULLY merged
+      # arguments (so `extra.group` counts, matching hostsProblems'
+      # effectiveGroupOf), and validation has already established that it
+      # names a `_groups` entry whenever `_groups` exists at all.
       mergedArgs = builtins.mapAttrs (
         hostname: entry:
-        applyExtra hostname (
-          split.defaults // (builtins.removeAttrs entry [ "extra" ]) // { inherit hostname; }
-        ) (entry.extra or { })
+        let
+          merge =
+            base:
+            applyExtra hostname (base // (builtins.removeAttrs entry [ "extra" ]) // { inherit hostname; }) (
+              entry.extra or { }
+            );
+          groupName = (merge split.defaults).group or null;
+          groupLayer = if groupName == null then { } else split.groups.${groupName} or { };
+          base = applyExtra hostname (split.defaults // (builtins.removeAttrs groupLayer [ "extra" ])) (
+            groupLayer.extra or { }
+          );
+        in
+        merge base
       ) split.hostEntries;
       coreTuples = builtins.mapAttrs (_: coreArgsOf) mergedArgs;
 

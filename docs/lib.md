@@ -405,6 +405,16 @@ that host's `extra` slot instead -- ONE rule for every argument: a bare
 key REPLACES the default, `extra.<key>` ADDS to it (lists concatenate,
 attrsets merge with `extra` winning a conflict).
 
+A second reserved key, `_groups`, holds OPTIONAL per-group defaults: a
+host declaring `group = "<name>";` receives `_groups.<name>` merged
+BETWEEN `_defaults` and its own entry, later layers winning per
+argument. Each group entry takes the same argument names as
+`_defaults` plus an `extra` slot that ADDS to the `_defaults` values
+(same rule as a host's `extra`); it cannot set `group` itself -- its
+attribute name IS the group. When `_groups` is present, every host's
+`group` must name one of its entries (unknown names throw); without
+`_groups`, `group` is the free-form classification it always was.
+
 The same hosts attrset is designed to also feed
 `buildHomeConfigurations`, producing the matching `homeConfigurations`
 outputs the login bootstrap needs -- define it once, pass it to both.
@@ -472,9 +482,10 @@ buildNixosConfigurations ::
   - `loginFlakeRef`
   - `loginReactivateEveryLogin`
   - `tags`
-  - `hostGroup`
+  - `group` (also selects the host's `_groups` layer)
+  - `hostFolder`
   - `patches`
-  - `extraOverlays`
+  - `overlays`
   - `allowedUnfreePackages`
   - `permittedInsecurePackages`
   - `nixpkgsConfig`
@@ -484,9 +495,15 @@ buildNixosConfigurations ::
   
   This list is an enforced ALLOWLIST: any other key throws, so typos
   (`homeConfiguration`, ...) fail loudly instead of being dropped
-  silently. `hostname` (it comes from each attribute key) and the
+  silently. `hostname` (it comes from each attribute key), the
   `additional*` arguments (the per-host halves of the layered pairs)
-  get their own explanatory errors.
+  and the pre-1.0.0 names (`hostGroup`, `extraOverlays`) get their
+  own explanatory errors.
+
+- **_groups**
+  Optional reserved entry of `hosts` (never a hostname): per-group
+  argument sets, applied between `_defaults` and the host entries
+  that declare the matching `group` -- see the description above.
 
 
 
@@ -660,7 +677,7 @@ The home configuration gets overridable (`mkDefault`) values for
 so pin it in the user's `home.nix` if you rely on stateVersion
 semantics.
 
-- **nixpkgs, hostGroup, specialArgs, tags, patches, nixpkgsConfig, extraOverlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions**
+- **nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions**
   Shared options (see `mkNixosSystem`).
 
 ## `lib.nixos.homeConfigurationsBuilder`
@@ -737,20 +754,22 @@ nixpkgs attributes.
 
 The builder-derived per-host values are declared as options under
 `nixpkgsLibExtensions.*` in every NixOS module set AND every home
-(whichever mechanism built it): `tags` (mergeable), `hostGroup`,
+(whichever mechanism built it): `tags` (mergeable), `group`,
 `users`, `inputPkgs` and `channels` (read-only), plus `hostname` in
 homes only -- NixOS modules read `config.networking.hostName`, which
 the builder sets. They used to be specialArgs; a module still reading
 one of the old names (`hostname`, `tags`, `hostGroup`,
 `listOfUsernames`, `inputPkgs`) fails with a message naming the
-replacement path.
+replacement path (as does reading the pre-1.0.0
+`nixpkgsLibExtensions.hostGroup` option path).
 
 The host's own configuration is included by convention: relative to
 `rootPath` (default: the consuming flake, `inputs.self`), either
 `hosts/<hostname>.nix` or `hosts/<hostname>/configuration.nix` is
 imported automatically when it exists (both existing is an error).
-Setting `hostGroup` groups hosts one folder deeper: the lookup then
-happens under `hosts/<hostGroup>/` instead of `hosts/`.
+Setting `group` groups hosts one folder deeper: the lookup then
+happens under `hosts/<group>/` instead of `hosts/` (`hostFolder`
+overrides the folder segment without touching the classification).
 
 The host's users come from ONE `userRegistry` — every user gets an
 account (unless `userModule = null`, or the account is a system one
@@ -937,22 +956,28 @@ mkNixosSystem :: Attribute -> NixosSystem
   [Patching nixpkgs itself](getting-started.md#patching-nixpkgs-itself)
   for an example and the costs involved.
 
-- **extraOverlays**
-  Overlays applied on top of the ones auto-collected from `inputs`.
-  Unlike `nixpkgsConfig`, this is not the only route: a module's own
-  `nixpkgs.overlays` works too and composes with these (nixpkgs appends
-  module overlays onto the package set passed in), so a third-party
-  module bringing its own overlays needs nothing special. Prefer this
-  argument when you want explicit ordering or want the overlay in the
-  package set the builder shares with home-manager. Default `[ ]`.
+- **overlays**
+  Overlays applied on top of the ones auto-collected from `inputs`
+  (called `extraOverlays` before 1.0.0; the old name throws naming
+  this one). Unlike `nixpkgsConfig`, this is not the only route: a
+  module's own `nixpkgs.overlays` works too and composes with these
+  (nixpkgs appends module overlays onto the package set passed in),
+  so a third-party module bringing its own overlays needs nothing
+  special. Prefer this argument when you want explicit ordering or
+  want the overlay in the package set the builder shares with
+  home-manager. Default `[ ]`.
 
 - **allowedUnfreePackages**
   Unfree package names to allow (matched by `lib.getName` via
-  `allowUnfreePredicate`). Default `[ ]`.
+  `allowUnfreePredicate`) -- a shorthand for the `nixpkgsConfig`
+  recipe `nixpkgsConfig.allowUnfreePredicate = pkg:
+  builtins.elem (lib.getName pkg) [ ... ];`, which is the canonical
+  path when you need anything beyond a name list. Default `[ ]`.
 
 - **permittedInsecurePackages**
-  Passed through to `nixpkgs.config.permittedInsecurePackages`.
-  Default `[ ]`.
+  Passed through to `nixpkgs.config.permittedInsecurePackages` -- a
+  shorthand for the `nixpkgsConfig` recipe
+  `nixpkgsConfig.permittedInsecurePackages = [ ... ];`. Default `[ ]`.
 
 - **specialArgs**
   Extra specialArgs, merged alongside the ones the builder assembles
@@ -964,12 +989,21 @@ mkNixosSystem :: Attribute -> NixosSystem
   same name would mask the real value. Set the corresponding builder
   argument instead. Default `{ }`.
 
-- **hostGroup**
-  Free-form host classification, e.g. `"vm"` or `"server"`. Exposed to
-  modules as the read-only `nixpkgsLibExtensions.hostGroup` option, and
-  when non-null the host config convention looks under
-  `hosts/<hostGroup>/` instead of `hosts/`. Default `null` (no grouping
-  folder).
+- **group**
+  Free-form host classification, e.g. `"vm"` or `"server"` (called
+  `hostGroup` before 1.0.0; the old name throws naming this one).
+  Exposed to modules as the read-only `nixpkgsLibExtensions.group`
+  option; in a hosts attrset it also selects that host's `_groups`
+  defaults layer (see `buildNixosConfigurations`). When non-null the
+  host config convention looks under `hosts/<group>/` instead of
+  `hosts/`, unless `hostFolder` overrides the segment. Default
+  `null` (no classification, no grouping folder).
+
+- **hostFolder**
+  The folder segment of the host config convention, overriding the
+  `group` default: the lookup happens under `hosts/<hostFolder>/`
+  whatever `group` says. Decouples the folder layout from the
+  classification. Default `null` (folder follows `group`).
 
 - **rootPath**
   The root for the `hosts/<hostname>` convention and the `rootPath`

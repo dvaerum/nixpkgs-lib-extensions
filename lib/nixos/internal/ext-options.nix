@@ -3,8 +3,9 @@
 # `lib` is nixpkgs'.
 #
 # The `nixpkgsLibExtensions` options namespace: the builder-derived values
-# modules used to receive as specialArgs (`tags`, `hostGroup`,
-# `listOfUsernames`, `inputPkgs`) declared as REAL module options instead.
+# modules used to receive as specialArgs (`tags`, `hostGroup` -- now the
+# `group` option, `listOfUsernames`, `inputPkgs`) declared as REAL module
+# options instead.
 # specialArgs are import-time constants -- no merging, no priorities, no
 # docs, and a shadow-throw was needed to guard every name. As options,
 # `tags` MERGES contributions from several modules, the read-only values
@@ -28,7 +29,7 @@ let
   movedNixosSpecialArgs = {
     hostname = "config.networking.hostName";
     tags = "config.nixpkgsLibExtensions.tags";
-    hostGroup = "config.nixpkgsLibExtensions.hostGroup";
+    hostGroup = "config.nixpkgsLibExtensions.group";
     listOfUsernames = "config.nixpkgsLibExtensions.users";
     inputPkgs = "config.nixpkgsLibExtensions.inputPkgs";
   };
@@ -51,7 +52,7 @@ let
   # specialArg-shadowing split-brain), so those are readOnly.
   sharedOptions =
     {
-      hostGroup,
+      group,
       users,
       inputPkgs,
       channels,
@@ -67,14 +68,27 @@ let
           merged value (`system.nixos.tags`, mkDefault).
         '';
       };
-      hostGroup = mkOption {
+      group = mkOption {
         type = types.nullOr types.str;
         readOnly = true;
-        default = hostGroup;
+        default = group;
         description = ''
-          The builder's `hostGroup` argument: free-form host
-          classification (also selects the hosts/<hostGroup>/ config
-          folder). Read-only -- set the builder argument instead.
+          The builder's `group` argument: free-form host classification
+          (by default it also selects the hosts/<group>/ config folder;
+          the `hostFolder` argument overrides that). Read-only -- set
+          the builder argument instead.
+        '';
+      };
+      # the option's pre-1.0.0 path; reading it throws with the new one
+      # (defaultText spares documentation tooling from forcing the throw)
+      hostGroup = mkOption {
+        type = types.raw;
+        readOnly = true;
+        default = throw "nixpkgs-lib-extensions: the `nixpkgsLibExtensions.hostGroup` option was renamed to `nixpkgsLibExtensions.group` in 1.0.0; read that instead. See CHANGELOG.md.";
+        defaultText = "throws: renamed to `nixpkgsLibExtensions.group` (1.0.0)";
+        description = ''
+          Deprecated (1.0.0): renamed to `nixpkgsLibExtensions.group`.
+          Reading this path throws with that pointer.
         '';
       };
       users = mkOption {
@@ -128,7 +142,7 @@ in
   # mk-system.nix closes over them per host.
   extNixosOptionsModule =
     {
-      hostGroup,
+      group,
       tags,
       users,
       inputPkgs,
@@ -138,7 +152,7 @@ in
       _file = ./ext-options.nix;
       options.nixpkgsLibExtensions = sharedOptions {
         inherit
-          hostGroup
+          group
           users
           inputPkgs
           channels
@@ -155,7 +169,7 @@ in
   extHomeOptionsModule =
     {
       hostname,
-      hostGroup,
+      group,
       tags,
       users,
       inputPkgs,
@@ -166,7 +180,7 @@ in
       options.nixpkgsLibExtensions =
         sharedOptions {
           inherit
-            hostGroup
+            group
             users
             inputPkgs
             channels

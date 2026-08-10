@@ -22,6 +22,16 @@ in
     key REPLACES the default, `extra.<key>` ADDS to it (lists concatenate,
     attrsets merge with `extra` winning a conflict).
 
+    A second reserved key, `_groups`, holds OPTIONAL per-group defaults: a
+    host declaring `group = "<name>";` receives `_groups.<name>` merged
+    BETWEEN `_defaults` and its own entry, later layers winning per
+    argument. Each group entry takes the same argument names as
+    `_defaults` plus an `extra` slot that ADDS to the `_defaults` values
+    (same rule as a host's `extra`); it cannot set `group` itself -- its
+    attribute name IS the group. When `_groups` is present, every host's
+    `group` must name one of its entries (unknown names throw); without
+    `_groups`, `group` is the free-form classification it always was.
+
     The same hosts attrset is designed to also feed
     `buildHomeConfigurations`, producing the matching `homeConfigurations`
     outputs the login bootstrap needs -- define it once, pass it to both.
@@ -89,9 +99,10 @@ in
     : - `loginFlakeRef`
     : - `loginReactivateEveryLogin`
     : - `tags`
-    : - `hostGroup`
+    : - `group` (also selects the host's `_groups` layer)
+    : - `hostFolder`
     : - `patches`
-    : - `extraOverlays`
+    : - `overlays`
     : - `allowedUnfreePackages`
     : - `permittedInsecurePackages`
     : - `nixpkgsConfig`
@@ -101,9 +112,15 @@ in
     :
     : This list is an enforced ALLOWLIST: any other key throws, so typos
     : (`homeConfiguration`, ...) fail loudly instead of being dropped
-    : silently. `hostname` (it comes from each attribute key) and the
+    : silently. `hostname` (it comes from each attribute key), the
     : `additional*` arguments (the per-host halves of the layered pairs)
-    : get their own explanatory errors.
+    : and the pre-1.0.0 names (`hostGroup`, `extraOverlays`) get their
+    : own explanatory errors.
+
+    _groups
+    : Optional reserved entry of `hosts` (never a hostname): per-group
+    : argument sets, applied between `_defaults` and the host entries
+    : that declare the matching `group` -- see the description above.
   */
   buildNixosConfigurations =
     hosts:
