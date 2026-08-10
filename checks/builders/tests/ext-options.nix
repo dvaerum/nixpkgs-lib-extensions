@@ -9,25 +9,20 @@
   laptop,
   custom,
   aliceHome,
+  mkProbeSystem,
+  # the canonical example user list, shared through ctx so this file does
+  # not keep a drifting private copy
+  exampleUsers,
   exampleDir,
   repoDir,
   ...
 }:
 let
-  exampleUsers = [
-    "alice"
-    "bob"
-    "dave"
-    "eve"
-    "frank"
-    "grace"
-  ];
-
   # A host whose modules exercise the option under test; forcing the group
   # names reaches whatever the module read (or threw on).
   probeSystem =
     hostname: modules:
-    myLib.mkNixosSystem {
+    mkProbeSystem {
       inherit inputs system hostname;
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ] ++ modules;
     };
@@ -68,7 +63,7 @@ in
 
   # ... and a module reads them through `config` like any option
   ext-options-readable-from-module =
-    (myLib.mkNixosSystem {
+    (mkProbeSystem {
       inherit inputs system;
       hostname = "optread";
       group = "vm";
@@ -99,7 +94,7 @@ in
   ext-tags-merge-from-modules =
     let
       merged =
-        (myLib.mkNixosSystem {
+        (mkProbeSystem {
           inherit inputs system;
           hostname = "tagmerge";
           tags = [ "from-builder" ];

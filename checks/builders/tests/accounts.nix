@@ -6,6 +6,7 @@
   inputs,
   system,
   laptop,
+  mkProbeSystem,
   exampleDir,
   fixturesDir,
   ...
@@ -52,7 +53,7 @@ in
   system-user-conflict-explained =
     let
       cfg =
-        (myLib.mkNixosSystem {
+        (mkProbeSystem {
           inherit inputs system;
           hostname = "sysuser";
           modules = [
@@ -72,7 +73,7 @@ in
   root-registry-entry-safe =
     let
       cfg =
-        (myLib.mkNixosSystem {
+        (mkProbeSystem {
           inherit inputs system;
           hostname = "rootentry";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -94,7 +95,7 @@ in
   uid-999-registry-pin-stays-system =
     let
       cfg =
-        (myLib.mkNixosSystem {
+        (mkProbeSystem {
           inherit inputs system;
           hostname = "uid999";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -110,7 +111,7 @@ in
   uid-1000-registry-pin-gets-normal =
     let
       cfg =
-        (myLib.mkNixosSystem {
+        (mkProbeSystem {
           inherit inputs system;
           hostname = "uid1000";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -141,7 +142,7 @@ in
   # home-manager's useUserPackages)
   user-module-fn-null-disables =
     !(
-      (myLib.mkNixosSystem {
+      (mkProbeSystem {
         inherit inputs system;
         hostname = "noaccounts";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];

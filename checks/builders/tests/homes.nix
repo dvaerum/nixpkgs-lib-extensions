@@ -10,6 +10,7 @@
   example,
   laptop,
   aliceHome,
+  mkProbeSystem,
   exampleDir,
   fixturesDir,
   ...
@@ -261,7 +262,7 @@
     laptop.config.home-manager.useGlobalPkgs && laptop.config.home-manager.useUserPackages;
   # ... but only mkDefault: a module of the host wins
   system-homes-pkgs-options-overridable =
-    !(myLib.mkNixosSystem {
+    !(mkProbeSystem {
       inherit inputs system;
       hostname = "hmopts";
       modules = [
@@ -282,7 +283,7 @@
   system-home-state-version-default-warns =
     let
       user =
-        (myLib.mkNixosSystem {
+        (mkProbeSystem {
           inherit inputs system;
           hostname = "unpinnedhost";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -294,7 +295,7 @@
   # `username` reaches system homes as a module argument too
   # (extraSpecialArgs cannot vary per user; _module.args can)
   username-reaches-system-homes =
-    (myLib.mkNixosSystem {
+    (mkProbeSystem {
       inherit inputs system;
       hostname = "whoami";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];

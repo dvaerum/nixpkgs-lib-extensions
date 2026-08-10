@@ -11,6 +11,8 @@
   inputsWithSelf,
   aliceHome,
   custom,
+  mkProbeSystem,
+  fake-strings-collision,
   fake-multi-module-input,
   fake-catalog-input,
   fake-overlay-catalog,
@@ -238,7 +240,7 @@ in
   # an input's standalone `lib` export is namespaced by input name into
   # the module-arg lib ...
   input-lib-namespaced-in-module-lib =
-    (myLib.mkNixosSystem {
+    (mkProbeSystem {
       inherit inputs system;
       hostname = "libprobe";
       modules = [
@@ -270,11 +272,24 @@ in
       ];
     }).config.home.sessionVariables.LIB_PROBE == "from-lib-probe";
 
-  # overwrite detection: the input named `strings` collides with
+  # overwrite detection: an input named `strings` collides with
   # lib.strings -- a namespace this repo does NOT own -- so its lib
-  # export is skipped (warning) and the base lib survives untouched
+  # export is skipped (warning) and the base lib survives untouched.
+  # A dedicated probe host, NOT the shared example inputs: the provoked
+  # warning would otherwise fire on every harness evaluation.
   input-lib-collision-skipped =
-    laptop.pkgs.lib.strings ? concatStringsSep && !(laptop.pkgs.lib.strings ? hijacked);
+    let
+      pkgsLib =
+        (myLib.mkNixosSystem {
+          inputs = inputs // {
+            strings = fake-strings-collision;
+          };
+          inherit system;
+          hostname = "stringscollision";
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        }).pkgs.lib;
+    in
+    pkgsLib.strings ? concatStringsSep && !(pkgsLib.strings ? hijacked);
 
   # ... but the input named `disko` hits a namespace this repo OWNS:
   # its lib MERGES in -- our declareZfsRootDisk wins the key conflict,

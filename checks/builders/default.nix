@@ -50,7 +50,12 @@ let
 
   # An input named after a lib attribute this repo does NOT own (nixpkgs'
   # `strings`): overwrite detection must SKIP namespacing its `lib` export
-  # (with a warning) so nothing in the base lib is ever touched.
+  # (with a warning) so nothing in the base lib is ever touched. NOT part
+  # of the shared `inputs` set: the warning it provokes would fire on
+  # EVERY harness evaluation and drown the CI log in noise -- the
+  # collision test threads it in via ctx for one dedicated builder call
+  # (like fake-multi-module-input), so a plain probe host evaluates
+  # without provoked warnings.
   fake-strings-collision = {
     outPath = "/nix/store/fake-strings-collision";
     lib.hijacked = true;
@@ -211,7 +216,6 @@ let
       fake-single-module-input
       fake-sops-shaped-input
       ;
-    strings = fake-strings-collision;
     disko = fake-disko-input;
     fenix = fake-fenix;
     nur = nur-shaped "nur";
@@ -325,6 +329,35 @@ let
       utils = nixosUtils;
     };
 
+  # ONE shared context core for the many probe hosts whose CORE arguments
+  # are exactly `inherit inputs system;` -- the same sharing planHosts
+  # gives hosts agreeing on `_defaults`. Each direct mkNixosSystem call
+  # otherwise pays its own nixpkgs evaluation, which dominated this
+  # check's eval time. mkProbeSystem still validates like the public
+  # wrapper; a probe overriding ANY core argument (inputs, overlays,
+  # nixpkgsConfig, inputContributions, ...) must keep calling
+  # myLib.mkNixosSystem, which computes a matching core itself.
+  sharedInternal = import (repoDir + "/lib/nixos/internal/shared.nix") {
+    inherit lib;
+    self = myLib;
+  };
+  probeCore = sharedInternal.mkContextCore { inherit inputs system; };
+  mkProbeSystem =
+    args:
+    sharedInternal.mkSystem probeCore (sharedInternal.validateBuilderArgs "mkProbeSystem" [ ] args);
+
+  # The example's user set, derived from its registry: the canonical list
+  # the option-value assertions compare against (shared here so no test
+  # file keeps a drifting private copy).
+  exampleUsers = [
+    "alice"
+    "bob"
+    "dave"
+    "eve"
+    "frank"
+    "grace"
+  ];
+
   # Helper: does building home configs with this registry throw? The
   # entry under test is keyed `bad` and listed in loginHomes, so the
   # throw path (resolving `bad`'s home.nix) is reached by intent, not
@@ -362,6 +395,9 @@ let
       bootstrapModuleFor
       applyBootstrap
       homesThrow
+      mkProbeSystem
+      exampleUsers
+      fake-strings-collision
       fake-multi-module-input
       fake-catalog-input
       fake-overlay-catalog

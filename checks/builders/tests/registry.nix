@@ -10,6 +10,7 @@
   laptop,
   server,
   homesThrow,
+  exampleUsers,
   exampleDir,
   fixturesDir,
   invalidFixturesDir,
@@ -17,15 +18,9 @@
   ...
 }:
 {
-  users-derived-from-registry =
-    laptop.config.nixpkgsLibExtensions.users == [
-      "alice"
-      "bob"
-      "dave"
-      "eve"
-      "frank"
-      "grace"
-    ];
+  # exampleUsers is the ctx-shared canonical list (ext-options.nix
+  # compares option values against the same one)
+  users-derived-from-registry = laptop.config.nixpkgsLibExtensions.users == exampleUsers;
 
   # companion configuration.nix files from user directories reach the system
   companion-config-applied = laptop.config.users.groups ? media;

@@ -9,6 +9,7 @@
   laptop,
   server,
   custom,
+  mkProbeSystem,
   fixturesDir,
   invalidFixturesDir,
   exampleDir,
@@ -40,7 +41,7 @@ in
   auto-host-dir-module = server.config.fileSystems."/".device == "/dev/vda1";
   # with `group` set the lookup moves under hosts/<group>/ ...
   typed-host-convention =
-    (myLib.mkNixosSystem {
+    (mkProbeSystem {
       inherit inputs system;
       hostname = "typedhost";
       group = "vm";
@@ -50,7 +51,7 @@ in
   # name resolves to nothing under the plain hosts/ of that root)
   untyped-ignores-type-folders =
     !(
-      (myLib.mkNixosSystem {
+      (mkProbeSystem {
         inherit inputs system;
         hostname = "typedhost";
         rootPath = fixturesDir + "/typed-root";
@@ -61,7 +62,7 @@ in
   # `group` says (here: something with NO folder of its own)
   host-folder-overrides-group =
     let
-      sys = myLib.mkNixosSystem {
+      sys = mkProbeSystem {
         inherit inputs system;
         hostname = "typedhost";
         group = "does-not-exist-as-folder";
@@ -75,7 +76,7 @@ in
   # null classification
   host-folder-without-group =
     let
-      sys = myLib.mkNixosSystem {
+      sys = mkProbeSystem {
         inherit inputs system;
         hostname = "typedhost";
         hostFolder = "vm";
@@ -87,7 +88,7 @@ in
   # both forms existing for one host is ambiguous -> throw
   ambiguous-host-config-throws =
     !(builtins.tryEval
-      (myLib.mkNixosSystem {
+      (mkProbeSystem {
         inherit inputs system;
         hostname = "both";
         rootPath = invalidFixturesDir + "/root-both";
@@ -129,7 +130,7 @@ in
         name: value:
         !(builtins.tryEval (
           builtins.attrNames
-            (myLib.mkNixosSystem {
+            (mkProbeSystem {
               inherit inputs system;
               hostname = "shadowprobe";
               modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -205,7 +206,7 @@ in
   module-level-overlay-applies =
     let
       probe =
-        (myLib.mkNixosSystem {
+        (mkProbeSystem {
           inherit inputs system;
           hostname = "moduleoverlay";
           modules = [
@@ -223,7 +224,7 @@ in
   # module-level nixpkgs.overlays compose path above
   module-level-host-platform-warns =
     builtins.any (w: lib.hasInfix "nixpkgs.hostPlatform" w)
-      (myLib.mkNixosSystem {
+      (mkProbeSystem {
         inherit inputs system;
         hostname = "platformprobe";
         modules = [
@@ -240,7 +241,7 @@ in
   # the priority probe still sees a foreign definition
   module-level-host-platform-mkdefault-warns =
     builtins.any (w: lib.hasInfix "nixpkgs.hostPlatform" w)
-      (myLib.mkNixosSystem {
+      (mkProbeSystem {
         inherit inputs system;
         hostname = "platformprobe2";
         modules = [
@@ -254,7 +255,7 @@ in
   # the `nixpkgsConfig` builder argument is the only route for it.
   module-level-nixpkgs-config-fails-assertion =
     !(builtins.all (a: a.assertion)
-      (myLib.mkNixosSystem {
+      (mkProbeSystem {
         inherit inputs system;
         hostname = "moduleconfig";
         modules = [
@@ -302,7 +303,7 @@ in
         name: value:
         !(builtins.tryEval (
           builtins.attrNames
-            (myLib.mkNixosSystem {
+            (mkProbeSystem {
               inherit inputs system;
               hostname = "reservedprobe";
               modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
