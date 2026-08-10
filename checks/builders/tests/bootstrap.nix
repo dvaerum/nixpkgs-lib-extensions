@@ -19,11 +19,21 @@
 {
   # only loginHomes are bootstrapped: dave/frank/grace are system-managed,
   # eve is system-only (no home.nix). Parameters are CLI arguments on
-  # ExecStart (escapeShellArgs only quotes arguments when required, so
-  # simple words appear bare).
+  # ExecStart, quoted by escapeSystemdExecArgs (every argument is
+  # double-quoted; % and $ are doubled for systemd's specifier syntax).
   bootstrap-users-filtered =
-    lib.hasInfix "--users alice bob" execStart && !(lib.hasInfix "dave" execStart);
-  bootstrap-flake-ref-defaults-to-self = lib.hasInfix "--flake-ref ${toString exampleDir}" execStart;
+    lib.hasInfix ''"--users" "alice" "bob"'' execStart && !(lib.hasInfix "dave" execStart);
+  bootstrap-flake-ref-defaults-to-self = lib.hasInfix ''"--flake-ref" "${toString exampleDir}"'' execStart;
+
+  # systemd's own escaping, not shell escaping: a flake ref containing a
+  # %-escape (a branch name with %2F, say) must reach the unit text with
+  # the % DOUBLED, or systemd expands it as a specifier
+  bootstrap-percent-ref-systemd-escaped =
+    lib.hasInfix ''"--flake-ref" "github:me/repo?ref=feat%%2Fx"''
+      (
+        (applyBootstrap { loginFlakeRef = "github:me/repo?ref=feat%2Fx"; })
+        .systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
+      );
 
   # the server has no registry: no bootstrap
   server-no-bootstrap = !(server.config.systemd.user.services ? home-manager-bootstrap);
@@ -62,11 +72,11 @@
   bootstrap-standalone = applyBootstrap { } ? systemd;
   bootstrap-file-tagged =
     (bootstrapModuleFor { })._file == repoDir + "/lib/nixos/home-manager-bootstrap-module.nix";
-  bootstrap-flake-ref-override = lib.hasInfix "--flake-ref /custom" (
+  bootstrap-flake-ref-override = lib.hasInfix ''"--flake-ref" "/custom"'' (
     (applyBootstrap { loginFlakeRef = "/custom"; })
     .systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
   );
-  bootstrap-reactivate-flag = lib.hasInfix "--reactivate-every-login" (
+  bootstrap-reactivate-flag = lib.hasInfix ''"--reactivate-every-login"'' (
     (applyBootstrap { loginReactivateEveryLogin = true; })
     .systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
   );

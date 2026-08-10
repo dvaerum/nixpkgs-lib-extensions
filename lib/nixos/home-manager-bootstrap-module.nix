@@ -110,9 +110,15 @@ in
       _file = ./home-manager-bootstrap-module.nix;
       imports = [
         (
+          # `utils` is the NixOS module argument carrying
+          # escapeSystemdExecArgs -- the systemd-aware quoting (ExecStart
+          # lines have their own %-specifier and $-expansion syntax, which
+          # lib.escapeShellArgs knows nothing about; a flake ref containing
+          # %2F used to reach the unit text unescaped).
           {
             pkgs,
             lib,
+            utils,
             ...
           }:
           let
@@ -127,10 +133,30 @@ in
             systemd.user.services.home-manager-bootstrap = {
               description = "Provision the user's home-manager profile on login";
               wantedBy = [ "default.target" ];
+              # StartLimit* belong to [Unit]: at most 4 start attempts per
+              # 10 minutes, bounding the Restart loop below.
+              unitConfig = {
+                StartLimitBurst = 4;
+                StartLimitIntervalSec = "10min";
+              };
               serviceConfig = {
                 Type = "oneshot";
                 RemainAfterExit = true;
-                ExecStart = lib.escapeShellArgs (
+                # a switch can fail transiently (network, substituters);
+                # retry within the session, bounded by the StartLimit
+                # above. systemd >= 244 allows Restart=on-failure for
+                # oneshot units; on success RemainAfterExit keeps the unit
+                # active, and on-failure never fires there.
+                Restart = "on-failure";
+                RestartSec = "30s";
+                # a background provisioning job must not starve the
+                # session it runs under
+                Nice = 10;
+                IOSchedulingClass = "best-effort";
+                # a first `home-manager switch` may legitimately build for
+                # a long time; the default 90s start timeout would kill it
+                TimeoutStartSec = "2h";
+                ExecStart = utils.escapeSystemdExecArgs (
                   [
                     "${bootstrapScript}/bin/home-manager-bootstrap"
                     "--flake-ref"

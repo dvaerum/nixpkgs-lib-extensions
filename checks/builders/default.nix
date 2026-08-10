@@ -309,7 +309,21 @@ let
       }
       // args
     );
-  applyBootstrap = args: (builtins.head (bootstrapModuleFor args).imports) { inherit pkgs lib; };
+  # The inner module takes the NixOS `utils` module argument (for
+  # escapeSystemdExecArgs); applying it by hand means providing the real
+  # one -- imported from the nixpkgs under test, so the escaping asserted
+  # below is the escaping production gets. `config` is only read lazily by
+  # utils helpers this module never calls.
+  nixosUtils = import (nixpkgs.outPath + "/nixos/lib/utils.nix") {
+    inherit lib pkgs;
+    config = { };
+  };
+  applyBootstrap =
+    args:
+    (builtins.head (bootstrapModuleFor args).imports) {
+      inherit pkgs lib;
+      utils = nixosUtils;
+    };
 
   # Helper: does building home configs with this registry throw? The
   # entry under test is keyed `bad` and listed in loginHomes, so the

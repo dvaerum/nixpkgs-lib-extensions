@@ -782,6 +782,15 @@ merged option value, also labeling the boot menu via
   list in `_defaults` is the normal shape. In a DIRECT
   `mkNixosSystem`/`mkHomeConfiguration` call there
   is only one host in view, so unknown names are silently ignored.
+- Switching mechanisms (moving a user out of `loginHomes` and back, or
+  changing `loginFlakeRef`/the hostname) is safe on the bootstrap side:
+  the stamp records the exact activation parameters, and a stamp whose
+  content no longer matches counts as absent, so the next login
+  re-runs. What nothing cleans up automatically: a user moved from
+  `loginHomes` to system-managed keeps the OLD standalone home-manager
+  profile generations -- run `home-manager expire-generations` (or
+  remove the per-user home-manager profile) once the system-managed
+  home is active, or the stale generations linger in the store.
 
 ## Verifying your setup
 
