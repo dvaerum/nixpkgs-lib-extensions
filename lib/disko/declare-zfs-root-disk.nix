@@ -14,6 +14,21 @@
     of a `mkNixosSystem` setup), and ZFS requires
     `networking.hostId` to be set.
 
+    THREAT MODEL: keying the pool to the motherboard's UUID protects a
+    SEPARATED disk -- pulled for RMA, resold, or discarded -- whose new
+    holder does not also hold the board. It is near-zero protection
+    against whole-machine theft: the UUID is readable from the BIOS
+    setup screen, chassis stickers and service tags, IPMI, or any
+    live-USB boot of the very machine holding the disk. This is a
+    deliberate TPM-less auto-unlock trade-off, not
+    full-disk-encryption-grade secrecy.
+
+    RECOVERY: record the UUID (`dmidecode --string system-uuid`)
+    somewhere off-machine at install time. After a board swap the pool
+    no longer auto-unlocks; boot then PROMPTS for a passphrase -- the
+    OLD board's UUID is that passphrase -- after which the datasets can
+    be re-keyed to the new board.
+
     # Example
 
     ```nix
@@ -50,6 +65,9 @@
     : Whether the pool should be encrypted. Default `true`.
     : Currently the encryption is using the motherboards UUID as the key.
     : You can find it with the command: `dmidecode --string system-uuid`
+    : -- record it off-machine; see the THREAT MODEL and RECOVERY
+    : paragraphs above for what this protects against and what a board
+    : swap costs.
 
     swapSize
     : Set the size (in GiB) of the SWAP partition. Default is `32`.
@@ -103,12 +121,17 @@
 
       zrootName = "zroot-${hostname}";
 
+      # THE key file path. The ZFS `keylocation` property and every writer
+      # interpolate this one binding, so the location ZFS reads from and the
+      # place the writers put the key cannot drift apart.
+      keyFilePath = "/tmp/secrets/zpool.key";
+
       encryptionAttributes =
         if (lib.isBool enableEncryption) then
           (lib.optionalAttrs enableEncryption {
             encryption = "on";
             keyformat = "passphrase";
-            keylocation = "file:///tmp/secrets/zpool.key";
+            keylocation = "file://${keyFilePath}";
           })
         else
           throw "The argument `enableEncryption` must be of type `boolean`";
@@ -123,14 +146,28 @@
       # a pool on that detail is not a plan. Hence ONE definition producing
       # deterministic bytes, used by all three. It expects `KEY` to be set by
       # the caller.
+      #
+      # POSIX sh only (no `[[`, no `$'...'`): the script-initrd hooks run
+      # under busybox ash, and one snippet serves every context.
       writeKeyFile = ''
-        SECRET_FOLDER_PATH="/tmp/secrets"
-        KEY_FILE_PATH="$SECRET_FOLDER_PATH/zpool.key"
+        SECRET_FOLDER_PATH="${builtins.dirOf keyFilePath}"
+        KEY_FILE_PATH="${keyFilePath}"
+
+        # REFUSE to derive a key from junk. Empty output or one of the
+        # known placeholder values would "successfully" key the pool to a
+        # value every identical board reports -- or to nothing at all --
+        # and the mistake only surfaces when unlocking fails later.
+        case "$KEY" in
+          "" | "Not Settable" | "Not Present" | 00000000-0000-0000-0000-000000000000 | 03000200-0400-0500* )
+            echo "zfs key file: dmidecode returned an empty or placeholder system UUID ('$KEY'); refusing to derive a ZFS encryption key from it" >&2
+            exit 1
+            ;;
+        esac
 
         # A leftover NON-directory here (a file, or a dangling symlink)
         # would make the mkdir below fail, so it is removed; an existing
         # directory is kept and its key file simply overwritten.
-        if ! [[ -d "$SECRET_FOLDER_PATH" ]]; then
+        if ! [ -d "$SECRET_FOLDER_PATH" ]; then
           rm -rf "$SECRET_FOLDER_PATH"
         fi
 
@@ -140,6 +177,31 @@
         # printf, never `echo -n` or a here-string: the key must land in the
         # file verbatim, with no trailing newline.
         printf '%s' "$KEY" > "$KEY_FILE_PATH"
+      '';
+
+      # The load-key loop, shared verbatim by BOTH initrd flavors -- the
+      # script-initrd copy used to swallow failures with a bare `|| true`
+      # while the systemd one named the dataset. POSIX sh only (busybox ash
+      # in the script initrd): `[ ]` instead of `[[ ]]`, and the literal
+      # tab for IFS built with printf instead of bash's $'\t'.
+      loadKeysScript = ''
+        zfs list -rHo name,keylocation,keystatus -t volume,filesystem | \
+        while IFS="$(printf '\t')" read -r dataset keylocation keystatus; do
+          if [ "$keystatus" != "unavailable" ]; then
+            continue
+          fi
+          case "$keylocation" in
+            none|prompt ) ;;
+            # `|| echo`, never a bare failure: one dataset that cannot be
+            # unlocked must not abort the loop and leave the REST locked
+            # too. But say which one -- silently swallowing this is what
+            # turned a wrong key into an unexplained sysroot.mount
+            # timeout. boot.zfs.requestEncryptionCredentials then prompts
+            # for whatever is still locked.
+            * ) zfs load-key "$dataset" \
+                  || echo "zfs-load-encryption-keys: could not load the key for $dataset (keylocation=$keylocation); it stays locked" >&2 ;;
+          esac
+        done
       '';
 
       checkedSwapSize =
@@ -380,48 +442,25 @@
             Type = "oneshot";
             RemainAfterExit = true;
           };
-          script = ''
-            zfs list -rHo name,keylocation,keystatus -t volume,filesystem | \
-            while IFS=$'\t' read -r dataset keylocation keystatus; do
-              if [[ "$keystatus" != "unavailable" ]]; then
-                continue
-              fi
-              case "$keylocation" in
-                none|prompt ) ;;
-                # `|| true` on purpose: one dataset that cannot be unlocked
-                # must not abort the loop and leave the REST locked too.
-                # But say which one -- silently swallowing this is what
-                # turned a wrong key into an unexplained sysroot.mount
-                # timeout. boot.zfs.requestEncryptionCredentials then
-                # prompts for whatever is still locked.
-                * ) zfs load-key "$dataset" \
-                      || echo "zfs-load-encryption-keys: could not load the key for $dataset (keylocation=$keylocation); it stays locked" >&2 ;;
-              esac
-            done
-          '';
+          script = loadKeysScript;
         };
       };
 
       # script-based initrd (boot.initrd.systemd.enable = false):
-      # encryption keys via the legacy initrd hooks
+      # encryption keys via the legacy initrd hooks. The writer runs in a
+      # SUBSHELL: on junk dmidecode output it exits nonzero, and this code
+      # is part of the stage-1 init script -- a bare exit would kill PID 1.
+      # The failure stays loud (stderr), and the boot falls through to
+      # boot.zfs.requestEncryptionCredentials prompting for the passphrase.
       boot.initrd.postDeviceCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) ''
-        KEY="$(${pkgs.dmidecode}/bin/dmidecode --string system-uuid | tr -d '\n')"
-        ${writeKeyFile}
+        (
+          KEY="$(${pkgs.dmidecode}/bin/dmidecode --string system-uuid | tr -d '\n')"
+          ${writeKeyFile}
+        ) || echo "declareZfsRootDisk: no usable ZFS key file was written; stage 1 will prompt for the passphrase instead" >&2
       '';
 
       boot.initrd.postResumeCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) (
-        lib.mkAfter ''
-          zfs list -rHo name,keylocation,keystatus -t volume,filesystem | \
-          while IFS=$'\t' read -r dataset keylocation keystatus; do
-            if [[ "$keystatus" != "unavailable" ]]; then
-              continue
-            fi
-            case "$keylocation" in
-              none|prompt ) ;;
-              * ) zfs load-key "$dataset" || true ;;
-            esac
-          done
-        ''
+        lib.mkAfter loadKeysScript
       );
 
       security.pam.zfs = lib.mkIf enableEncryption {
@@ -470,7 +509,12 @@
                 };
               })
               // (
-                if (lib.isAttrs defineBootPartitions) then
+                # null -> platform dispatch below; attrset -> used as-is;
+                # anything else used to be SILENTLY ignored (the platform
+                # layout ran as if nothing had been passed)
+                if defineBootPartitions != null && !(lib.isAttrs defineBootPartitions) then
+                  throw "The argument `defineBootPartitions` must be `null` (use the predefined layout) or an attrset of partition definitions, but is a value of type `${builtins.typeOf defineBootPartitions}`"
+                else if (lib.isAttrs defineBootPartitions) then
                   defineBootPartitions
                 else if (pkgs.stdenv.hostPlatform.system == "x86_64-linux") then
                   {
@@ -541,7 +585,7 @@
                     Boot partitions are not defined.
                     Boot partitions are only pre-defined for `x86_64-linux` and `aarch64-linux`
                     systems, not for `${pkgs.stdenv.hostPlatform.system}`.
-                    Use the argument `defineBootPartitions` to defined boot partitions.
+                    Use the argument `defineBootPartitions` to define boot partitions.
                   ''
               );
             };

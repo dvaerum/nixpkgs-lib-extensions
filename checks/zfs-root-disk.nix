@@ -86,6 +86,36 @@ let
 
     # every writer uses the ONE shared snippet ...
     key-writers-use-printf = builtins.all (w: lib.hasInfix "printf '%s' \"$KEY\"" w) keyWritersCode;
+    # ... writing to the SAME path the ZFS `keylocation` property reads
+    # from. The expected path is extracted from the module's own
+    # keylocation (both interpolate one shared binding), not re-typed here.
+    key-writers-match-keylocation =
+      let
+        keylocation = encrypted.disko.devices.zpool."zroot-testhost".rootFsOptions.keylocation;
+        path = lib.removePrefix "file://" keylocation;
+      in
+      lib.hasPrefix "file://" keylocation
+      && builtins.all (w: lib.hasInfix "KEY_FILE_PATH=\"${path}\"" w) keyWritersCode;
+    # stage-1 destined scripts must be POSIX (busybox ash): no bashisms in
+    # any writer or in either load-key loop
+    key-code-is-posix =
+      let
+        loops = [
+          encrypted.boot.initrd.systemd.content.services.zfs-load-encryption-keys.script
+          # through mkIf and mkAfter, hence .content.content
+          encrypted.boot.initrd.postResumeCommands.content.content
+        ];
+      in
+      builtins.all (w: !(lib.hasInfix "[[" w) && !(lib.hasInfix "$'" w)) (keyWritersCode ++ loops);
+    # both initrd flavors' load-key loops come from ONE snippet: the
+    # script-initrd copy used to swallow failures with a bare `|| true`
+    load-key-loops-identical =
+      encrypted.boot.initrd.systemd.content.services.zfs-load-encryption-keys.script
+      == encrypted.boot.initrd.postResumeCommands.content.content;
+    # every key writer refuses empty/placeholder dmidecode output (behavior
+    # covered in checks/zfs-key-file.nix; this pins that no writer loses
+    # the guard)
+    key-writers-validate-uuid = builtins.all (w: lib.hasInfix ''case "$KEY" in'' w) keyWritersCode;
     # ... and none of the newline-appending forms it replaced
     key-writers-add-no-newline = builtins.all (
       w: !(lib.hasInfix "cat <<<" w) && !(lib.hasInfix "echo -n" w)
@@ -128,6 +158,78 @@ let
     # and the default (no extraDatasets) stays untouched
     no-extra-datasets-by-default =
       !(plainDatasets ? "DATA/media") && !(plainDatasets."VAR".options ? atime);
+
+    # ── defineBootPartitions: null / attrset / anything else ──
+    # the escape hatch replaces the platform layout wholesale
+    boot-partitions-escape-hatch =
+      let
+        parts =
+          (build {
+            enableEncryption = false;
+            defineBootPartitions = {
+              CUSTOMBOOT = {
+                label = "CUSTOMBOOT";
+                priority = 1;
+                size = "1G";
+              };
+            };
+          }).disko.devices.disk.main.content.partitions;
+      in
+      parts ? CUSTOMBOOT && !(parts ? ESP);
+    # a non-null non-attrset value used to be SILENTLY ignored (platform
+    # dispatch ran as if nothing had been passed)
+    invalid-boot-partitions-throws = buildThrows {
+      enableEncryption = false;
+      defineBootPartitions = "esp";
+    } (r: r.disko.devices.disk.main.content.partitions);
+    # an unsupported system without defineBootPartitions throws (the module
+    # reads the platform from pkgs, so a probe pkgs with a foreign system
+    # double reaches the dispatch's else branch)
+    unsupported-system-throws =
+      let
+        foreignPkgs = pkgs // {
+          stdenv = pkgs.stdenv // {
+            hostPlatform = pkgs.stdenv.hostPlatform // {
+              system = "riscv64-linux";
+            };
+          };
+        };
+        m =
+          (myLib.declareZfsRootDisk {
+            devicePath = "/dev/disk/by-id/test-disk";
+            hostname = "testhost";
+            listOfUsernames = [ "alice" ];
+            enableEncryption = false;
+          })
+            {
+              pkgs = foreignPkgs;
+              inherit lib;
+              config.boot.initrd.systemd.enable = true;
+            };
+      in
+      !(builtins.tryEval (builtins.deepSeq m.disko.devices.disk.main.content.partitions true)).success;
+
+    # ── useZfsForTmp, both positions ──
+    # zfs /tmp (the default): TMP dataset with the documented options, and
+    # boot.tmp stays off tmpfs (values sit behind mkDefault, hence .content)
+    zfs-tmp-dataset-and-boot-options =
+      plainDatasets ? TMP
+      && plainDatasets."TMP".options.sync == "disabled"
+      && plainDatasets."TMP".options.setuid == "off"
+      && plainDatasets."TMP".options.devices == "off"
+      && !plain.boot.tmp.useTmpfs.content
+      && plain.boot.tmp.cleanOnBoot.content;
+    # tmpfs /tmp: no TMP dataset, boot.tmp flips both settings
+    tmpfs-tmp-no-dataset-and-boot-options =
+      let
+        m = build {
+          enableEncryption = false;
+          useZfsForTmp = false;
+        };
+      in
+      !(m.disko.devices.zpool."zroot-testhost".datasets ? TMP)
+      && m.boot.tmp.useTmpfs.content
+      && !m.boot.tmp.cleanOnBoot.content;
 
     # swap partition present by default, gone with swapSize = 0
     swap-by-default = plain.disko.devices.disk.main.content.partitions ? SWAP;
@@ -185,6 +287,11 @@ let
     invalid-swap-size-throws = buildThrows {
       enableEncryption = false;
       swapSize = -1;
+    } (r: r.disko.devices.disk.main.content.partitions);
+    # the natural TYPO: the size as a string ("32") throws like a negative
+    invalid-swap-size-type-throws = buildThrows {
+      enableEncryption = false;
+      swapSize = "32";
     } (r: r.disko.devices.disk.main.content.partitions);
     invalid-extra-datasets-throws = buildThrows {
       enableEncryption = false;

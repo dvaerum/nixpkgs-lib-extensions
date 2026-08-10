@@ -65,6 +65,21 @@ the `disko.devices` options -- automatic when disko is a flake input
 of a `mkNixosSystem` setup), and ZFS requires
 `networking.hostId` to be set.
 
+THREAT MODEL: keying the pool to the motherboard's UUID protects a
+SEPARATED disk -- pulled for RMA, resold, or discarded -- whose new
+holder does not also hold the board. It is near-zero protection
+against whole-machine theft: the UUID is readable from the BIOS
+setup screen, chassis stickers and service tags, IPMI, or any
+live-USB boot of the very machine holding the disk. This is a
+deliberate TPM-less auto-unlock trade-off, not
+full-disk-encryption-grade secrecy.
+
+RECOVERY: record the UUID (`dmidecode --string system-uuid`)
+somewhere off-machine at install time. After a board swap the pool
+no longer auto-unlocks; boot then PROMPTS for a passphrase -- the
+OLD board's UUID is that passphrase -- after which the datasets can
+be re-keyed to the new board.
+
 ### Example
 
 ```nix
@@ -101,6 +116,9 @@ declareZfsRootDisk :: Attribute -> Module
   Whether the pool should be encrypted. Default `true`.
   Currently the encryption is using the motherboards UUID as the key.
   You can find it with the command: `dmidecode --string system-uuid`
+  -- record it off-machine; see the THREAT MODEL and RECOVERY
+  paragraphs above for what this protects against and what a board
+  swap costs.
 
 - **swapSize**
   Set the size (in GiB) of the SWAP partition. Default is `32`.

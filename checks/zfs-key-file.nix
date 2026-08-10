@@ -60,13 +60,18 @@ let
         -e "s|nix run nixpkgs#dmidecode --|${stubBin}|g" \
         -e "s|/tmp/secrets|$work/secrets|g"'';
 
+  # The script-initrd writer runs under busybox ash on a real machine, so
+  # it is exercised under busybox ash here too (the other two get bash,
+  # like their real contexts: disko's install shell and systemd's script).
+  interpreterFor = name: if name == "script-initrd" then "${pkgs.busybox}/bin/ash" else "bash";
+
   # Run one writer on a clean slate and check the bytes it produced.
   runOne = name: text: ''
     echo "=== writer: ${name}"
     work="$TMPDIR/${name}"
     mkdir -p "$work"
     sed ${sedArgs} ${pkgs.writeText "writer-${name}.sh" text} > "$work/run.sh"
-    ( cd "$work" && bash ./run.sh )
+    ( cd "$work" && ${interpreterFor name} ./run.sh )
 
     key="$work/secrets/zpool.key"
     # EXACTLY the uuid: no trailing newline, nothing else
@@ -93,8 +98,44 @@ let
     printf '%s' '${uuid}' | cmp - "$work/secrets/zpool.key"
   '';
 
+  # Junk dmidecode output (empty, "Not Settable"/"Not Present", the
+  # all-zeros and 03000200-0400-0500 placeholders) must never become a key:
+  # the writers refuse LOUDLY. The systemd-initrd writer exits nonzero (the
+  # unit fails); the script-initrd wrapper contains that exit in a subshell
+  # -- this code is part of stage-1 init, a bare exit would kill PID 1 --
+  # and reports on stderr instead. Neither writes a key file.
+  junkStub =
+    junk:
+    pkgs.writeShellScriptBin "dmidecode" ''
+      echo "${junk}"
+    '';
+  junkCase = slug: junk: ''
+    echo "=== junk uuid (${slug}): systemd-initrd writer refuses"
+    work="$TMPDIR/junk-${slug}"
+    mkdir -p "$work"
+    sed ${sedArgs} \
+        -e "s|${stubBin}|${junkStub junk}/bin/dmidecode|g" \
+        ${pkgs.writeText "junk-writer-${slug}.sh" writers.systemd-initrd} > "$work/run.sh"
+    rc=0
+    ( cd "$work" && bash ./run.sh ) 2> "$work/err" || rc=$?
+    [ "$rc" -ne 0 ]
+    grep -q "refusing" "$work/err"
+    [ ! -e "$work/secrets/zpool.key" ]
+
+    echo "=== junk uuid (${slug}): script-initrd wrapper stays alive"
+    work="$TMPDIR/junk-script-${slug}"
+    mkdir -p "$work"
+    sed ${sedArgs} \
+        -e "s|${stubBin}|${junkStub junk}/bin/dmidecode|g" \
+        ${pkgs.writeText "junk-script-writer-${slug}.sh" writers.script-initrd} > "$work/run.sh"
+    # rc MUST be 0: in the real script initrd this code is part of init
+    ( cd "$work" && ${pkgs.busybox}/bin/ash ./run.sh ) 2> "$work/err"
+    grep -q "prompt for the passphrase" "$work/err"
+    [ ! -e "$work/secrets/zpool.key" ]
+  '';
+
   # Run one writer against a pre-existing state, to pin what the
-  # `if ! [[ -d ... ]]; then rm -rf ...; fi` guard is actually for.
+  # `if ! [ -d ... ]; then rm -rf ...; fi` guard is actually for.
   guardCase = name: setup: ''
     echo "=== guard: ${name}"
     work="$TMPDIR/guard-${name}"
@@ -117,6 +158,13 @@ pkgs.runCommand "zfs-key-file-test"
   ''
     ${lib.concatStringsSep "\n" (lib.mapAttrsToList runOne writers)}
     ${fallbackCase}
+
+    # junk dmidecode output never becomes a key
+    ${junkCase "empty" ""}
+    ${junkCase "not-settable" "Not Settable"}
+    ${junkCase "not-present" "Not Present"}
+    ${junkCase "zeros" "00000000-0000-0000-0000-000000000000"}
+    ${junkCase "dell-placeholder" "03000200-0400-0500-0006-000700080009"}
 
     # THE invariant: pool creation and both boot paths agree byte for byte
     cmp "$TMPDIR/bytes-pool-create" "$TMPDIR/bytes-systemd-initrd"
