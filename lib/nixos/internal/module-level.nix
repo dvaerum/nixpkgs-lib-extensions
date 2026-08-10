@@ -20,12 +20,12 @@ let
   # someone added a builder.
   moduleLevelLib =
     extLib:
-    builtins.removeAttrs extLib (
+    lib.removeAttrs extLib (
       [
         "nixos"
         "version"
       ]
-      ++ builtins.attrNames extLib.nixos
+      ++ lib.attrNames extLib.nixos
     );
 in
 {
@@ -50,16 +50,16 @@ in
     baseLib: extLib:
     let
       own = moduleLevelLib extLib;
-      names = builtins.attrNames own;
+      names = lib.attrNames own;
       collides = n: baseLib ? ${n};
-      mergeable = n: collides n && builtins.isAttrs baseLib.${n} && builtins.isAttrs own.${n};
-      skipped = builtins.filter (n: collides n && !(mergeable n)) names;
-      kept = builtins.mapAttrs (n: v: if mergeable n then lib.recursiveUpdate v baseLib.${n} else v) (
-        builtins.removeAttrs own skipped
+      mergeable = n: collides n && lib.isAttrs baseLib.${n} && lib.isAttrs own.${n};
+      skipped = lib.filter (n: collides n && !(mergeable n)) names;
+      kept = lib.mapAttrs (n: v: if mergeable n then lib.recursiveUpdate v baseLib.${n} else v) (
+        lib.removeAttrs own skipped
       );
     in
     if skipped == [ ] then
       kept
     else
-      builtins.warn "nixpkgs-lib-extensions: not adding ${builtins.concatStringsSep ", " skipped} to the module `lib`: nixpkgs already defines ${if builtins.length skipped == 1 then "that name" else "those names"}, and an addition must never change an existing one. Reach them through the `extLib` specialArg, or rename them in this repo." kept;
+      lib.warn "nixpkgs-lib-extensions: not adding ${lib.concatStringsSep ", " skipped} to the module `lib`: nixpkgs already defines ${if lib.length skipped == 1 then "that name" else "those names"}, and an addition must never change an existing one. Reach them through the `extLib` specialArg, or rename them in this repo." kept;
 }

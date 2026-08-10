@@ -1,6 +1,6 @@
 # Loaded by lib/default.nix under the one calling convention: `self` is the
 # fully assembled nixpkgs-lib-extensions lib (a fixed point), `lib` is nixpkgs'.
-{ ... }:
+{ lib, ... }:
 {
   /**
     Import a path only when it contains valid, importable Nix; otherwise
@@ -63,13 +63,12 @@
   importIfNixOr =
     pkgs: path: default:
     let
-      type = if builtins.pathExists path then builtins.readFileType path else null;
+      type = if lib.pathExists path then builtins.readFileType path else null;
 
       # every skipped import says WHY -- a silently skipped file should
       # never be a silent mystery
       skip =
-        reason:
-        builtins.warn "importIfNixOr: ${toString path} ${reason}; using the default instead" default;
+        reason: lib.warn "importIfNixOr: ${toString path} ${reason}; using the default instead" default;
 
       # "does this file parse as Nix?" -- answered by a tiny derivation,
       # since pure evaluation cannot inspect arbitrary file contents.
@@ -80,7 +79,7 @@
       # remotely.
       parses =
         file:
-        builtins.readFile (
+        lib.readFile (
           pkgs.runCommand "is-valid-nix"
             {
               preferLocalBuild = true;
@@ -114,7 +113,7 @@
       )
     else if type == "directory" then
       (
-        if !builtins.pathExists (path + "/default.nix") then
+        if !lib.pathExists (path + "/default.nix") then
           skip "is a directory without a default.nix"
         else if parses (path + "/default.nix") then
           import path

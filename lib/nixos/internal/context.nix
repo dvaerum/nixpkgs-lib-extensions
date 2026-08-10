@@ -40,7 +40,7 @@ let
   # built WITHOUT it -- the argument looks applied and is not. `functionArgs`
   # reads the formals of the lambda without forcing its body, so this cannot
   # drift.
-  coreArgNames = builtins.attrNames (builtins.functionArgs mkContextCore);
+  coreArgNames = lib.attrNames (lib.functionArgs mkContextCore);
 
   # The DEFAULT VALUES of mkContextCore's optional core arguments, in one
   # place: the formals below read them from here, and planHosts reads the
@@ -158,11 +158,11 @@ let
         # `lib.self` would read oddly. An explicit input actually named
         # `flake` keeps the name; self's lib is then dropped with a warning.
         if raw ? self && !(raw ? flake) then
-          builtins.removeAttrs raw [ "self" ] // { flake = raw.self; }
+          baseLib.removeAttrs raw [ "self" ] // { flake = raw.self; }
         else if raw ? self then
-          builtins.warn
+          baseLib.warn
             "nixpkgs-lib-extensions: not exposing the consuming flake's `lib` as `lib.flake`: an input named `flake` already claims the name. Rename that input, or free the name with `inputContributions.\"flake\".lib = null;`."
-            (builtins.removeAttrs raw [ "self" ])
+            (baseLib.removeAttrs raw [ "self" ])
         else
           raw;
 
@@ -173,13 +173,13 @@ let
       # tryEval: the deprecation TOMBSTONES on `self` (renamed builders) are
       # `throw` values, and a plain isAttrs would force them here -- a
       # tombstone is by construction not a namespace.
-      ownedNamespaces = builtins.filter (
+      ownedNamespaces = baseLib.filter (
         n:
         let
           probe = builtins.tryEval (baseLib.isAttrs self.${n});
         in
         probe.success && probe.value && !(baseLib ? ${n})
-      ) (builtins.attrNames self);
+      ) (baseLib.attrNames self);
 
       # Overwrite detection, per collision class:
       # - name unused              -> input lib added as `lib.<name>`
@@ -193,19 +193,19 @@ let
       # once per lib construction.
       inputLibAdditions =
         let
-          existing = builtins.intersectAttrs extendedLib libsFromInputs;
-          owned = builtins.intersectAttrs (baseLib.genAttrs ownedNamespaces (_: null)) existing;
-          skipped = builtins.attrNames (builtins.removeAttrs existing (builtins.attrNames owned));
+          existing = baseLib.intersectAttrs extendedLib libsFromInputs;
+          owned = baseLib.intersectAttrs (baseLib.genAttrs ownedNamespaces (_: null)) existing;
+          skipped = baseLib.attrNames (baseLib.removeAttrs existing (baseLib.attrNames owned));
         in
         (
           if skipped == [ ] then
             x: x
           else
-            builtins.warn "nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${builtins.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`, or silence this with `inputContributions.\"<name>\".lib = null;` if you never wanted it namespaced."
+            baseLib.warn "nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${baseLib.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`, or silence this with `inputContributions.\"<name>\".lib = null;` if you never wanted it namespaced."
         )
           (
-            builtins.removeAttrs libsFromInputs (builtins.attrNames existing)
-            // builtins.mapAttrs (n: inputLib: baseLib.recursiveUpdate inputLib extendedLib.${n}) owned
+            baseLib.removeAttrs libsFromInputs (baseLib.attrNames existing)
+            // baseLib.mapAttrs (n: inputLib: baseLib.recursiveUpdate inputLib extendedLib.${n}) owned
           );
 
       # Through the fixed point (`extend`), NOT a plain `//`: evalModules
@@ -218,7 +218,7 @@ let
       # `nixpkgs.config` (cudaSupport = true; ...) and is merged last, so
       # it can also override what the shorthands produced.
       pkgsConfig = {
-        allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) allowedUnfreePackages;
+        allowUnfreePredicate = pkg: baseLib.elem (baseLib.getName pkg) allowedUnfreePackages;
         inherit permittedInsecurePackages;
       }
       // nixpkgsConfig;
@@ -270,7 +270,7 @@ let
       # seq: `pkgs` is forced by every consumer, so hanging the eager
       # selection validation off it makes a typo fail on any use of the
       # context rather than only where its channel happens to be collected.
-      pkgs = builtins.seq selectionsChecked (mkPkgs selectedSrc);
+      pkgs = baseLib.seq selectionsChecked (mkPkgs selectedSrc);
 
       home-manager = if homeManager != null then homeManager else detectHomeManager inputs;
 
@@ -414,18 +414,18 @@ let
         // {
           username = null;
         };
-      shadowed = builtins.attrNames (builtins.intersectAttrs reserved specialArgs);
+      shadowed = lib.attrNames (lib.intersectAttrs reserved specialArgs);
       shadowCheck =
         if shadowed == [ ] then
           null
         else
           throw ''
-            nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the reserved name(s) ${builtins.concatStringsSep ", " shadowed}. `inputs`, `rootPath`, `extLib` and the `pkgs-*` variants are builder-owned -- derived from the builder's own arguments, so overriding them here changes what MODULES see without changing what the builder did. `hostname`, `tags`, `hostGroup`, `listOfUsernames`, `inputPkgs` and `username` are not specialArgs anymore at all: modules read the `nixpkgsLibExtensions.*` options (and `config.networking.hostName` / the `username` module argument) instead. Set the corresponding builder argument, or pick a different specialArg name.
+            nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the reserved name(s) ${lib.concatStringsSep ", " shadowed}. `inputs`, `rootPath`, `extLib` and the `pkgs-*` variants are builder-owned -- derived from the builder's own arguments, so overriding them here changes what MODULES see without changing what the builder did. `hostname`, `tags`, `hostGroup`, `listOfUsernames`, `inputPkgs` and `username` are not specialArgs anymore at all: modules read the `nixpkgsLibExtensions.*` options (and `config.networking.hostName` / the `username` module argument) instead. Set the corresponding builder argument, or pick a different specialArg name.
           '';
 
       # `specialArgs` already carries any per-host `extra.specialArgs`,
       # merged by planHosts before the builder ever sees it.
-      mySpecialArguments = builtins.seq shadowCheck (builderOwned // specialArgs);
+      mySpecialArguments = lib.seq shadowCheck (builderOwned // specialArgs);
     in
     {
       inherit (core)

@@ -64,7 +64,7 @@ lib.fix (
     # each other depending on merge order.
     topLevel =
       let
-        perName = lib.zipAttrsWith (name: values: values) (lib.attrValues namespaces);
+        perName = lib.zipAttrs (lib.attrValues namespaces);
         duplicates = lib.attrNames (lib.filterAttrs (name: values: lib.length values > 1) perName);
         # `version` is claimed by the metadata above, so a function of that
         # name would be shadowed just like one named after a folder
@@ -72,7 +72,7 @@ lib.fix (
         clashes = duplicates ++ folderClashes;
       in
       if clashes == [ ] then
-        lib.foldl' (acc: m: acc // m) { } (lib.attrValues namespaces)
+        lib.mergeAttrsList (lib.attrValues namespaces)
       else
         throw "lib loader: top-level name collision(s): ${lib.concatStringsSep ", " clashes}";
   in

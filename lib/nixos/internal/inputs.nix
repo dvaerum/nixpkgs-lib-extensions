@@ -8,7 +8,7 @@
 # assembled nixpkgs-lib-extensions lib.
 { lib, self, ... }:
 let
-  shownList = names: builtins.concatStringsSep ", " names;
+  shownList = names: lib.concatStringsSep ", " names;
 
   # An input's `lib`, or `{ }` if it has none OR if reading it throws.
   # `v.lib or { }` only covers a MISSING attribute: `?` and `or` force the
@@ -19,7 +19,7 @@ let
   libOf =
     v:
     let
-      probe = builtins.tryEval (if builtins.isAttrs (v.lib or null) then v.lib else { });
+      probe = builtins.tryEval (if lib.isAttrs (v.lib or null) then v.lib else { });
     in
     if probe.success then probe.value else { };
 
@@ -33,22 +33,22 @@ let
   detectHomeManager =
     inputs:
     let
-      matches = builtins.filter (
+      matches = lib.filter (
         n:
         let
           v = inputs.${n};
         in
-        builtins.isAttrs v && (libOf v) ? homeManagerConfiguration
-      ) (builtins.attrNames inputs);
+        lib.isAttrs v && (libOf v) ? homeManagerConfiguration
+      ) (lib.attrNames inputs);
     in
     if matches == [ ] then
       null
-    else if builtins.length matches > 1 then
-      builtins.warn
-        "nixpkgs-lib-extensions: several inputs look like home-manager (${builtins.concatStringsSep ", " matches}); using `${builtins.head matches}`. Pass `homeManager = inputs.<name>;` to the builder to choose explicitly."
-        inputs.${builtins.head matches}
+    else if lib.length matches > 1 then
+      lib.warn
+        "nixpkgs-lib-extensions: several inputs look like home-manager (${lib.concatStringsSep ", " matches}); using `${lib.head matches}`. Pass `homeManager = inputs.<name>;` to the builder to choose explicitly."
+        inputs.${lib.head matches}
     else
-      inputs.${builtins.head matches};
+      inputs.${lib.head matches};
 
   # ── the auto-collection channels ──
   #
@@ -76,7 +76,7 @@ let
     "extendLib"
     "lib"
   ];
-  channelNames = builtins.attrNames entrySetChannels ++ singleValueChannels;
+  channelNames = lib.attrNames entrySetChannels ++ singleValueChannels;
 
   # From a flake's exported set for one channel, with NO selection given:
   # the `default` export is auto-loaded; without one, a set with exactly ONE
@@ -91,22 +91,22 @@ let
   # DO name an entry and it does not exist (see resolveEntrySet). `name` is
   # the input's key in `inputs`, `channel` the convention attribute; both
   # only render the message. LAZINESS: the decision looks at
-  # builtins.attrNames / length ONLY -- export VALUES are never forced here,
+  # lib.attrNames / length ONLY -- export VALUES are never forced here,
   # because real catalogs contain `throw` tombstones for removed entries.
   pickExported =
     name: channel: s:
     let
-      names = builtins.attrNames s;
+      names = lib.attrNames s;
     in
     if s ? default then
       [ s.default ]
-    else if builtins.length names == 1 then
-      builtins.attrValues s
+    else if lib.length names == 1 then
+      lib.attrValues s
     else if names == [ ] then
       [ ]
     else
       throw ''
-        nixpkgs-lib-extensions: input `${name}` exports ${toString (builtins.length names)} ${channel} entries and no `default` -- auto-import will not guess. Select what you want via the builder's inputContributions argument:
+        nixpkgs-lib-extensions: input `${name}` exports ${toString (lib.length names)} ${channel} entries and no `default` -- auto-import will not guess. Select what you want via the builder's inputContributions argument:
           inputContributions."${name}".${channel} = [ "<entry>" ]; # these entries, in this order
           inputContributions."${name}".${channel} = "*";           # all of them
           inputContributions."${name}".${channel} = null;          # none -- select per host instead'';
@@ -139,21 +139,24 @@ let
         {
           remap = null;
           # every channel off
-          selections = builtins.listToAttrs (
+          selections = lib.listToAttrs (
             map (c: {
               name = c;
               value = null;
             }) channelNames
           );
         }
+      # builtins.isFunction on purpose (NOT lib.isFunction, which also
+      # accepts `__functor` attrsets): an attrset case must fall through to
+      # the selection branch below, where its keys are validated
       else if builtins.isFunction v then
         {
           remap = v;
           selections = { };
         }
-      else if builtins.isAttrs v then
+      else if lib.isAttrs v then
         let
-          bad = builtins.filter (k: !(builtins.elem k channelNames)) (builtins.attrNames v);
+          bad = lib.filter (k: !(lib.elem k channelNames)) (lib.attrNames v);
         in
         if bad == [ ] then
           {
@@ -184,15 +187,15 @@ let
     else
       let
         selection = case.selections.${channel};
-        available = builtins.attrNames exported;
+        available = lib.attrNames exported;
       in
       if selection == null || selection == [ ] then
         [ ]
       else if selection == "*" then
-        builtins.attrValues exported
-      else if builtins.isList selection && builtins.all builtins.isString selection then
+        lib.attrValues exported
+      else if lib.isList selection && lib.all lib.isString selection then
         let
-          missing = builtins.filter (n: !(builtins.elem n available)) selection;
+          missing = lib.filter (n: !(lib.elem n available)) selection;
         in
         if missing == [ ] then
           map (n: exported.${n}) selection
@@ -207,7 +210,7 @@ let
         # of this message.
         throw
           ''nixpkgs-lib-extensions: inputContributions."${name}".${channel} must be a list of entry names (strings), `"*"` (all), or `null` / `[ ]` (none) -- got ${
-            if builtins.isList selection then
+            if lib.isList selection then
               "a list holding a non-string"
             else
               "a value of type `${builtins.typeOf selection}`"
@@ -237,12 +240,12 @@ let
   validateCases =
     inputs: cases:
     let
-      bad = builtins.filter (n: !(inputs ? ${n})) (builtins.attrNames cases);
+      bad = lib.filter (n: !(inputs ? ${n})) (lib.attrNames cases);
     in
     if bad == [ ] then
       cases
     else
-      throw "nixpkgs-lib-extensions: inputContributions names input(s) ${shownList bad}, which are not in `inputs` (typo?). Known inputs: ${shownList (builtins.attrNames inputs)}.";
+      throw "nixpkgs-lib-extensions: inputContributions names input(s) ${shownList bad}, which are not in `inputs` (typo?). Known inputs: ${shownList (lib.attrNames inputs)}.";
 
   # Special cases for inputs that do not follow the generic output
   # conventions, keyed by the input's NAME in `inputs`. A case applies ONLY
@@ -279,18 +282,18 @@ let
         let
           r = case.remap v;
         in
-        if !(builtins.isAttrs r) then
+        if !(lib.isAttrs r) then
           throw ''nixpkgs-lib-extensions: inputContributions."${name}" is a function, so it must RETURN an attrset mapping this input onto the convention attributes (e.g. `v: { nixosModules = v.modules.nixos; }`) -- it returned a value of type `${builtins.typeOf r}`.''
         else
           let
-            bad = builtins.filter (k: !(builtins.elem k channelNames)) (builtins.attrNames r);
+            bad = lib.filter (k: !(lib.elem k channelNames)) (lib.attrNames r);
           in
           if bad == [ ] then
             r
           else
             throw ''nixpkgs-lib-extensions: inputContributions."${name}" returned unknown channel(s) ${shownList bad} (typo?). Valid channels: ${shownList channelNames}.'';
     in
-    if builtins.isAttrs v && case.remap != null then v // remapped else v;
+    if lib.isAttrs v && case.remap != null then v // remapped else v;
 
   # Deduplicate the PATH elements of a collected module/overlay list,
   # keeping every non-path element as-is (order preserved). A blanket
@@ -300,12 +303,12 @@ let
   # (the module system tolerates the rare duplicated attrset module fine).
   uniquePaths =
     list:
-    (builtins.foldl'
+    (lib.foldl'
       (
         acc: x:
-        if !(builtins.isPath x) then
+        if !(lib.isPath x) then
           acc // { out = acc.out ++ [ x ]; }
-        else if builtins.elem x acc.seen then
+        else if lib.elem x acc.seen then
           acc
         else
           {
@@ -335,7 +338,7 @@ let
     }:
     let
       cases = builtinInputSpecialCases // (validateCases inputs inputContributions);
-      conventionInputs = builtins.mapAttrs (normalizeInput cases) inputs;
+      conventionInputs = baseLib.mapAttrs (normalizeInput cases) inputs;
       caseOf = classifyCase cases;
 
       # The built-in `skip` rules are consulted ONLY when the consumer said
@@ -383,11 +386,11 @@ let
             in
             baseLib.optionals (baseLib.isAttrs v) (
               baseLib.mapAttrsToList (
-                channel: locate: builtins.length (resolveEntrySet name channel (locate v) case)
-              ) (builtins.intersectAttrs case.selections entrySetChannels)
+                channel: locate: baseLib.length (resolveEntrySet name channel (locate v) case)
+              ) (baseLib.intersectAttrs case.selections entrySetChannels)
             );
         in
-        builtins.deepSeq (baseLib.concatLists (baseLib.mapAttrsToList probe inputContributions)) null;
+        baseLib.deepSeq (baseLib.concatLists (baseLib.mapAttrsToList probe inputContributions)) null;
     in
     {
       inherit conventionInputs caseOf selectionsChecked;

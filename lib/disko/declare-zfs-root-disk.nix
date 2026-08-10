@@ -104,7 +104,7 @@
       zroot_name = "zroot-${hostname}";
 
       encryption_attribures =
-        if (builtins.isBool enableEncryption) then
+        if (lib.isBool enableEncryption) then
           (lib.optionalAttrs enableEncryption {
             encryption = "on";
             keyformat = "passphrase";
@@ -143,7 +143,7 @@
       '';
 
       swap_size =
-        if (builtins.isInt swapSize && swapSize >= 0) then
+        if (lib.isInt swapSize && swapSize >= 0) then
           swapSize
         else
           throw "The argument `swapSize` must be an integer >= 0 (GiB); 0 disables the SWAP partition";
@@ -152,7 +152,7 @@
       # relative to the pool root (e.g. "DATA/media" becomes
       # <zroot_name>/DATA/media); parent datasets must be declared by the caller too.
       extra_datasets =
-        if (builtins.isAttrs extraDatasets) then
+        if (lib.isAttrs extraDatasets) then
           extraDatasets
         else
           throw "The argument `extraDatasets` must be of type `attrset` (dataset path -> disko dataset definition)";
@@ -185,9 +185,9 @@
         user_setting:
         let
           user =
-            if (builtins.isString user_setting) then
+            if (lib.isString user_setting) then
               { name = user_setting; }
-            else if (builtins.isAttrs user_setting && (builtins.hasAttr "username" user_setting)) then
+            else if (lib.isAttrs user_setting && (lib.hasAttr "username" user_setting)) then
               # `mountpoint` is OPTIONAL -- the guard further down already
               # says so, but reading it unconditionally here made that guard
               # dead code and turned `{ username = "bar"; }` into a bare
@@ -196,7 +196,7 @@
               {
                 name = user_setting.username;
               }
-              // lib.optionalAttrs (builtins.hasAttr "mountpoint" user_setting) {
+              // lib.optionalAttrs (lib.hasAttr "mountpoint" user_setting) {
                 inherit (user_setting) mountpoint;
               }
             else
@@ -207,7 +207,7 @@
           value = {
             type = "zfs_fs";
             options =
-              (lib.optionalAttrs (builtins.hasAttr "mountpoint" user) { inherit (user) mountpoint; })
+              (lib.optionalAttrs (lib.hasAttr "mountpoint" user) { inherit (user) mountpoint; })
               // encryption_attribures;
             # By adding encryption attributes to the user folder filesystem,
             # it will make it possible to switch to use the password of the user as the passphrase.
@@ -220,7 +220,7 @@
       # Nix's own "expected a list but found a string", which names neither
       # the argument nor this function and cannot be caught by tryEval.
       checked_listOfUsernames =
-        if builtins.isList listOfUsernames then
+        if lib.isList listOfUsernames then
           listOfUsernames
         else
           throw "declareZfsRootDisk: `listOfUsernames` must be a list, but is a value of type `${builtins.typeOf listOfUsernames}`. A single user is still a list: `listOfUsernames = [ \"foo\" ];`.";
@@ -236,10 +236,10 @@
         lib.unique (lib.filter (n: lib.count (m: m == n) names > 1) names);
       zfs_filesystems_for_users =
         if duplicate_user_datasets == [ ] then
-          builtins.listToAttrs zfs_user_folders
+          lib.listToAttrs zfs_user_folders
         else
           throw "declareZfsRootDisk: `listOfUsernames` names the same user more than once (${
-            builtins.concatStringsSep ", " (map (n: lib.removePrefix "HOME/" n) duplicate_user_datasets)
+            lib.concatStringsSep ", " (map (n: lib.removePrefix "HOME/" n) duplicate_user_datasets)
           }); only the last entry would have survived.";
 
       zroot_general_datasets = {
@@ -468,7 +468,7 @@
                 };
               })
               // (
-                if (builtins.isAttrs defineBootPartitions) then
+                if (lib.isAttrs defineBootPartitions) then
                   defineBootPartitions
                 else if (pkgs.stdenv.hostPlatform.system == "x86_64-linux") then
                   {

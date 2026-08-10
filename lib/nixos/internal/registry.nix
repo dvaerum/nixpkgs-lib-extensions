@@ -12,8 +12,8 @@ let
   # pointing at an existing directory.
   isDirEntry =
     entry:
-    (builtins.isPath entry || (builtins.isString entry && builtins.substring 0 1 entry == "/"))
-    && builtins.pathExists entry
+    (lib.isPath entry || (lib.isString entry && lib.substring 0 1 entry == "/"))
+    && lib.pathExists entry
     && builtins.readFileType entry == "directory";
 
   # The registry entries that apply for `username` on `hostname`:
@@ -24,7 +24,7 @@ let
   matchedEntries =
     userRegistry: hostname: username:
     let
-      atTier = builtins.filter (e: e != null) [
+      atTier = lib.filter (e: e != null) [
         (userRegistry."${username}@*" or null)
         (userRegistry."${username}@${hostname}" or null)
       ];
@@ -33,7 +33,7 @@ let
     if atTier != [ ] then
       (
         if fallback != null then
-          builtins.warn ''
+          lib.warn ''
             userRegistry: the plain `${username}` entry is IGNORED on host
             `${hostname}` because `${username}@...` entries exist. Plain entries
             are standalone defaults, never merged with @-entries; import the
@@ -65,18 +65,14 @@ let
     username: entry:
     let
       shown =
-        if builtins.isPath entry || builtins.isString entry then
+        if lib.isPath entry || lib.isString entry then
           toString entry
         else
           "a value of type `${builtins.typeOf entry}`";
-      hasHome = builtins.pathExists (entry + "/home.nix");
-      hasConf = builtins.pathExists (entry + "/configuration.nix");
+      hasHome = lib.pathExists (entry + "/home.nix");
+      hasConf = lib.pathExists (entry + "/configuration.nix");
       warnStringEntry =
-        parts:
-        if builtins.isString entry then
-          builtins.warn (stringPathEntryWarning username entry) parts
-        else
-          parts;
+        parts: if lib.isString entry then lib.warn (stringPathEntryWarning username entry) parts else parts;
     in
     if !(isDirEntry entry) then
       throw ''
@@ -102,7 +98,7 @@ let
     userRegistry: hostname: username:
     let
       parts = map (entryFiles username) (matchedEntries userRegistry hostname username);
-      nonNull = builtins.filter (x: x != null);
+      nonNull = lib.filter (x: x != null);
     in
     {
       homeModules = nonNull (map (p: p.homeModule) parts);
@@ -124,27 +120,27 @@ let
       "the empty string is not a user name"
     else if m == null then
       null
-    else if builtins.head m == "" then
+    else if lib.head m == "" then
       "it has no user before the `@`"
-    else if builtins.elemAt m 1 == "" then
-      "it has no host after the `@` (write `${builtins.head m}` for every host, or `${builtins.head m}@*`)"
+    else if lib.elemAt m 1 == "" then
+      "it has no host after the `@` (write `${lib.head m}` for every host, or `${lib.head m}@*`)"
     else
       null;
 
   validateRegistryKeys =
     fnName: registries:
     let
-      problems = builtins.concatLists (
+      problems = lib.concatLists (
         map (
           r:
-          builtins.concatLists (
+          lib.concatLists (
             map (
               key:
               let
                 bad = badRegistryKey key;
               in
               if bad == null then [ ] else [ "- `${key}`: ${bad}." ]
-            ) (builtins.attrNames r)
+            ) (lib.attrNames r)
           )
         ) registries
       );
@@ -154,7 +150,7 @@ let
     else
       throw ''
         ${fnName}: unusable userRegistry key(s):
-        ${builtins.concatStringsSep "
+        ${lib.concatStringsSep "
 " problems}
       '';
 
@@ -169,18 +165,18 @@ let
         key:
         let
           m = builtins.match "(.*)@(.*)" key;
-          host = builtins.elemAt m 1;
+          host = lib.elemAt m 1;
         in
         if m == null then
           key
         else if host == hostname || host == "*" then
-          builtins.head m
+          lib.head m
         else
           null;
-      names = builtins.filter (u: u != null) (map toUser (builtins.attrNames userRegistry));
+      names = lib.filter (u: u != null) (map toUser (lib.attrNames userRegistry));
     in
-    builtins.attrNames (
-      builtins.listToAttrs (
+    lib.attrNames (
+      lib.listToAttrs (
         map (u: {
           name = u;
           value = null;
@@ -192,7 +188,7 @@ let
   # home configuration.
   usersWithHome =
     userRegistry: hostname:
-    builtins.filter (u: (resolveUser userRegistry hostname u).homeModules != [ ]) (
+    lib.filter (u: (resolveUser userRegistry hostname u).homeModules != [ ]) (
       usersFromRegistry userRegistry hostname
     );
 
@@ -202,7 +198,7 @@ let
   # login bootstrap activates (homeManagerBootstrapModule).
   loginUsersWithHome =
     userRegistry: hostname: loginHomes:
-    builtins.filter (u: builtins.elem u loginHomes) (usersWithHome userRegistry hostname);
+    lib.filter (u: lib.elem u loginHomes) (usersWithHome userRegistry hostname);
 
   # Every user NAME these registries mention, taken from the keys and
   # ignoring which host each key targets. Deliberately not
@@ -211,23 +207,23 @@ let
   # answers is "is this a user at all", not "does it apply here".
   registryUserNames =
     registries:
-    builtins.attrNames (
-      builtins.listToAttrs (
+    lib.attrNames (
+      lib.listToAttrs (
         map
           (u: {
             name = u;
             value = null;
           })
           (
-            builtins.concatMap (
+            lib.concatMap (
               r:
               map (
                 key:
                 let
                   m = builtins.match "(.*)@(.*)" key;
                 in
-                if m == null then key else builtins.head m
-              ) (builtins.attrNames r)
+                if m == null then key else lib.head m
+              ) (lib.attrNames r)
             ) registries
           )
       )
@@ -247,22 +243,22 @@ let
     fnName: perHost:
     let
       known = registryUserNames (map ({ registry, ... }: registry) perHost);
-      wanted = builtins.attrNames (
-        builtins.listToAttrs (
+      wanted = lib.attrNames (
+        lib.listToAttrs (
           map (u: {
             name = u;
             value = null;
-          }) (builtins.concatLists (map ({ loginHomes, ... }: loginHomes) perHost))
+          }) (lib.concatLists (map ({ loginHomes, ... }: loginHomes) perHost))
         )
       );
-      unknown = builtins.filter (u: !(builtins.elem u known)) wanted;
+      unknown = lib.filter (u: !(lib.elem u known)) wanted;
     in
     if unknown == [ ] then
       null
     else
       throw ''
-        ${fnName}: loginHomes names ${builtins.concatStringsSep ", " unknown}, which is not a userRegistry user on any host (typo?). A login user must exist in the registry; registry users across all hosts: ${
-          if known == [ ] then "(none)" else builtins.concatStringsSep ", " known
+        ${fnName}: loginHomes names ${lib.concatStringsSep ", " unknown}, which is not a userRegistry user on any host (typo?). A login user must exist in the registry; registry users across all hosts: ${
+          if known == [ ] then "(none)" else lib.concatStringsSep ", " known
         }.
       '';
 in

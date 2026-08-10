@@ -87,9 +87,7 @@ in
       # `loginHomes` is wired into the system via home-manager's NixOS
       # module -- homes ship with the system and activate on
       # nixos-rebuild switch. No flake outputs, no bootstrap involved.
-      systemUsersWithHome = builtins.filter (u: !(builtins.elem u loginHomes)) (
-        usersWithHome registry hostname
-      );
+      systemUsersWithHome = lib.filter (u: !(lib.elem u loginHomes)) (usersWithHome registry hostname);
       hmNixosModule =
         if home-manager == null then
           null
@@ -99,7 +97,7 @@ in
       # instead of silently building a homeless system.
       wantSystemHomes =
         if systemUsersWithHome != [ ] && hmNixosModule == null then
-          lib.warn "mkNixosSystem: host `${hostname}`: user(s) ${builtins.concatStringsSep ", " systemUsersWithHome} have a home.nix, but no home-manager input (or none exposing a NixOS module) exists -- their SYSTEM-managed homes are NOT built. Add a home-manager input, or move them to loginHomes." false
+          lib.warn "mkNixosSystem: host `${hostname}`: user(s) ${lib.concatStringsSep ", " systemUsersWithHome} have a home.nix, but no home-manager input (or none exposing a NixOS module) exists -- their SYSTEM-managed homes are NOT built. Add a home-manager input, or move them to loginHomes." false
         else
           systemUsersWithHome != [ ] && hmNixosModule != null;
       systemHomesModule = {
@@ -150,8 +148,8 @@ in
             + (if folderSegment == null then "/hosts" else "/hosts/${folderSegment}");
           file = hostsDir + "/${hostname}.nix";
           dir = hostsDir + "/${hostname}/configuration.nix";
-          fileExists = builtins.pathExists file;
-          dirExists = builtins.pathExists dir;
+          fileExists = lib.pathExists file;
+          dirExists = lib.pathExists dir;
         in
         if fileExists && dirExists then
           throw ''

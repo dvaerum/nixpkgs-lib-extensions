@@ -86,31 +86,31 @@ let
       # `extra` is a HOSTS-ATTRSET key, resolved by planHosts before a
       # builder ever runs. A direct call takes the already-merged arguments,
       # so accepting it here would silently drop whatever it carried.
-      allowed = builtins.filter (k: k != "extra") allowedHostArgs ++ extraAllowed;
+      allowed = lib.filter (k: k != "extra") allowedHostArgs ++ extraAllowed;
       # No `_`-prefix escape hatch. It existed so planHosts could pass
       # `_core` through this very allowlist; the core is an explicit
       # parameter of the internal mkSystem/mkHome now, so every unknown key
       # is reported -- including a `_defaults` written inside a host entry
       # instead of beside it, which used to be accepted and ignored.
-      bad = builtins.filter (k: !(builtins.elem k allowed)) (builtins.attrNames args);
+      bad = lib.filter (k: !(lib.elem k allowed)) (lib.attrNames args);
     in
     if bad == [ ] then
       [ ]
     else
       [
         (
-          "${fnName}: unknown argument(s): ${builtins.concatStringsSep ", " bad} (typo?)."
+          "${fnName}: unknown argument(s): ${lib.concatStringsSep ", " bad} (typo?)."
           + (
-            if builtins.elem "extra" bad then
+            if lib.elem "extra" bad then
               " `extra` is a per-host layering slot of the hosts attrset that buildConfigurations/buildNixosConfigurations take; a direct call receives the merged arguments, so pass them directly."
             else
               ""
           )
           # a RENAMED name deserves its pointer, not just the typo verdict
-          + builtins.concatStringsSep "" (
-            map (n: " ${renamedComplaint n}") (builtins.filter (n: renamedArgs ? ${n}) bad)
+          + lib.concatStringsSep "" (
+            map (n: " ${renamedComplaint n}") (lib.filter (n: renamedArgs ? ${n}) bad)
           )
-          + " Accepted: ${builtins.concatStringsSep ", " allowed}."
+          + " Accepted: ${lib.concatStringsSep ", " allowed}."
         )
       ];
 
@@ -123,14 +123,11 @@ let
     let
       problems = builderArgProblems fnName extraAllowed args;
     in
-    if problems == [ ] then args else throw (builtins.concatStringsSep "\n" problems);
+    if problems == [ ] then args else throw (lib.concatStringsSep "\n" problems);
 
   # every `_`-prefixed key is reserved, so none of them is ever a host
   hostEntriesOf =
-    hosts:
-    builtins.removeAttrs hosts (
-      builtins.filter (k: builtins.substring 0 1 k == "_") (builtins.attrNames hosts)
-    );
+    hosts: lib.removeAttrs hosts (lib.filter (k: lib.substring 0 1 k == "_") (lib.attrNames hosts));
 
   # The complaints a hosts attrset raises, as DATA -- the COMPLETE list,
   # all four classes (reserved keys, `_defaults` keys, host-entry shapes,
@@ -156,26 +153,24 @@ let
             "- `${k}`: keys starting with `_` are reserved; a hostname cannot start with one. Did you mean `_defaults` or `_groups`?"
           )
           (
-            builtins.filter (k: k != "_defaults" && k != "_groups" && builtins.substring 0 1 k == "_") (
-              builtins.attrNames hosts
+            lib.filter (k: k != "_defaults" && k != "_groups" && lib.substring 0 1 k == "_") (
+              lib.attrNames hosts
             )
           );
       defaultComplaint =
         name:
         if name == "hostname" then
           "- `hostname`: never a default -- it comes from each attribute key. Drop it."
-        else if builtins.substring 0 10 name == "additional" then
-          "- `${name}`: the `additional*` arguments are gone. Put the shared value in `_defaults` and the per-host addition in that host's `extra` slot: `extra.${
-            builtins.substring 10 (-1) name
-          } = [ ... ];` (a bare key replaces, `extra.<key>` adds)."
+        else if lib.substring 0 10 name == "additional" then
+          "- `${name}`: the `additional*` arguments are gone. Put the shared value in `_defaults` and the per-host addition in that host's `extra` slot: `extra.${lib.substring 10 (-1) name} = [ ... ];` (a bare key replaces, `extra.<key>` adds)."
         else if name == "extra" then
           "- `extra`: the per-host layering slot, never a default -- `_defaults` holds the base values that `extra` adds to."
         else if renamedArgs ? ${name} then
           "- ${renamedComplaint name}"
         else
-          "- `${name}`: not a builder argument (typo?). `_defaults` accepts: ${builtins.concatStringsSep ", " allowedDefaultArgs}.";
+          "- `${name}`: not a builder argument (typo?). `_defaults` accepts: ${lib.concatStringsSep ", " allowedDefaultArgs}.";
       badDefaults = map defaultComplaint (
-        builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames rawDefaults)
+        lib.filter (k: !(lib.elem k allowedDefaultArgs)) (lib.attrNames rawDefaults)
       );
       # `_groups.<name>` entries take the `_defaults` allowlist plus an
       # `extra` slot (layering onto `_defaults`, like a host's) -- minus
@@ -187,34 +182,34 @@ let
           "- `_groups.${groupName}`: a group layer cannot set `group` -- its attribute name IS the group; hosts opt in with `group = \"${groupName}\";`."
         else if name == "extra" then
           null
-        else if builtins.elem name allowedDefaultArgs then
+        else if lib.elem name allowedDefaultArgs then
           null
         else if renamedArgs ? ${name} then
           "- `_groups.${groupName}`: ${renamedComplaint name}"
         else
           "- `_groups.${groupName}`: `${name}` is not a builder argument (typo?). Group entries accept the same names as `_defaults`, plus `extra`.";
-      badGroups = builtins.concatLists (
-        builtins.attrValues (
-          builtins.mapAttrs (
+      badGroups = lib.concatLists (
+        lib.attrValues (
+          lib.mapAttrs (
             groupName: entry:
-            if !(builtins.isAttrs entry) then
+            if !(lib.isAttrs entry) then
               [
                 "- `_groups.${groupName}`: must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf entry}`."
               ]
-            else if entry ? extra && !(builtins.isAttrs entry.extra) then
+            else if entry ? extra && !(lib.isAttrs entry.extra) then
               [
                 "- `_groups.${groupName}`: `extra` must be an attribute set of builder arguments to ADD, but is a value of type `${builtins.typeOf entry.extra}`."
               ]
             else
-              builtins.filter (c: c != null) (
-                map (groupComplaint groupName) (builtins.attrNames entry)
+              lib.filter (c: c != null) (
+                map (groupComplaint groupName) (lib.attrNames entry)
                 ++ map (
                   k:
-                  if k == "group" || !(builtins.elem k allowedDefaultArgs) then
+                  if k == "group" || !(lib.elem k allowedDefaultArgs) then
                     "- `_groups.${groupName}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults` (minus `group`)."
                   else
                     null
-                ) (builtins.attrNames (if builtins.isAttrs (entry.extra or { }) then entry.extra or { } else { }))
+                ) (lib.attrNames (if lib.isAttrs (entry.extra or { }) then entry.extra or { } else { }))
               )
           ) rawGroups
         )
@@ -227,7 +222,7 @@ let
       # instead of surfacing as a missing layer.
       effectiveGroupOf =
         args:
-        if builtins.isAttrs (args.extra or null) && args.extra ? group then
+        if lib.isAttrs (args.extra or null) && args.extra ? group then
           args.extra.group
         else
           args.group or (rawDefaults.group or null);
@@ -235,39 +230,39 @@ let
         if !(hosts ? _groups) then
           [ ]
         else
-          builtins.concatLists (
-            builtins.attrValues (
-              builtins.mapAttrs (
+          lib.concatLists (
+            lib.attrValues (
+              lib.mapAttrs (
                 hostname: args:
                 let
-                  g = if builtins.isAttrs args then effectiveGroupOf args else null;
+                  g = if lib.isAttrs args then effectiveGroupOf args else null;
                 in
                 if g == null then
                   [ ]
-                else if !(builtins.isString g) then
+                else if !(lib.isString g) then
                   [
                     "- `${hostname}`: `group` must be a string naming a `_groups` entry, but is a value of type `${builtins.typeOf g}`."
                   ]
-                else if !(builtins.isAttrs rawGroups) || rawGroups ? ${g} then
+                else if !(lib.isAttrs rawGroups) || rawGroups ? ${g} then
                   [ ]
                 else
                   [
                     "- `${hostname}`: `group = \"${g}\"` names no `_groups` entry (typo?). Declared groups: ${
-                      if rawGroups == { } then "(none)" else builtins.concatStringsSep ", " (builtins.attrNames rawGroups)
+                      if rawGroups == { } then "(none)" else lib.concatStringsSep ", " (lib.attrNames rawGroups)
                     }."
                   ]
               ) hostEntries
             )
           );
-      badHostShapes = builtins.concatLists (
-        builtins.attrValues (
-          builtins.mapAttrs (
+      badHostShapes = lib.concatLists (
+        lib.attrValues (
+          lib.mapAttrs (
             hostname: args:
-            if !(builtins.isAttrs args) then
+            if !(lib.isAttrs args) then
               [
                 "- `${hostname}`: a host entry must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf args}`. (The host's own configuration is found by convention at hosts/${hostname}.nix -- it is not passed here.)"
               ]
-            else if args ? extra && !(builtins.isAttrs args.extra) then
+            else if args ? extra && !(lib.isAttrs args.extra) then
               [
                 "- `${hostname}`: `extra` must be an attribute set of builder arguments to ADD, but is a value of type `${builtins.typeOf args.extra}`."
               ]
@@ -276,11 +271,11 @@ let
           ) hostEntries
         )
       );
-      badHostKeys = builtins.concatLists (
-        builtins.attrValues (
-          builtins.mapAttrs (
+      badHostKeys = lib.concatLists (
+        lib.attrValues (
+          lib.mapAttrs (
             hostname: args:
-            if !(builtins.isAttrs args) then
+            if !(lib.isAttrs args) then
               [ ]
             else
               map (
@@ -288,8 +283,8 @@ let
                 if renamedArgs ? ${k} then
                   "- `${hostname}`: ${renamedComplaint k}"
                 else
-                  "- `${hostname}`: `${k}` is not a builder argument (typo?). Host entries accept: ${builtins.concatStringsSep ", " allowedHostArgs}."
-              ) (builtins.filter (k: !(builtins.elem k allowedHostArgs)) (builtins.attrNames args))
+                  "- `${hostname}`: `${k}` is not a builder argument (typo?). Host entries accept: ${lib.concatStringsSep ", " allowedHostArgs}."
+              ) (lib.filter (k: !(lib.elem k allowedHostArgs)) (lib.attrNames args))
               ++
                 map
                   (
@@ -300,12 +295,12 @@ let
                       "- `${hostname}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults`."
                   )
                   (
-                    builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (
+                    lib.filter (k: !(lib.elem k allowedDefaultArgs)) (
                       # guarded: a non-attrset `extra` is reported by
                       # badHostShapes, and attrNames on it here would be an
                       # uncatchable TYPE error raised while the problem list is
                       # still being assembled
-                      if builtins.isAttrs (args.extra or { }) then builtins.attrNames (args.extra or { }) else [ ]
+                      if lib.isAttrs (args.extra or { }) then lib.attrNames (args.extra or { }) else [ ]
                     )
                   )
               ++ (
@@ -321,14 +316,14 @@ let
       );
     in
     # A non-attrset `_defaults` (or `_groups`) otherwise dies inside
-    # builtins.attrNames with no mention of which flake, function or key is
+    # lib.attrNames with no mention of which flake, function or key is
     # at fault. The ONE complaint that preempts all others: nothing else
     # can be judged without reading those keys.
-    if !(builtins.isAttrs rawDefaults) then
+    if !(lib.isAttrs rawDefaults) then
       [
         "${fnName}: `_defaults` must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf rawDefaults}`."
       ]
-    else if !(builtins.isAttrs rawGroups) then
+    else if !(lib.isAttrs rawGroups) then
       [
         "${fnName}: `_groups` must be an attribute set of group-name -> builder-argument sets, but is a value of type `${builtins.typeOf rawGroups}`."
       ]
@@ -355,15 +350,13 @@ let
         groups = hosts._groups or { };
         hostEntries = hostEntriesOf hosts;
       }
-    else if
-      !(builtins.isAttrs (hosts._defaults or { })) || !(builtins.isAttrs (hosts._groups or { }))
-    then
+    else if !(lib.isAttrs (hosts._defaults or { })) || !(lib.isAttrs (hosts._groups or { })) then
       # already a complete sentence naming fnName; no list around it
-      throw (builtins.head problems)
+      throw (lib.head problems)
     else
       throw ''
         ${fnName}: invalid hosts attrset:
-        ${builtins.concatStringsSep "\n" problems}
+        ${lib.concatStringsSep "\n" problems}
       '';
 
   # ONE plan per hosts attrset, shared by every hosts-level builder: split
@@ -380,7 +373,7 @@ let
     fnName: hosts:
     let
       split = splitHostsArgs fnName hosts;
-      coreArgSet = builtins.listToAttrs (
+      coreArgSet = lib.listToAttrs (
         map (n: {
           name = n;
           value = null;
@@ -393,7 +386,7 @@ let
       # attributes this library is otherwise careful never to force.
       sameValue =
         a: b:
-        if builtins.isAttrs a && builtins.isAttrs b && a ? outPath && b ? outPath then
+        if lib.isAttrs a && lib.isAttrs b && a ? outPath && b ? outPath then
           a.outPath == b.outPath
         else
           # `==` does NOT throw on functions (it returns false); tryEval is
@@ -417,8 +410,8 @@ let
         // {
           nixpkgs = args.nixpkgs or (args.inputs.nixpkgs or null);
         }
-        // builtins.intersectAttrs coreArgSet args;
-      sameCoreArgs = a: b: builtins.all (n: sameValue (a.${n} or null) (b.${n} or null)) coreArgNames;
+        // lib.intersectAttrs coreArgSet args;
+      sameCoreArgs = a: b: lib.all (n: sameValue (a.${n} or null) (b.${n} or null)) coreArgNames;
 
       # A bare key replaces; `extra.<key>` adds to whatever the merge
       # produced. Lists concatenate, attrsets merge with `extra` winning a
@@ -426,9 +419,9 @@ let
       # two `additional*` twins had, generalised to every argument.
       combine =
         hostname: key: base: add:
-        if builtins.isList base && builtins.isList add then
+        if lib.isList base && lib.isList add then
           base ++ add
-        else if builtins.isAttrs base && builtins.isAttrs add then
+        else if lib.isAttrs base && lib.isAttrs add then
           # recursiveUpdate, not `//`: `inputContributions` is two levels
           # (input -> channel), so a shallow merge let
           # `extra.inputContributions.vendor.overlays = null;` replace the
@@ -440,21 +433,19 @@ let
         # it also used to catch base and add being DIFFERENT container
         # kinds, which is never a deliberate "add" -- it silently threw the
         # fleet-wide base away.
-        else if
-          builtins.isList base != builtins.isList add || builtins.isAttrs base != builtins.isAttrs add
-        then
+        else if lib.isList base != lib.isList add || lib.isAttrs base != lib.isAttrs add then
           throw "${fnName}: host `${hostname}`: `extra.${key}` is a ${builtins.typeOf add} but the value it must add to is a ${builtins.typeOf base}. `extra` ADDS to the merged value (lists concatenate, attrsets merge); to replace it outright, set `${key}` directly on the host."
         else
           add;
       applyExtra =
         hostname: merged: extra:
-        builtins.foldl' (
+        lib.foldl' (
           acc: k:
           acc
           // {
             ${k} = if acc ? ${k} then combine hostname k acc.${k} extra.${k} else extra.${k};
           }
-        ) merged (builtins.attrNames extra);
+        ) merged (lib.attrNames extra);
       # `_defaults` merged under each entry, the host's `_groups` layer (if
       # it declares a `group` that has one) BETWEEN the two, `extra` layered
       # on top -- the arguments each builder finally receives. The group
@@ -464,23 +455,23 @@ let
       # arguments (so `extra.group` counts, matching hostsProblems'
       # effectiveGroupOf), and validation has already established that it
       # names a `_groups` entry whenever `_groups` exists at all.
-      mergedArgs = builtins.mapAttrs (
+      mergedArgs = lib.mapAttrs (
         hostname: entry:
         let
           merge =
             base:
-            applyExtra hostname (base // (builtins.removeAttrs entry [ "extra" ]) // { inherit hostname; }) (
+            applyExtra hostname (base // (lib.removeAttrs entry [ "extra" ]) // { inherit hostname; }) (
               entry.extra or { }
             );
           groupName = (merge split.defaults).group or null;
           groupLayer = if groupName == null then { } else split.groups.${groupName} or { };
-          base = applyExtra hostname (split.defaults // (builtins.removeAttrs groupLayer [ "extra" ])) (
+          base = applyExtra hostname (split.defaults // (lib.removeAttrs groupLayer [ "extra" ])) (
             groupLayer.extra or { }
           );
         in
         merge base
       ) split.hostEntries;
-      coreTuples = builtins.mapAttrs (_: coreArgsOf) mergedArgs;
+      coreTuples = lib.mapAttrs (_: coreArgsOf) mergedArgs;
 
       # ONE core per equivalence class. Sharing used to be binary
       # (match `_defaults` exactly or pay a full nixpkgs evaluation), so
@@ -489,12 +480,12 @@ let
       # tuples, not with fleet size. The fold only ever compares tuples
       # (cheap: outPath identity first); each `mkContextCore` application
       # stays an unforced thunk until some host uses its class's core.
-      coreClasses = builtins.foldl' (
+      coreClasses = lib.foldl' (
         acc: hostname:
         let
           tuple = coreTuples.${hostname};
         in
-        if builtins.any (c: sameCoreArgs c.tuple tuple) acc then
+        if lib.any (c: sameCoreArgs c.tuple tuple) acc then
           acc
         else
           acc
@@ -504,12 +495,12 @@ let
               core = mkContextCore tuple;
             }
           ]
-      ) [ ] (builtins.attrNames coreTuples);
+      ) [ ] (lib.attrNames coreTuples);
       # total by construction: every host's tuple seeded a class above
       coreFor =
         hostname: (lib.findFirst (c: sameCoreArgs c.tuple coreTuples.${hostname}) null coreClasses).core;
     in
-    builtins.mapAttrs (
+    lib.mapAttrs (
       hostname: args:
       let
         rawRegistry = args.userRegistry or { };
@@ -535,12 +526,11 @@ let
   # at all is a typo.
   planLoginUsers =
     fnName: plan:
-    builtins.seq (validateRegistryKeys fnName (map (p: p.registry) (builtins.attrValues plan)))
-      validateLoginUsers
+    lib.seq (validateRegistryKeys fnName (map (p: p.registry) (lib.attrValues plan))) validateLoginUsers
       fnName
       (
-        builtins.attrValues (
-          builtins.mapAttrs (hostname: p: {
+        lib.attrValues (
+          lib.mapAttrs (hostname: p: {
             inherit hostname;
             registry = p.args.userRegistry or { };
             loginHomes = p.args.loginHomes or [ ];
@@ -553,12 +543,12 @@ let
   # code applied to the same plan.
   systemsFromPlan =
     fnName: plan:
-    builtins.seq (planLoginUsers fnName plan) (builtins.mapAttrs (_: p: mkSystem p.core p.args) plan);
+    lib.seq (planLoginUsers fnName plan) (lib.mapAttrs (_: p: mkSystem p.core p.args) plan);
 
   homesFromPlan =
     fnName: plan:
-    builtins.seq (planLoginUsers fnName plan) (
-      builtins.foldl' (
+    lib.seq (planLoginUsers fnName plan) (
+      lib.foldl' (
         acc: hostname:
         let
           p = plan.${hostname};
@@ -572,13 +562,13 @@ let
           acc
         else
           acc
-          // builtins.listToAttrs (
+          // lib.listToAttrs (
             map (username: {
               name = "${username}@${hostname}";
               value = mkHome p.core (p.args // { inherit username; });
             }) usersHome
           )
-      ) { } (builtins.attrNames plan)
+      ) { } (lib.attrNames plan)
     );
 in
 {

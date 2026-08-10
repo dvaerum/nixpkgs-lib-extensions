@@ -130,7 +130,7 @@ let
     # when a name is NOT a specialArg, so after the move a module still
     # destructuring `{ tags, ... }` reaches these throws -- a pointer to the
     # replacement instead of a bare "unexpected argument" error.
-    _module.args = builtins.mapAttrs (
+    _module.args = lib.mapAttrs (
       name: replacement: throw (movedSpecialArgMessage name replacement)
     ) moved;
   };
