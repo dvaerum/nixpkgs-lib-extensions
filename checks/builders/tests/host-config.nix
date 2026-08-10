@@ -24,6 +24,14 @@ in
 {
   hostname-set = laptop.config.networking.hostName == "laptop";
 
+  # the unpatched route evaluates through nixpkgs.lib.nixosSystem, which
+  # injects `nixpkgs.flake.source` -- registry/NIX_PATH pinning points at
+  # the exact nixpkgs input the system was built from (a raw eval-config
+  # import used to lose this silently). The PATCHED route's counterpart
+  # lives in checks/nixpkgs-patching.nix.
+  flake-source-is-the-nixpkgs-input =
+    toString laptop.config.nixpkgs.flake.source == toString inputs.nixpkgs.outPath;
+
   # ── hosts/<hostname> convention ──
   # laptop's config comes from hosts/laptop.nix (file form), server's from
   # hosts/server/configuration.nix (directory form) -- neither passes

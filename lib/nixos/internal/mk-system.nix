@@ -54,6 +54,8 @@ in
         autoNixosModules
         autoHomeModules
         home-manager
+        nixpkgsInput
+        nixpkgsPatched
         ;
 
       # The builder-derived values every module reads as the
@@ -175,46 +177,88 @@ in
         homeManager = home-manager;
       };
     in
+    # What BOTH evaluation routes below receive. `system` is deliberately
+    # not among the eval-config arguments anymore: that set the legacy
+    # `nixpkgs.system` option, while the inline module pins
+    # `nixpkgs.hostPlatform` instead (current upstream practice). With
+    # `pkgs` passed in, neither is used to CONSTRUCT the package set --
+    # the nixpkgs module wraps the given one -- but modules and tooling
+    # read `config.nixpkgs.hostPlatform`, so it must hold a value.
+    let
+      evalArgs = {
+        inherit lib pkgs;
+        specialArgs = mySpecialArguments;
+        modules = [
+          # the builder-derived values as declared options -- always imported
+          (extNixosOptionsModule extOptionValues)
+          (
+            { config, ... }:
+            {
+              _file = ../nixosConfigurationsBuilder.nix;
+              networking.hostName = lib.mkDefault hostname;
+              nixpkgs.hostPlatform = lib.mkDefault system;
+              # host tags label the boot entry too -- the MERGED option value,
+              # so tags contributed by modules land there as well; a host
+              # setting the option itself overrides this
+              system.nixos.tags = lib.mkDefault config.nixpkgsLibExtensions.tags;
+              # NOTE: this used to warn that module-level nixpkgs.overlays /
+              # nixpkgs.config are ignored because the builder provides
+              # `pkgs`. That was WRONG. Passing `pkgs` as an eval-config
+              # ARGUMENT sets the `nixpkgs.pkgs` option
+              # (nixos/lib/eval-config.nix), and the nixpkgs module then
+              # builds `cfg.pkgs.appendOverlays cfg.overlays`
+              # (nixos/modules/misc/nixpkgs.nix) -- so a module's overlays
+              # compose on top of ours as usual. `nixpkgs.config` is not
+              # silently dropped either: nixpkgs asserts it must be empty
+              # when pkgs is passed in, which is why `nixpkgsConfig` is the
+              # only route for THAT one. (The nixpkgs warning about ignored
+              # options applies to `specialArgs.pkgs`, which this builder
+              # deliberately does not use -- see internal/context.nix.)
+            }
+          )
+          bootstrapModule
+          systemHomesModule
+        ]
+        ++ autoNixosModules
+        ++ autoHostModules
+        ++ modules
+        ++ perUserModules
+        ++ userNixosConfigs;
+      };
+    in
     # Returned BARE (like homeConfigurationsBuilder): assign it to
     # `nixosConfigurations.<hostname>` yourself, or let
     # buildNixosConfigurations key a whole set of hosts.
-    (import "${selectedSrc}/nixos/lib/eval-config.nix" {
-      inherit system lib pkgs;
-      specialArgs = mySpecialArguments;
-      modules = [
-        # the builder-derived values as declared options -- always imported
-        (extNixosOptionsModule extOptionValues)
-        (
-          { config, ... }:
-          {
-            _file = ../nixosConfigurationsBuilder.nix;
-            networking.hostName = lib.mkDefault hostname;
-            # host tags label the boot entry too -- the MERGED option value,
-            # so tags contributed by modules land there as well; a host
-            # setting the option itself overrides this
-            system.nixos.tags = lib.mkDefault config.nixpkgsLibExtensions.tags;
-            # NOTE: this used to warn that module-level nixpkgs.overlays /
-            # nixpkgs.config are ignored because the builder provides
-            # `pkgs`. That was WRONG. Passing `pkgs` as an eval-config
-            # ARGUMENT sets the `nixpkgs.pkgs` option
-            # (nixos/lib/eval-config.nix), and the nixpkgs module then
-            # builds `cfg.pkgs.appendOverlays cfg.overlays`
-            # (nixos/modules/misc/nixpkgs.nix) -- so a module's overlays
-            # compose on top of ours as usual. `nixpkgs.config` is not
-            # silently dropped either: nixpkgs asserts it must be empty
-            # when pkgs is passed in, which is why `nixpkgsConfig` is the
-            # only route for THAT one. (The nixpkgs warning about ignored
-            # options applies to `specialArgs.pkgs`, which this builder
-            # deliberately does not use -- see internal/context.nix.)
-          }
-        )
-        bootstrapModule
-        systemHomesModule
-      ]
-      ++ autoNixosModules
-      ++ autoHostModules
-      ++ modules
-      ++ perUserModules
-      ++ userNixosConfigs;
-    });
+    #
+    # Two evaluation routes:
+    # - UNPATCHED nixpkgs flake (the common case): `nixpkgs.lib.nixosSystem`,
+    #   the entry point nixpkgs maintains for flakes. It injects
+    #   `nixpkgs.flake.source`, so registry/NIX_PATH pinning (`nix run
+    #   nixpkgs#hello`, `<nixpkgs>`) resolves to the exact tree the system
+    #   was built from -- a raw eval-config import silently loses that.
+    # - PATCHED tree (or a `nixpkgs` input exposing no lib.nixosSystem):
+    #   the standard workaround -- eval-config imported from the SELECTED
+    #   tree -- plus an explicit `nixpkgs.flake.source` pointing at that
+    #   tree, so the pinning follows the patched source too.
+    if !nixpkgsPatched && (nixpkgsInput.lib or { }) ? nixosSystem then
+      nixpkgsInput.lib.nixosSystem evalArgs
+    else
+      import (selectedSrc + "/nixos/lib/eval-config.nix") (
+        evalArgs
+        // {
+          # eval-config's `system` DEFAULT is builtins.currentSystem; null
+          # removes that impure entry point (hostPlatform is set above),
+          # exactly as lib.nixosSystem does
+          system = null;
+          modules = evalArgs.modules ++ [
+            {
+              _file = ../nixosConfigurationsBuilder.nix;
+              # what lib.nixosSystem would have injected, pointed at the
+              # selected tree (string coercion: selectedSrc may be the
+              # applyPatches derivation)
+              nixpkgs.flake.source = "${selectedSrc}";
+            }
+          ];
+        }
+      );
 }

@@ -206,14 +206,18 @@ let
       // nixpkgsConfig;
 
       # Optionally apply patches to a nixpkgs source tree. Used for the
-      # PRIMARY nixpkgs only -- see mkPkgs.
+      # PRIMARY nixpkgs only -- see mkPkgs. The copy is named `source`, not
+      # something descriptive: the patched tree becomes
+      # `nixpkgs.flake.source` (mk-system.nix), and a NIX_PATH `<nixpkgs>`
+      # lookup only works when the store path is named "source"
+      # (https://github.com/NixOS/nix/issues/7075, quoted by the option).
       patchSrc =
         npkgs:
         if patches == [ ] then
           npkgs
         else
           npkgs.legacyPackages.${system}.applyPatches {
-            name = "nixpkgs-patched-src";
+            name = "source";
             src = npkgs;
             inherit patches;
           };
@@ -311,6 +315,12 @@ let
         inputPkgs
         inputLibAdditions
         ;
+      # For mk-system.nix's choice of evaluation route: the nixpkgs INPUT
+      # (unpatched -- when it is a flake, its lib.nixosSystem is the entry
+      # point of choice) and whether `patches` forced a rebuilt tree
+      # (selectedSrc is then a derivation, not the input).
+      nixpkgsInput = nixpkgs;
+      nixpkgsPatched = patches != [ ];
     };
 
   # Shared context: everything the builders need (lib, pkgs, specialArgs and the
@@ -410,6 +420,8 @@ let
         autoHomeModules
         inputPkgs
         channels
+        nixpkgsInput
+        nixpkgsPatched
         ;
       inherit mySpecialArguments;
     };

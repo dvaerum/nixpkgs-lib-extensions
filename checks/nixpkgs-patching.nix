@@ -54,6 +54,10 @@ let
   assertions = {
     # the system really is evaluated from the patched tree
     patches-applied = builtins.pathExists "${patched.pkgs.path}/nixpkgs-lib-extensions-test-marker";
+    # ... and registry/NIX_PATH pinning follows it: on the patched route
+    # (raw eval-config, lib.nixosSystem is bypassed) the builder sets
+    # nixpkgs.flake.source to the PATCHED tree itself
+    patched-flake-source = toString patched.config.nixpkgs.flake.source == toString patched.pkgs.path;
     # ... while the pkgs-* variant is built from the pristine one
     variant-not-patched =
       !builtins.pathExists "${variantUnpatched._module.specialArgs.pkgs-variant.path}/nixpkgs-lib-extensions-test-marker";
