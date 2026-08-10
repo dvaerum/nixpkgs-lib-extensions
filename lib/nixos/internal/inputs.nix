@@ -1,7 +1,7 @@
 # Input-convention introspection for the lib/nixos builders: how a flake
 # input is recognized (home-manager, nixpkgs trees), how its exports are
 # mapped onto the auto-collection conventions, and how a consumer's
-# `inputContributions` entry narrows or replaces them. One of the four
+# `inputContributions` entry narrows or replaces them. One of the
 # concern-files aggregated by ./shared.nix.
 #
 # Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully

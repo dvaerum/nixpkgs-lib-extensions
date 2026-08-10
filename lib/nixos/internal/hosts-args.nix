@@ -1,70 +1,12 @@
 # Argument validation for the lib/nixos builders: the shared argument
 # allowlists, direct-call validation and the hosts-attrset splitting used
-# by buildNixosConfigurations/buildHomeConfigurations. One of the four
+# by buildNixosConfigurations/buildHomeConfigurations. One of the
 # concern-files aggregated by ./shared.nix.
 #
 # Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully
 # assembled nixpkgs-lib-extensions lib.
 { lib, self, ... }:
 let
-  # for lowercasing the first character of a suggested key name
-  upperAZ = [
-    "A"
-    "B"
-    "C"
-    "D"
-    "E"
-    "F"
-    "G"
-    "H"
-    "I"
-    "J"
-    "K"
-    "L"
-    "M"
-    "N"
-    "O"
-    "P"
-    "Q"
-    "R"
-    "S"
-    "T"
-    "U"
-    "V"
-    "W"
-    "X"
-    "Y"
-    "Z"
-  ];
-  lowerAZ = [
-    "a"
-    "b"
-    "c"
-    "d"
-    "e"
-    "f"
-    "g"
-    "h"
-    "i"
-    "j"
-    "k"
-    "l"
-    "m"
-    "n"
-    "o"
-    "p"
-    "q"
-    "r"
-    "s"
-    "t"
-    "u"
-    "v"
-    "w"
-    "x"
-    "y"
-    "z"
-  ];
-
   inherit (import ./context.nix { inherit lib self; })
     coreArgNames
     coreDefaults
@@ -158,8 +100,7 @@ let
   # Direct-call argument validation for the singular builders: the same
   # rigor splitHostsArgs applies to hosts attrsets, at the other door --
   # otherwise the `...` patterns silently swallow typos and stale names.
-  # `extraAllowed` covers builder-specific keys (e.g. `username`);
-  # _-prefixed keys are internal plumbing and always pass.
+  # `extraAllowed` covers builder-specific keys (e.g. `username`).
   validateBuilderArgs =
     fnName: extraAllowed: args:
     let
@@ -167,13 +108,22 @@ let
     in
     if problems == [ ] then args else throw (builtins.concatStringsSep "\n" problems);
 
-  # Validate a hosts attrset (the shared input of both build* functions)
-  # and split it into { defaults, hostEntries }. Throws, naming fnName,
-  # on: a non-allowlisted `_defaults` key (with special explanations for
-  # `hostname` and the `additional*` per-host halves), a non-allowlisted
-  # host entry key, or a host entry whose inner `hostname` conflicts
-  # with its attribute key (a redundant EQUAL one is tolerated).
-  splitHostsArgs =
+  # every `_`-prefixed key is reserved, so none of them is ever a host
+  hostEntriesOf =
+    hosts:
+    builtins.removeAttrs hosts (
+      builtins.filter (k: builtins.substring 0 1 k == "_") (builtins.attrNames hosts)
+    );
+
+  # The complaints a hosts attrset raises, as DATA -- the COMPLETE list,
+  # all four classes (reserved keys, `_defaults` keys, host-entry shapes,
+  # host-entry keys); splitHostsArgs throws exactly what this returns.
+  # Exported for the tests, same reason as builderArgProblems:
+  # `builtins.tryEval` discards the message, so an assertion that only
+  # checks "did it throw" is satisfied by ANY failure in the expression and
+  # stays green against the wrong error forever. These messages are the
+  # library's main UX surface -- test them.
+  hostsProblems =
     fnName: hosts:
     let
       rawDefaults = hosts._defaults or { };
@@ -190,13 +140,6 @@ let
           (
             builtins.filter (k: k != "_defaults" && builtins.substring 0 1 k == "_") (builtins.attrNames hosts)
           );
-      # A non-attrset `_defaults` otherwise dies inside builtins.attrNames
-      # with no mention of which flake, function or key is at fault.
-      defaults =
-        if builtins.isAttrs rawDefaults then
-          rawDefaults
-        else
-          throw "${fnName}: `_defaults` must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf rawDefaults}`.";
       defaultComplaint =
         name:
         if name == "hostname" then
@@ -210,12 +153,9 @@ let
         else
           "- `${name}`: not a builder argument (typo?). `_defaults` accepts: ${builtins.concatStringsSep ", " allowedDefaultArgs}.";
       badDefaults = map defaultComplaint (
-        builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames defaults)
+        builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames rawDefaults)
       );
-      # every `_`-prefixed key is reserved, so none of them is ever a host
-      hostEntries = builtins.removeAttrs hosts (
-        builtins.filter (k: builtins.substring 0 1 k == "_") (builtins.attrNames hosts)
-      );
+      hostEntries = hostEntriesOf hosts;
       badHostShapes = builtins.concatLists (
         builtins.attrValues (
           builtins.mapAttrs (
@@ -270,57 +210,45 @@ let
           ) hostEntries
         )
       );
-      problems = badReserved ++ badDefaults ++ badHostShapes ++ badHostKeys;
     in
-    if problems != [ ] then
+    # A non-attrset `_defaults` otherwise dies inside builtins.attrNames
+    # with no mention of which flake, function or key is at fault. The ONE
+    # complaint that preempts all others: nothing else can be judged
+    # without reading `_defaults` keys.
+    if !(builtins.isAttrs rawDefaults) then
+      [
+        "${fnName}: `_defaults` must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf rawDefaults}`."
+      ]
+    else
+      badReserved ++ badDefaults ++ badHostShapes ++ badHostKeys;
+
+  # Validate a hosts attrset (the shared input of both build* functions)
+  # and split it into { defaults, hostEntries }. The throwing face of
+  # hostsProblems -- same division of labor as
+  # builderArgProblems/validateBuilderArgs -- so the thrown text and the
+  # problems-as-data can never disagree. Complains, naming fnName, about:
+  # a non-allowlisted `_defaults` key (with special explanations for
+  # `hostname` and the `additional*` per-host halves), a non-allowlisted
+  # host entry key, or a host entry whose inner `hostname` conflicts
+  # with its attribute key (a redundant EQUAL one is tolerated).
+  splitHostsArgs =
+    fnName: hosts:
+    let
+      problems = hostsProblems fnName hosts;
+    in
+    if problems == [ ] then
+      {
+        defaults = hosts._defaults or { };
+        hostEntries = hostEntriesOf hosts;
+      }
+    else if !(builtins.isAttrs (hosts._defaults or { })) then
+      # already a complete sentence naming fnName; no list around it
+      throw (builtins.head problems)
+    else
       throw ''
         ${fnName}: invalid hosts attrset:
         ${builtins.concatStringsSep "\n" problems}
-      ''
-    else
-      { inherit defaults hostEntries; };
-
-  # The complaints a hosts attrset would produce, as DATA. Same reason as
-  # builderArgProblems: `builtins.tryEval` discards the message, so an
-  # assertion that only checks "did it throw" is satisfied by ANY failure
-  # in the expression and stays green against the wrong error forever.
-  # These messages are the library's main UX surface -- test them.
-  hostsProblems =
-    fnName: hosts:
-    let
-      probe = builtins.tryEval (splitHostsArgs fnName hosts);
-    in
-    if probe.success then
-      [ ]
-    else
-      # re-derive rather than parse the thrown string: the same inputs, minus
-      # the throw
-      let
-        rawDefaults = hosts._defaults or { };
-      in
-      if !(builtins.isAttrs rawDefaults) then
-        [
-          "${fnName}: `_defaults` must be an attribute set of builder arguments, but is a value of type `${builtins.typeOf rawDefaults}`."
-        ]
-      else
-        (map
-          (
-            k:
-            "- `${k}`: keys starting with `_` are reserved; a hostname cannot start with one. Did you mean `_defaults`?"
-          )
-          (
-            builtins.filter (k: k != "_defaults" && builtins.substring 0 1 k == "_") (builtins.attrNames hosts)
-          )
-        )
-        ++ (map (
-          name:
-          if name == "hostname" then
-            "- `hostname`: never a default -- it comes from each attribute key. Drop it."
-          else if builtins.substring 0 10 name == "additional" then
-            "- `${name}`: the `additional*` arguments are gone. Put the shared value in `_defaults` and the per-host addition in that host's `extra` slot -- a bare key replaces, `extra.<key>` adds."
-          else
-            "- `${name}`: not a builder argument (typo?). `_defaults` accepts: ${builtins.concatStringsSep ", " allowedDefaultArgs}."
-        ) (builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames rawDefaults)));
+      '';
 
   # ONE plan per hosts attrset, shared by every hosts-level builder: split
   # and validate, merge `_defaults` under each entry, and build ONE context
@@ -380,17 +308,6 @@ let
       # produced. Lists concatenate, attrsets merge with `extra` winning a
       # key conflict, anything else is replaced -- the same semantics the
       # two `additional*` twins had, generalised to every argument.
-      # like lib.recursiveUpdate, which internal files cannot reach
-      recursiveUpdateAttrs =
-        lhs: rhs:
-        lhs
-        // builtins.mapAttrs (
-          k: v:
-          if builtins.isAttrs v && builtins.isAttrs (lhs.${k} or null) then
-            recursiveUpdateAttrs lhs.${k} v
-          else
-            v
-        ) rhs;
       combine =
         hostname: key: base: add:
         if builtins.isList base && builtins.isList add then
@@ -402,7 +319,7 @@ let
           # whole per-input entry and silently drop a sibling
           # `nixosModules` selection -- the wrong modules got imported with
           # no error, because the fallback rule happens to succeed.
-          recursiveUpdateAttrs base add
+          lib.recursiveUpdate base add
         # `else add` is right for scalars (hostGroup, userModule, ...), but
         # it also used to catch base and add being DIFFERENT container
         # kinds, which is never a deliberate "add" -- it silently threw the

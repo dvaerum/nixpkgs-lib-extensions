@@ -1,7 +1,7 @@
 # The shared evaluation context of the lib/nixos builders: `mkContext`
 # assembles everything a builder needs (lib, pkgs, specialArgs and the
-# auto-collected module/overlay sets) from one argument attrset. One of the
-# four concern-files aggregated by ./shared.nix.
+# auto-collected module/overlay sets) from one argument attrset. One of
+# the concern-files aggregated by ./shared.nix.
 #
 # The context is built in two layers:
 #   mkContextCore  the host-INDEPENDENT part, a function of the core

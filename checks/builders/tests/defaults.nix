@@ -452,6 +452,17 @@ in
     _defaults = [ "no" ];
     h = { };
   } "must be an attribute set";
+  # the host-entry classes are part of the problems DATA too -- they used
+  # to be visible only as a throw, so a hosts attrset failing on them
+  # reported "no problems" here
+  host-typo-complaint = complains { h.users = [ "root" ]; } "Host entries accept";
+  host-shape-complaint = complains { h = "not-an-attrset"; } "must be an attribute set";
+  host-extra-typo-complaint = complains {
+    h.extra.notAnArgument = [ ];
+  } "`extra` accepts the same names as `_defaults`";
+  hostname-conflict-complaint = complains {
+    h.hostname = "other";
+  } "The attribute key is the hostname";
   # and the direct-call door reports the offending name too
   direct-call-complaint = builtins.any (p: lib.hasInfix "homesharedmodules" p) (
     shared.builderArgProblems "probe" [ "username" ] {

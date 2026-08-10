@@ -1,6 +1,6 @@
 # userRegistry machinery for the lib/nixos builders: matching entries to
 # a user on a host, validating entry directories, and deriving a host's
-# user lists from the registry keys. One of the four concern-files
+# user lists from the registry keys. One of the concern-files
 # aggregated by ./shared.nix.
 #
 # Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully
