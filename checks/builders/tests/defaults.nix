@@ -8,6 +8,8 @@
   system,
   exampleDir,
   repoDir,
+  mkProbeSystem,
+  probeCoreOverrideMessage,
   ...
 }:
 let
@@ -390,6 +392,23 @@ in
       };
     in
     builtins.all (n: builtins.elem n shared.allowedDefaultArgs) shared.coreArgNames;
+
+  # The harness's own core sharing has the same hazard the tests above pin
+  # for planHosts: mkProbeSystem hands every probe ONE pre-built core, so a
+  # probe overriding a core argument would silently get the shared core --
+  # the override would look applied and not be. The guard turns that into a
+  # throw; the message (tryEval discards throw text, so it is exported as
+  # data) must name the offender and the direct-call fix.
+  probe-core-override-throws =
+    !(builtins.tryEval (mkProbeSystem {
+      inherit inputs system;
+      hostname = "coreoverride";
+      nixpkgsConfig.cudaSupport = true;
+    })).success
+    && lib.hasInfix "overrides core argument(s) nixpkgsConfig" (probeCoreOverrideMessage [
+      "nixpkgsConfig"
+    ])
+    && lib.hasInfix "use myLib.mkNixosSystem directly" (probeCoreOverrideMessage [ "nixpkgsConfig" ]);
 
   # the allowlist and its documentation cannot drift, in EITHER direction:
   # every allowlisted name must appear as a "- `name`" bullet in the

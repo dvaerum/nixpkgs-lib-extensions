@@ -336,15 +336,38 @@ let
   # check's eval time. mkProbeSystem still validates like the public
   # wrapper; a probe overriding ANY core argument (inputs, overlays,
   # nixpkgsConfig, inputContributions, ...) must keep calling
-  # myLib.mkNixosSystem, which computes a matching core itself.
+  # myLib.mkNixosSystem, which computes a matching core itself. The guard
+  # below ENFORCES that: the pre-built core would win over such an
+  # override, so the argument would look applied and silently not be.
   sharedInternal = import (repoDir + "/lib/nixos/internal/shared.nix") {
     inherit lib;
     self = myLib;
   };
   probeCore = sharedInternal.mkContextCore { inherit inputs system; };
+  # exported via ctx so the negative test can pin the text -- tryEval
+  # discards throw messages, like the other harness-error assertions
+  probeCoreOverrideMessage =
+    names:
+    "mkProbeSystem shares one context core; probe overrides core argument(s) "
+    + lib.concatStringsSep ", " names
+    + " -- use myLib.mkNixosSystem directly";
   mkProbeSystem =
     args:
-    sharedInternal.mkSystem probeCore (sharedInternal.validateBuilderArgs "mkProbeSystem" [ ] args);
+    let
+      # `inputs`/`system` are core arguments mkSystem itself also reads, so
+      # every probe passes them; the SHARED values are the arrangement,
+      # anything else is an override the shared core would discard
+      overridden = builtins.filter (
+        n:
+        builtins.hasAttr n args
+        && !(n == "inputs" && args.inputs == inputs)
+        && !(n == "system" && args.system == system)
+      ) sharedInternal.coreArgNames;
+    in
+    if overridden != [ ] then
+      throw (probeCoreOverrideMessage overridden)
+    else
+      sharedInternal.mkSystem probeCore (sharedInternal.validateBuilderArgs "mkProbeSystem" [ ] args);
 
   # The example's user set, derived from its registry: the canonical list
   # the option-value assertions compare against (shared here so no test
@@ -396,6 +419,7 @@ let
       applyBootstrap
       homesThrow
       mkProbeSystem
+      probeCoreOverrideMessage
       exampleUsers
       fake-strings-collision
       fake-multi-module-input
