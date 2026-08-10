@@ -61,7 +61,7 @@
   # honors its options, and gates itself off when prerequisites miss
   bootstrap-standalone = applyBootstrap { } ? systemd;
   bootstrap-file-tagged =
-    (bootstrapModuleFor { })._file == repoDir + "/lib/nixos/homeManagerBootstrapModule.nix";
+    (bootstrapModuleFor { })._file == repoDir + "/lib/nixos/home-manager-bootstrap-module.nix";
   bootstrap-flake-ref-override = lib.hasInfix "--flake-ref /custom" (
     (applyBootstrap { loginFlakeRef = "/custom"; })
     .systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart

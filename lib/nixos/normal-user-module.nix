@@ -54,7 +54,7 @@
     : The name of the user account (and its private group) to create.
   */
   normalUserModule = username: {
-    _file = ./normalUserModule.nix;
+    _file = ./normal-user-module.nix;
     imports = [
       (
         { config, lib, ... }:

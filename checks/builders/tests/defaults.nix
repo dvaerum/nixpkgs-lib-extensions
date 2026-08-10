@@ -415,7 +415,7 @@ in
   # renames)
   allowlist-documented =
     let
-      doc = builtins.readFile (repoDir + "/lib/nixos/buildNixosConfigurations.nix");
+      doc = builtins.readFile (repoDir + "/lib/nixos/build-nixos-configurations.nix");
       shared = import (repoDir + "/lib/nixos/internal/shared.nix") {
         inherit lib;
         self = myLib;

@@ -44,13 +44,13 @@ lib.fix (
         ./imports/import-if-nix-or.nix
       ];
       nixos = [
-        ./nixos/buildConfigurations.nix
-        ./nixos/buildHomeConfigurations.nix
-        ./nixos/buildNixosConfigurations.nix
-        ./nixos/homeManagerBootstrapModule.nix
+        ./nixos/build-configurations.nix
+        ./nixos/build-home-configurations.nix
+        ./nixos/build-nixos-configurations.nix
+        ./nixos/home-manager-bootstrap-module.nix
         ./nixos/mk-home-configuration.nix
         ./nixos/mk-nixos-system.nix
-        ./nixos/normalUserModule.nix
+        ./nixos/normal-user-module.nix
       ];
     };
 

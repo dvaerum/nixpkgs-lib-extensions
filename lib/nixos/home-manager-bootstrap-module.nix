@@ -107,7 +107,7 @@ in
     # `_file` points eval errors of this generated module at this file
     # instead of an anonymous <unknown-file> location.
     {
-      _file = ./homeManagerBootstrapModule.nix;
+      _file = ./home-manager-bootstrap-module.nix;
       imports = [
         (
           {

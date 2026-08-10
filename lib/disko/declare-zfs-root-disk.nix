@@ -101,9 +101,9 @@
     }:
     let
 
-      zroot_name = "zroot-${hostname}";
+      zrootName = "zroot-${hostname}";
 
-      encryption_attribures =
+      encryptionAttributes =
         if (lib.isBool enableEncryption) then
           (lib.optionalAttrs enableEncryption {
             encryption = "on";
@@ -123,7 +123,7 @@
       # a pool on that detail is not a plan. Hence ONE definition producing
       # deterministic bytes, used by all three. It expects `KEY` to be set by
       # the caller.
-      write_key_file = ''
+      writeKeyFile = ''
         SECRET_FOLDER_PATH="/tmp/secrets"
         KEY_FILE_PATH="$SECRET_FOLDER_PATH/zpool.key"
 
@@ -142,7 +142,7 @@
         printf '%s' "$KEY" > "$KEY_FILE_PATH"
       '';
 
-      swap_size =
+      checkedSwapSize =
         if (lib.isInt swapSize && swapSize >= 0) then
           swapSize
         else
@@ -150,8 +150,8 @@
 
       # Additional zfs datasets requested by the caller. Keys are dataset paths
       # relative to the pool root (e.g. "DATA/media" becomes
-      # <zroot_name>/DATA/media); parent datasets must be declared by the caller too.
-      extra_datasets =
+      # <zrootName>/DATA/media); parent datasets must be declared by the caller too.
+      checkedExtraDatasets =
         if (lib.isAttrs extraDatasets) then
           extraDatasets
         else
@@ -163,7 +163,7 @@
         # Example
 
         ```nix
-        gen_zfs_user_folder "foo"
+        genZfsUserFolder "foo"
         =>
         { "HOME/foo" = { type = "zfs_fs"; ... }; }
         ```
@@ -171,33 +171,33 @@
         # Type
 
         ```
-        gen_zfs_user_folder :: String || Attribute -> Attribute
+        genZfsUserFolder :: String || Attribute -> Attribute
         ```
 
         # Arguments
 
-        user_setting
+        userSetting
         : Takes a value of the `string` or `attribute.
         : The `string` element is: <USERNAME>.
         : The `attribute` element is: { username = "<USERNAME>"; mountpoint = "<MOUNTPOINT>"; }
       */
-      gen_zfs_user_folder = (
-        user_setting:
+      genZfsUserFolder = (
+        userSetting:
         let
           user =
-            if (lib.isString user_setting) then
-              { name = user_setting; }
-            else if (lib.isAttrs user_setting && (lib.hasAttr "username" user_setting)) then
+            if (lib.isString userSetting) then
+              { name = userSetting; }
+            else if (lib.isAttrs userSetting && (lib.hasAttr "username" userSetting)) then
               # `mountpoint` is OPTIONAL -- the guard further down already
               # says so, but reading it unconditionally here made that guard
               # dead code and turned `{ username = "bar"; }` into a bare
               # "attribute 'mountpoint' missing" that named neither
               # listOfUsernames nor declareZfsRootDisk.
               {
-                name = user_setting.username;
+                name = userSetting.username;
               }
-              // lib.optionalAttrs (lib.hasAttr "mountpoint" user_setting) {
-                inherit (user_setting) mountpoint;
+              // lib.optionalAttrs (lib.hasAttr "mountpoint" userSetting) {
+                inherit (userSetting) mountpoint;
               }
             else
               (throw "The element in `listOfUsernames` can either be a `string` or `attrset` ({ username = ...; mountpoint = ...; })");
@@ -208,7 +208,7 @@
             type = "zfs_fs";
             options =
               (lib.optionalAttrs (lib.hasAttr "mountpoint" user) { inherit (user) mountpoint; })
-              // encryption_attribures;
+              // encryptionAttributes;
             # By adding encryption attributes to the user folder filesystem,
             # it will make it possible to switch to use the password of the user as the passphrase.
           };
@@ -219,7 +219,7 @@
       # string is a legal ELEMENT -- otherwise reached forEach and produced
       # Nix's own "expected a list but found a string", which names neither
       # the argument nor this function and cannot be caught by tryEval.
-      checked_listOfUsernames =
+      checkedListOfUsernames =
         if lib.isList listOfUsernames then
           listOfUsernames
         else
@@ -228,21 +228,21 @@
       # listToAttrs keeps the LAST entry for a repeated key, so two entries
       # for the same user -- with different mountpoints, say -- would have
       # silently collapsed into whichever came last.
-      zfs_user_folders = lib.lists.forEach checked_listOfUsernames gen_zfs_user_folder;
-      duplicate_user_datasets =
+      zfsUserFolders = lib.lists.forEach checkedListOfUsernames genZfsUserFolder;
+      duplicateUserDatasets =
         let
-          names = map (e: e.name) zfs_user_folders;
+          names = map (e: e.name) zfsUserFolders;
         in
         lib.unique (lib.filter (n: lib.count (m: m == n) names > 1) names);
-      zfs_filesystems_for_users =
-        if duplicate_user_datasets == [ ] then
-          lib.listToAttrs zfs_user_folders
+      zfsFilesystemsForUsers =
+        if duplicateUserDatasets == [ ] then
+          lib.listToAttrs zfsUserFolders
         else
           throw "declareZfsRootDisk: `listOfUsernames` names the same user more than once (${
-            lib.concatStringsSep ", " (map (n: lib.removePrefix "HOME/" n) duplicate_user_datasets)
+            lib.concatStringsSep ", " (map (n: lib.removePrefix "HOME/" n) duplicateUserDatasets)
           }); only the last entry would have survived.";
 
-      zroot_general_datasets = {
+      zrootGeneralDatasets = {
         "ROOT" = {
           type = "zfs_fs";
           options = {
@@ -290,7 +290,7 @@
       # boot.initrd.postResumeCommands.
       useSystemdInitrd = config.boot.initrd.systemd.enable;
 
-      use_zfs_for_tmp = lib.optionalAttrs useZfsForTmp {
+      tmpDataset = lib.optionalAttrs useZfsForTmp {
         "TMP" = {
           type = "zfs_fs";
           mountpoint = "/tmp";
@@ -308,7 +308,7 @@
       # Attribute definitions to this file in error messages, instead of
       # whichever configuration.nix called the function.
       # Can be really helpful when debugging.
-      _file = "nixpkgs-lib-extensions/lib/disko/declare-zfs-root-disk.nix";
+      _file = ./declare-zfs-root-disk.nix;
 
       boot = {
         supportedFilesystems = [ "zfs" ];
@@ -348,8 +348,8 @@
         services.zfs-key-file-setup = {
           description = "Create ZFS encryption key file from system UUID";
           unitConfig.DefaultDependencies = false;
-          wantedBy = [ "zfs-import-${zroot_name}.service" ];
-          before = [ "zfs-import-${zroot_name}.service" ];
+          wantedBy = [ "zfs-import-${zrootName}.service" ];
+          before = [ "zfs-import-${zrootName}.service" ];
           after = [ "systemd-modules-load.service" ];
           serviceConfig = {
             Type = "oneshot";
@@ -357,7 +357,7 @@
           };
           script = ''
             KEY="$(dmidecode --string system-uuid | tr -d '\n')"
-            ${write_key_file}
+            ${writeKeyFile}
           '';
         };
 
@@ -370,7 +370,7 @@
           ];
           after = [
             "zfs-key-file-setup.service"
-            "zfs-import-${zroot_name}.service"
+            "zfs-import-${zrootName}.service"
           ];
           before = [
             "zfs-import.target"
@@ -406,7 +406,7 @@
       # encryption keys via the legacy initrd hooks
       boot.initrd.postDeviceCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) ''
         KEY="$(${pkgs.dmidecode}/bin/dmidecode --string system-uuid | tr -d '\n')"
-        ${write_key_file}
+        ${writeKeyFile}
       '';
 
       boot.initrd.postResumeCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) (
@@ -426,7 +426,7 @@
 
       security.pam.zfs = lib.mkIf enableEncryption {
         enable = true;
-        homes = lib.mkDefault "${zroot_name}/HOME";
+        homes = lib.mkDefault "${zrootName}/HOME";
       };
 
       services.zfs.autoScrub.enable = lib.mkDefault true;
@@ -451,16 +451,18 @@
                   priority = 10;
                   content = {
                     type = "zfs";
-                    pool = "${zroot_name}";
+                    pool = "${zrootName}";
                   };
                 }
-                // (if swap_size == 0 then { size = "100%"; } else { end = "-${toString swap_size}G"; });
+                // (
+                  if checkedSwapSize == 0 then { size = "100%"; } else { end = "-${toString checkedSwapSize}G"; }
+                );
               }
-              // (lib.optionalAttrs (swap_size > 0) {
+              // (lib.optionalAttrs (checkedSwapSize > 0) {
                 SWAP = {
                   label = "SWAP";
                   priority = 100;
-                  size = "${toString swap_size}G";
+                  size = "${toString checkedSwapSize}G";
                   content = {
                     type = "swap";
                     randomEncryption = true;
@@ -547,7 +549,7 @@
         };
 
         zpool = {
-          "${zroot_name}" = {
+          "${zrootName}" = {
             type = "zpool";
 
             # Workaround: cannot import 'zroot': I/O error in disko tests
@@ -565,9 +567,9 @@
               mountpoint = "none";
               canmount = "off";
             }
-            // encryption_attribures;
+            // encryptionAttributes;
 
-            datasets = zroot_general_datasets // zfs_filesystems_for_users // use_zfs_for_tmp // extra_datasets;
+            datasets = zrootGeneralDatasets // zfsFilesystemsForUsers // tmpDataset // checkedExtraDatasets;
 
             preCreateHook = lib.optionalString enableEncryption ''
               if which dmidecode > /dev/null 2> /dev/null; then
@@ -576,12 +578,12 @@
                 # Needed in case the kexec image does not have dmidecode when using nixos-anythere or if booting from an ISO
                 KEY="$(nix run nixpkgs#dmidecode -- --string system-uuid | tr -d '\n')"
               fi
-              ${write_key_file}
+              ${writeKeyFile}
             '';
 
             postMountHook = ''
               # First mount after "/" is mounted (doing installation)
-              if [[ "$(zfs get -H -o value mounted ${zroot_name}/ROOT/NixOS)" == "yes" ]]; then
+              if [[ "$(zfs get -H -o value mounted ${zrootName}/ROOT/NixOS)" == "yes" ]]; then
                 # Mount all datasets which are not set to (mountpoint=) legacy or none and are not already mounted
                 zfs list -H -o name,mountpoint,mounted,canmount | awk '$2 != "legacy" && $2 != "none" && $3 != "yes" && $4 == "on" {print $1}' | xargs --no-run-if-empty -n 1 -t zfs mount -vR
               fi
