@@ -501,6 +501,22 @@ in
       "web"
     ];
 
+  # `extra.group` does not exist: nothing about `group` is additive, so a
+  # host cannot smuggle a group in through its `extra` slot -- the same
+  # rule `_groups.<name>.extra.group` already followed
+  host-extra-group-complaint = complains {
+    _groups.server = { };
+    h.extra.group = "server";
+  } "`extra.group` is not a thing";
+  host-extra-group-throws = throws (
+    myLib.buildNixosConfigurations {
+      h = {
+        inherit inputs system;
+        extra.group = "server";
+      };
+    }
+  );
+
   # `_defaults.group` opts every host into a layer; a host picks a
   # different one (or none) by overriding `group`
   groups-default-group-applies =

@@ -62,6 +62,14 @@ let
     "extra"
   ];
 
+  # THE group a host resolves to: its own `group`, else the `_defaults`
+  # one. The ONE definition shared by the validation (badGroupRefs) and
+  # the planHosts merge, so the group that is checked against `_groups`
+  # can never differ from the group whose layer is applied. `extra.group`
+  # does not exist: nothing about `group` is additive, so it is forbidden
+  # in every `extra` slot (host and `_groups` alike).
+  effectiveGroup = defaults: args: args.group or (defaults.group or null);
+
   # The PROBLEMS with a direct builder call, as a list of strings -- empty
   # when there are none. Split out from the throwing wrapper below so the
   # tests can assert on the MESSAGE: `builtins.tryEval` discards it, so an
@@ -194,17 +202,9 @@ let
         )
       );
       hostEntries = hostEntriesOf hosts;
-      # The group a host would take its `_groups` layer from -- the same
-      # precedence planHosts applies (a host's own `group`, else the
-      # `_defaults` one; `extra.group`, a scalar add, replaces). Judged
-      # here so a typo'd group name is reported WITH the other complaints
-      # instead of surfacing as a missing layer.
-      effectiveGroupOf =
-        args:
-        if lib.isAttrs (args.extra or null) && args.extra ? group then
-          args.extra.group
-        else
-          args.group or (rawDefaults.group or null);
+      # A typo'd group name is judged here so it is reported WITH the other
+      # complaints instead of surfacing as a missing layer. effectiveGroup
+      # is the SAME function planHosts resolves the layer with.
       badGroupRefs =
         if !(hosts ? _groups) then
           [ ]
@@ -214,7 +214,7 @@ let
               lib.mapAttrs (
                 hostname: args:
                 let
-                  g = if lib.isAttrs args then effectiveGroupOf args else null;
+                  g = if lib.isAttrs args then effectiveGroup rawDefaults args else null;
                 in
                 if g == null then
                   [ ]
@@ -265,10 +265,16 @@ let
                 map
                   (
                     k:
-                    "- `${hostname}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults`."
+                    if k == "group" then
+                      # nothing about `group` is additive: `extra` ADDS to a
+                      # merged value, and a scalar "add" is just a replace
+                      # wearing the wrong slot
+                      "- `${hostname}`: `extra.group` is not a thing -- `group` is a scalar, so there is nothing to ADD to. Set `group` directly on the host (it replaces the `_defaults` one)."
+                    else
+                      "- `${hostname}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults` (minus `group`)."
                   )
                   (
-                    lib.filter (k: !(lib.elem k allowedDefaultArgs)) (
+                    lib.filter (k: k == "group" || !(lib.elem k allowedDefaultArgs)) (
                       # guarded: a non-attrset `extra` is reported by
                       # badHostShapes, and attrNames on it here would be an
                       # uncatchable TYPE error raised while the problem list is
@@ -424,25 +430,21 @@ let
       # on top -- the arguments each builder finally receives. The group
       # layer behaves like a host entry sitting under the real one: its bare
       # keys replace `_defaults` per argument, its `extra` ADDS to them, and
-      # the host wins over the lot. The group is read from the FULLY merged
-      # arguments (so `extra.group` counts, matching hostsProblems'
-      # effectiveGroupOf), and validation has already established that it
-      # names a `_groups` entry whenever `_groups` exists at all.
+      # the host wins over the lot. The group is resolved by the SAME
+      # effectiveGroup that hostsProblems validated against, so it names a
+      # `_groups` entry whenever `_groups` exists at all.
       mergedArgs = lib.mapAttrs (
         hostname: entry:
         let
-          merge =
-            base:
-            applyExtra hostname (base // (lib.removeAttrs entry [ "extra" ]) // { inherit hostname; }) (
-              entry.extra or { }
-            );
-          groupName = (merge split.defaults).group or null;
+          groupName = effectiveGroup split.defaults entry;
           groupLayer = if groupName == null then { } else split.groups.${groupName} or { };
           base = applyExtra hostname (split.defaults // (lib.removeAttrs groupLayer [ "extra" ])) (
             groupLayer.extra or { }
           );
         in
-        merge base
+        applyExtra hostname (base // (lib.removeAttrs entry [ "extra" ]) // { inherit hostname; }) (
+          entry.extra or { }
+        )
       ) split.hostEntries;
       coreTuples = lib.mapAttrs (_: coreArgsOf) mergedArgs;
 

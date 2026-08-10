@@ -295,8 +295,10 @@ in
     : modules see, not what the builder did. The option-backed names
     : (`hostname`, `tags`, `group`, `users`, `inputPkgs`, `channels`,
     : `username`) throw too -- they are options (or module arguments),
-    : and a specialArg of the same name would mask the real value. Set
-    : the corresponding builder argument instead. Default `{ }`.
+    : and a specialArg of the same name would mask the real value -- as
+    : do the module-system-owned `pkgs`, `lib`, `config`, `options` and
+    : `modulesPath`. Set the corresponding builder argument instead.
+    : Default `{ }`.
 
     group
     : Free-form host classification, e.g. `"vm"` or `"server"`.

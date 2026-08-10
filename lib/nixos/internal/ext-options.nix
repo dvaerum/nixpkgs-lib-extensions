@@ -14,7 +14,7 @@
 # are specialArgs -- see internal/context.nix.
 { lib, self, ... }:
 let
-  inherit (lib) mkOption types;
+  inherit (lib) mkOption types literalMD;
 
   # One options module serves BOTH module systems (NixOS and home-manager);
   # only `hostname` differs: a NixOS module reads config.networking.hostName
@@ -50,6 +50,7 @@ let
         type = types.nullOr types.str;
         readOnly = true;
         default = group;
+        defaultText = literalMD "the builder's `group` argument";
         description = ''
           The builder's `group` argument: free-form host classification
           (by default it also selects the hosts/<group>/ config folder;
@@ -61,6 +62,7 @@ let
         type = types.listOf types.str;
         readOnly = true;
         default = users;
+        defaultText = literalMD "derived from the builder's `userRegistry` keys";
         description = ''
           The host's users, derived from the builder's `userRegistry`
           keys. Read-only -- the registry is the single source.
@@ -70,6 +72,7 @@ let
         type = types.raw;
         readOnly = true;
         default = inputPkgs;
+        defaultText = literalMD "derived from the builder's `inputs`, per system";
         description = ''
           Every input's packages pre-selected for the host's system,
           keyed by input name (e.g. `inputPkgs.disko.disko-install`).
@@ -80,6 +83,7 @@ let
         type = types.lazyAttrsOf types.raw;
         readOnly = true;
         default = channels;
+        defaultText = literalMD "one instantiated package set per `nixpkgs-*` input";
         description = ''
           The package set of every `nixpkgs-<variant>` input, keyed by
           variant (e.g. `channels.unstable` for `inputs.nixpkgs-unstable`),
@@ -192,6 +196,7 @@ in
             type = types.str;
             readOnly = true;
             default = hostname;
+            defaultText = literalMD "the builder's `hostname` argument";
             description = ''
               The host this home configuration is built for (the builder's
               `hostname` argument). Read-only. NixOS modules read

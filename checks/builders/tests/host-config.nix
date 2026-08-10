@@ -137,7 +137,13 @@ in
             })._module.specialArgs
         )).success;
     in
-    shadows "hostname" "not-shadowprobe" && shadows "rootPath" "/tmp" && shadows "extLib" { };
+    shadows "hostname" "not-shadowprobe"
+    && shadows "rootPath" "/tmp"
+    && shadows "extLib" { }
+    # ... and the module-system-owned names: a specialArg named `pkgs`
+    # (or lib/config/options/modulesPath) overrides the module system's
+    # own wiring
+    && shadows "pkgs" { };
 
   # the same check covers a shadow arriving through a host's `extra` slot,
   # which planHosts merges into specialArgs before the builder sees it
