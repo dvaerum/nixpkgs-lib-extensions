@@ -320,8 +320,10 @@ closure: `useGlobalPkgs`/`useUserPackages` are enabled (both
 `mkDefault`), a broken home config fails the system build, and no
 flake outputs are involved. Each home receives `username` as a
 module argument and gets `home.stateVersion` defaulted to the
-CURRENT nixpkgs release -- pin it in the user's `home.nix` if you
-rely on stateVersion semantics.
+CURRENT nixpkgs release -- but a home actually relying on that
+moving default is warned (both mechanisms): pin it in the user's
+`home.nix` (`home.stateVersion = "26.11";`) or fleet-wide via an
+entry in the shared `homeModules` argument.
 
 Login-managed exists for homes that should update independently of
 system rebuilds. On the user's first login a systemd *user* service
@@ -739,6 +741,10 @@ eval-level changes.
 
 - **Untracked files are invisible to flakes.** `git add` new user
   directories and host files, or they are silently skipped.
+- Registry values should be **path values** (`./users/alice`), not
+  absolute path strings (`"/home/me/users/alice"`): a string escapes
+  the flake -- it is never copied to the store and fails under pure
+  evaluation -- so it still works but warns.
 - A plain `"user"` entry is IGNORED (with a warning) as soon as a
   `"user@*"` or `"user@<thishost>"` entry exists -- an @-entry naming
   some OTHER host does not shadow it -- import its directory explicitly from

@@ -19,6 +19,7 @@ let
   inherit (import ./ext-options.nix { inherit lib self; })
     extNixosOptionsModule
     extHomeOptionsModule
+    homeStateVersionModule
     ;
   inherit (import ./registry.nix { inherit lib self; })
     resolveUser
@@ -120,10 +121,9 @@ in
                   # the same `nixpkgsLibExtensions.*` options inside every
                   # home that the system's own modules see
                   (extHomeOptionsModule (extOptionValues // { inherit hostname; }))
-                  {
-                    _file = ../mk-nixos-system.nix;
-                    home.stateVersion = lib.mkDefault lib.trivial.release;
-                  }
+                  # home.stateVersion default (current release) -- with a
+                  # warning for any home that RELIES on it
+                  (homeStateVersionModule hostname)
                 ];
               users = lib.genAttrs systemUsersWithHome (u: {
                 # `username` as a module arg (extraSpecialArgs cannot

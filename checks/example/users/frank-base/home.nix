@@ -3,4 +3,5 @@
 { ... }:
 {
   programs.git.enable = true;
+  home.stateVersion = "26.11";
 }

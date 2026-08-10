@@ -138,6 +138,47 @@ in
 {
   inherit movedNixosSpecialArgs movedHomeSpecialArgs movedSpecialArgMessage;
 
+  # The `home.stateVersion` default, shared by both home mechanisms:
+  # mk-system.nix wires it into `home-manager.sharedModules` (system-managed
+  # homes), mk-home.nix into the standalone module list (login-managed).
+  # The value stays the CURRENT nixpkgs release -- the convenience that
+  # makes a first home build work -- but a home that actually RELIES on it
+  # is warned: stateVersion exists to be pinned, and a default that
+  # silently tracks the moving release defeats it. Detection is by
+  # definition priority (the same technique as the platform warnings in
+  # mk-system.nix): any definition beating this module's mkDefault is a
+  # pin, and for a pinned home neither the warning nor the default value is
+  # ever evaluated -- losing mkDefault definitions are discarded by
+  # priority alone, unforced. The message lands twice on purpose: as an
+  # eval warning on the value (visible wherever the home is evaluated) and
+  # as a `warnings` entry (testable data; NixOS and home-manager surface
+  # it through their normal warning plumbing).
+  homeStateVersionModule = hostname: {
+    _file = ./ext-options.nix;
+    imports = [
+      (
+        # `username` is the module ARGUMENT both mechanisms wire per home
+        # (`_module.args.username`) -- NOT config.home.username, whose
+        # home-manager default is itself selected by stateVersion, so
+        # reading it here would be infinite recursion.
+        {
+          options,
+          lib,
+          username,
+          ...
+        }:
+        let
+          relies = options.home.stateVersion.highestPrio >= (lib.mkDefault null).priority;
+          msg = "nixpkgs-lib-extensions: host `${hostname}`: the home of `${username}` does not pin `home.stateVersion`, so it follows the CURRENT nixpkgs release (now ${lib.trivial.release}) and changes meaning on every nixpkgs bump. Pin it in that user's home.nix (`home.stateVersion = \"${lib.trivial.release}\";`), or fleet-wide via an entry in the shared `homeModules` builder argument.";
+        in
+        {
+          home.stateVersion = lib.mkDefault (lib.warn msg lib.trivial.release);
+          warnings = lib.optional relies msg;
+        }
+      )
+    ];
+  };
+
   # The always-imported NixOS module. All values are the builder's own:
   # mk-system.nix closes over them per host.
   extNixosOptionsModule =

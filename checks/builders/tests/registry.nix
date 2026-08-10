@@ -2,6 +2,7 @@
 # "<user>@<host>" / "<user>@*" / "<user>" resolution rules, companion
 # configuration.nix handling and entry validation.
 {
+  lib,
   myLib,
   inputs,
   system,
@@ -12,6 +13,7 @@
   exampleDir,
   fixturesDir,
   invalidFixturesDir,
+  repoDir,
   ...
 }:
 {
@@ -61,7 +63,9 @@
   };
   empty-directory-throws = homesThrow { "bad" = invalidFixturesDir + "/no-nix-files"; };
   missing-path-throws = homesThrow { "bad" = exampleDir + "/does-not-exist"; };
-  # absolute string paths work like path literals
+  # absolute string paths still work like path literals (forcing this
+  # probe emits the string-path warning below -- deliberate: warned, not
+  # removed)
   string-path-entry-works =
     builtins.attrNames (
       myLib.buildHomeConfigurations {
@@ -72,6 +76,19 @@
         };
       }
     ) == [ "alice@laptop" ];
+  # ... but they are a pure-eval hazard, so the entry WARNS. A warning is
+  # not observable in-language (tryEval only catches throws), so the
+  # message is exported as data and its text pinned here: it must name the
+  # hazard and the fix
+  string-path-entry-warning-text =
+    let
+      registry = import (repoDir + "/lib/nixos/internal/registry.nix") {
+        inherit lib;
+        self = myLib;
+      };
+      msg = registry.stringPathEntryWarning "alice" "/somewhere/users/alice";
+    in
+    lib.hasInfix "pure evaluation" msg && lib.hasInfix "path value" msg && lib.hasInfix "`alice`" msg;
 
   # only loginHomes get homeConfigurations outputs: dave/frank/grace are
   # system-managed, eve has no home config at all

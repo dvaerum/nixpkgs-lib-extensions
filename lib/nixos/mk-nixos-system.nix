@@ -183,9 +183,12 @@ in
     : module -- built and activated WITH the system on `nixos-rebuild
     : switch` (`useGlobalPkgs`/`useUserPackages` default to true,
     : overridable; each home gets `home.stateVersion` defaulted to the
-    : CURRENT nixpkgs release, so pin it in the user's `home.nix` if you
-    : rely on stateVersion semantics, and receives `username` as a module
-    : argument) -- unless the user is listed in `loginHomes`. A
+    : CURRENT nixpkgs release, with a WARNING for any home relying on
+    : that moving default -- pin it in the user's `home.nix` or fleet-wide
+    : via `homeModules` -- and receives `username` as a module
+    : argument) -- unless the user is listed in `loginHomes`. Prefer
+    : path values over absolute path strings: a string escapes the flake
+    : (never copied to the store, fails under pure evaluation) and warns. A
     : directory with only a `configuration.nix` is a system-only user
     : (account, no home). Keys select where an entry applies:
     :   `"<user>@<host>"`  this host only

@@ -47,6 +47,17 @@ let
     else
       [ ];
 
+  # An absolute path STRING still works as a registry entry, but it is a
+  # pure-eval hazard: unlike a path VALUE it is never copied into the
+  # store, so it escapes the flake -- the build depends on whatever
+  # happens to sit at that filesystem location, and pure evaluation
+  # (`nix flake check`, CI) refuses it outright. Warned, not removed;
+  # message exported as data so the tests can pin the TEXT (a warning is
+  # not observable in-language, unlike a throw).
+  stringPathEntryWarning =
+    username: entry:
+    "nixpkgs-lib-extensions: the userRegistry entry for `${username}` is an absolute path STRING (${entry}). String paths escape the flake: they are not copied to the store and fail under pure evaluation. Write a path value instead (e.g. `./users/${username}`).";
+
   # Validate one registry entry and return its parts. Every entry must be a
   # directory shipping `home.nix` (home-manager config) and/or
   # `configuration.nix` (NixOS config for that user: account, groups, ...).
@@ -60,6 +71,12 @@ let
           "a value of type `${builtins.typeOf entry}`";
       hasHome = builtins.pathExists (entry + "/home.nix");
       hasConf = builtins.pathExists (entry + "/configuration.nix");
+      warnStringEntry =
+        parts:
+        if builtins.isString entry then
+          builtins.warn (stringPathEntryWarning username entry) parts
+        else
+          parts;
     in
     if !(isDirEntry entry) then
       throw ''
@@ -72,7 +89,7 @@ let
         contains neither a `home.nix` nor a `configuration.nix`.
       ''
     else
-      {
+      warnStringEntry {
         homeModule = if hasHome then entry + "/home.nix" else null;
         nixosModule = if hasConf then entry + "/configuration.nix" else null;
       };
@@ -257,5 +274,6 @@ in
     loginUsersWithHome
     validateLoginUsers
     validateRegistryKeys
+    stringPathEntryWarning
     ;
 }

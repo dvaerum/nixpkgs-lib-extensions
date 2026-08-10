@@ -89,8 +89,9 @@ in
     The home configuration gets overridable (`mkDefault`) values for
     `home.username` (the user), `home.homeDirectory` (`/home/<user>`) and
     `home.stateVersion` -- the latter tracks the CURRENT nixpkgs release,
-    so pin it in the user's `home.nix` if you rely on stateVersion
-    semantics.
+    and a home actually relying on that moving default is WARNED, naming
+    the two pin recipes: the user's own `home.nix`, or fleet-wide via a
+    shared `homeModules` entry.
 
     nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions
     : Shared options (see `mkNixosSystem`).

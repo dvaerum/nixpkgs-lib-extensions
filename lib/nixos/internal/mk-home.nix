@@ -6,7 +6,10 @@
 { lib, self, ... }:
 let
   inherit (import ./context.nix { inherit lib self; }) mkContext;
-  inherit (import ./ext-options.nix { inherit lib self; }) extHomeOptionsModule;
+  inherit (import ./ext-options.nix { inherit lib self; })
+    extHomeOptionsModule
+    homeStateVersionModule
+    ;
   inherit (import ./registry.nix { inherit lib self; }) resolveUser usersFromRegistry;
 in
 {
@@ -70,11 +73,13 @@ in
                 users = usersFromRegistry registry hostname;
                 inherit (ctx) inputPkgs channels;
               })
+              # home.stateVersion default (current release) -- with a
+              # warning for any home that RELIES on it
+              (homeStateVersionModule hostname)
               {
                 _file = ../mk-home-configuration.nix;
                 home.username = lib.mkDefault username;
                 home.homeDirectory = lib.mkDefault "/home/${username}";
-                home.stateVersion = lib.mkDefault lib.trivial.release;
                 # `username` stays a per-home module argument, like the
                 # system-managed mechanism wires it (extraSpecialArgs cannot
                 # vary per user there; _module.args can)

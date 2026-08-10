@@ -11,6 +11,7 @@
   laptop,
   aliceHome,
   exampleDir,
+  fixturesDir,
   ...
 }:
 {
@@ -116,7 +117,30 @@
   # system (real input, not a stub), with the builder's defaults applied
   home-eval-username = aliceHome.config.home.username == "alice";
   home-eval-home-directory = aliceHome.config.home.homeDirectory == "/home/alice";
-  home-eval-state-version-default = aliceHome.config.home.stateVersion == lib.trivial.release;
+  # alice's home.nix PINS stateVersion (as the template should): the pin
+  # wins over the builder's default, and no stateVersion warning appears
+  home-eval-state-version-pinned =
+    aliceHome.config.home.stateVersion == "26.11"
+    && !(builtins.any (w: lib.hasInfix "home.stateVersion" w) aliceHome.config.warnings);
+  # a login home that does NOT pin keeps the convenience default (the
+  # CURRENT nixpkgs release) but is told so: the warning names the user
+  # and both pin recipes. Asserted via the `warnings` option -- an eval
+  # warning also fires on the VALUE, but is not observable in-language.
+  home-eval-state-version-default-warns =
+    let
+      probe = myLib.mkHomeConfiguration {
+        inherit inputs system;
+        hostname = "laptop";
+        username = "unpinned";
+        userRegistry."unpinned" = fixturesDir + "/unpinned-home";
+      };
+      warning = lib.findFirst (w: lib.hasInfix "home.stateVersion" w) null probe.config.warnings;
+    in
+    warning != null
+    && lib.hasInfix "`unpinned`" warning
+    && lib.hasInfix "home.nix" warning
+    && lib.hasInfix "homeModules" warning
+    && probe.config.home.stateVersion == lib.trivial.release;
   # homeModules (set in the example's _defaults) reach login homes
   home-shared-modules-applied = aliceHome.config.programs.direnv.enable;
 
@@ -178,10 +202,27 @@
       ];
       userRegistry."dave" = exampleDir + "/users/dave";
     }).config.home-manager.useGlobalPkgs;
-  # each system home gets home.stateVersion defaulted to the CURRENT
-  # nixpkgs release (dave's home.nix does not pin one)
-  system-home-state-version-default =
-    laptop.config.home-manager.users.dave.home.stateVersion == lib.trivial.release;
+  # dave's home.nix pins stateVersion; the pin wins over the builder's
+  # default and no warning appears in his SYSTEM-managed home
+  system-home-state-version-pinned =
+    laptop.config.home-manager.users.dave.home.stateVersion == "26.11"
+    && !(builtins.any (
+      w: lib.hasInfix "home.stateVersion" w
+    ) laptop.config.home-manager.users.dave.warnings);
+  # ... while a system-managed home that does NOT pin keeps the default
+  # (current release) and gets the same warning the login mechanism emits
+  system-home-state-version-default-warns =
+    let
+      user =
+        (myLib.mkNixosSystem {
+          inherit inputs system;
+          hostname = "unpinnedhost";
+          modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+          userRegistry."unpinned" = fixturesDir + "/unpinned-home";
+        }).config.home-manager.users.unpinned;
+    in
+    builtins.any (w: lib.hasInfix "home.stateVersion" w && lib.hasInfix "`unpinned`" w) user.warnings
+    && user.home.stateVersion == lib.trivial.release;
   # `username` reaches system homes as a module argument too
   # (extraSpecialArgs cannot vary per user; _module.args can)
   username-reaches-system-homes =
