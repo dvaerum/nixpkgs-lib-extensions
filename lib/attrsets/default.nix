@@ -13,6 +13,10 @@
     - All attrsets: recursively merge
     - Mixed types: last value wins (rightmost)
 
+    Note that list deduplication only fires when a key occurs in TWO or
+    more of the merged sets: a key occurring in a single set is taken
+    verbatim, duplicates inside its list included.
+
     # Type
     ```
     recursiveMerge :: [AttrSet] -> AttrSet
@@ -46,20 +50,18 @@
   recursiveMerge = (
     attrList:
     let
-      f =
-        attrPath:
-        lib.zipAttrsWith (
-          n: values:
-          if lib.tail values == [ ] then
-            lib.head values
-          else if lib.all lib.isList values then
-            lib.unique (lib.concatLists values)
-          else if lib.all lib.isAttrs values then
-            f (attrPath ++ [ n ]) values
-          else
-            lib.last values
-        );
+      f = lib.zipAttrsWith (
+        n: values:
+        if lib.tail values == [ ] then
+          lib.head values
+        else if lib.all lib.isList values then
+          lib.unique (lib.concatLists values)
+        else if lib.all lib.isAttrs values then
+          f values
+        else
+          lib.last values
+      );
     in
-    f [ ] attrList
+    f attrList
   );
 }

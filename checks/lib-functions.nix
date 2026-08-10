@@ -78,6 +78,12 @@ let
     import-if-nix-directory-without-default =
       importIfNix ../checks/invalid-fixtures/no-nix-files == { };
     import-if-nix-missing-path = importIfNix ../does-not-exist == { };
+    # a symlink is followed and classified by its target: a link named
+    # *.nix to a valid Nix file imports like the target itself (the
+    # fixture links to dave's configuration.nix, a module function)
+    import-if-nix-symlink-to-valid = builtins.isFunction (
+      importIfNix ../checks/fixtures/symlink-to-valid.nix
+    );
     # the git-crypt case: right name, encrypted (binary) content -> { }
     import-if-nix-git-crypted-content = importIfNix ../checks/invalid-fixtures/git-crypted.nix == { };
     # right name, text content that is not Nix -> { }
@@ -92,6 +98,26 @@ let
     import-if-nix-or-ignores-default-when-valid = builtins.isFunction (
       importIfNixOr ../checks/example/users/dave/configuration.nix { tester = 1212; }
     );
+
+    # list dedup fires only when a key occurs in 2+ sets: a
+    # single-occurrence list keeps its duplicates (pinned current
+    # behavior, documented in the docstring)
+    recursive-merge-single-occurrence-keeps-duplicates =
+      myLib.recursiveMerge [
+        {
+          tags = [
+            "web"
+            "web"
+          ];
+        }
+        { other = 1; }
+      ] == {
+        tags = [
+          "web"
+          "web"
+        ];
+        other = 1;
+      };
 
     recursive-merge-lists-dedup =
       myLib.recursiveMerge [

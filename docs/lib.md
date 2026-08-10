@@ -18,6 +18,10 @@ Merge strategy:
 - All attrsets: recursively merge
 - Mixed types: last value wins (rightmost)
 
+Note that list deduplication only fires when a key occurs in TWO or
+more of the merged sets: a key occurring in a single set is taken
+verbatim, duplicates inside its list included.
+
 ### Type
 ```
 recursiveMerge :: [AttrSet] -> AttrSet
@@ -211,7 +215,10 @@ validity probe and becomes the (non-secret) default -- so the same
 configuration evaluates in both places.
 
 Accepted: a regular file with the `.nix` suffix whose content parses as
-Nix, or a directory whose `default.nix` does. Everything else yields
+Nix, or a directory whose `default.nix` does. Symlinks are followed
+and classified by what they resolve to (a link to a valid `.nix` file
+imports like its target; a dangling link counts as missing).
+Everything else yields
 `default` WITH an evaluation warning naming the reason (missing path,
 unsupported file extension, directory without default.nix, or content
 that is not valid Nix) -- a skipped import is never a silent mystery.
@@ -227,6 +234,16 @@ and cached per file content. IFD is REQUIRED: any evaluation using
 `importIfNix`/`importIfNixOr` fails under
 `--no-allow-import-from-derivation` (the builders' `patches`
 argument shares this constraint).
+
+Only an actual parse REJECTION counts as invalid content: when
+nix-instantiate fails for any other reason (a crash, a killed
+process), the function THROWS instead of quietly returning `default`
+-- that is a broken probe, not an encrypted file. If the probe
+derivation itself fails to build, evaluation aborts with that build
+error (IFD cannot continue past it). And the verdict comes from the
+`pkgs.nix` parser rather than the evaluating Nix, so a parser-version
+skew between the two can (rarely) let a file pass the probe and still
+fail the actual `import`, or reject what the evaluator would accept.
 
 ### Example
 
