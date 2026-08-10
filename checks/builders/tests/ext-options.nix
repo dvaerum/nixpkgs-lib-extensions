@@ -1,7 +1,6 @@
 # The `nixpkgsLibExtensions.*` options namespace: the builder-derived
-# values that used to be specialArgs, now declared as real module options
-# (NixOS AND both home mechanisms), plus the throwing tombstones behind the
-# removed specialArgs.
+# per-host values, declared as real module options (NixOS AND both home
+# mechanisms).
 {
   lib,
   myLib,
@@ -11,15 +10,9 @@
   custom,
   aliceHome,
   exampleDir,
-  repoDir,
   ...
 }:
 let
-  extOpts = import (repoDir + "/lib/nixos/internal/ext-options.nix") {
-    inherit lib;
-    self = myLib;
-  };
-
   exampleUsers = [
     "alice"
     "bob"
@@ -37,21 +30,6 @@ let
       inherit inputs system hostname;
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ] ++ modules;
     };
-  systemThrows =
-    hostname: modules:
-    !(builtins.tryEval (builtins.attrNames (probeSystem hostname modules).config.users.groups)).success;
-  homeThrows =
-    modules:
-    !(builtins.tryEval (
-      builtins.attrNames
-        (myLib.mkHomeConfiguration {
-          inherit inputs system;
-          hostname = "laptop";
-          username = "alice";
-          userRegistry."alice" = exampleDir + "/users/alice";
-          homeModules = modules;
-        }).config.home.sessionVariables
-    )).success;
 in
 {
   # ── the options hold the builder's values, in NixOS modules ──
@@ -131,60 +109,4 @@ in
       (probeSystem "roprobe2" [ { nixpkgsLibExtensions.users = [ "mallory" ]; } ])
       .config.nixpkgsLibExtensions.users
     ).success;
-
-  # ── the removed specialArgs fail LOUDLY, not with a bare unknown-arg ──
-  # each moved name still resolves as a module argument -- to a tombstone
-  # that throws with the replacement path
-  moved-arg-tags-throws = systemThrows "mvtags" [
-    ({ tags, ... }: { users.groups.${builtins.seq tags "probe"} = { }; })
-  ];
-  moved-arg-hostname-throws = systemThrows "mvhost" [
-    ({ hostname, ... }: { users.groups.${builtins.seq hostname "probe"} = { }; })
-  ];
-  moved-arg-host-group-throws = systemThrows "mvgroup" [
-    ({ hostGroup, ... }: { users.groups.${builtins.seq hostGroup "probe"} = { }; })
-  ];
-  moved-arg-list-of-usernames-throws = systemThrows "mvusers" [
-    ({ listOfUsernames, ... }: { users.groups.${builtins.seq listOfUsernames "probe"} = { }; })
-  ];
-  moved-arg-input-pkgs-throws = systemThrows "mvpkgs" [
-    ({ inputPkgs, ... }: { users.groups.${builtins.seq inputPkgs "probe"} = { }; })
-  ];
-  # ... in home modules too
-  moved-arg-throws-in-homes = homeThrows [
-    (
-      { listOfUsernames, ... }:
-      {
-        home.sessionVariables.${builtins.seq listOfUsernames "PROBE"} = "1";
-      }
-    )
-  ];
-
-  # tryEval discards a throw's message, so the tombstone TEXT is pinned as
-  # data: every moved name points at its replacement, and the message names
-  # that path (house style: the error text is tested API surface)
-  moved-special-args-point-at-options =
-    extOpts.movedNixosSpecialArgs == {
-      hostname = "config.networking.hostName";
-      tags = "config.nixpkgsLibExtensions.tags";
-      hostGroup = "config.nixpkgsLibExtensions.group";
-      listOfUsernames = "config.nixpkgsLibExtensions.users";
-      inputPkgs = "config.nixpkgsLibExtensions.inputPkgs";
-    }
-    # a home has no networking.hostName; its tombstone points at the option
-    # the home variant declares itself
-    && extOpts.movedHomeSpecialArgs.hostname == "config.nixpkgsLibExtensions.hostname"
-    && builtins.all (
-      name:
-      lib.hasInfix extOpts.movedNixosSpecialArgs.${name} (
-        extOpts.movedSpecialArgMessage name extOpts.movedNixosSpecialArgs.${name}
-      )
-    ) (builtins.attrNames extOpts.movedNixosSpecialArgs);
-
-  # the renamed OPTION path (`nixpkgsLibExtensions.hostGroup` ->
-  # `nixpkgsLibExtensions.group`, 1.0.0) is a tombstone too; tryEval
-  # discards the thrown text, so the pointer is pinned at the source
-  ext-host-group-option-tombstone-names-replacement =
-    lib.hasInfix "renamed to `nixpkgsLibExtensions.group`"
-      (builtins.readFile (repoDir + "/lib/nixos/internal/ext-options.nix"));
 }

@@ -53,17 +53,6 @@ let
     "inputContributions"
   ];
 
-  # Arguments renamed in 1.0.0: old name -> new name. The old names are
-  # tombstones at every door a builder argument can enter (direct calls,
-  # `_defaults`, host entries, `extra`): the complaint names the
-  # replacement instead of calling the name a typo.
-  renamedArgs = {
-    extraOverlays = "overlays";
-    hostGroup = "group";
-  };
-  renamedComplaint =
-    name:
-    "`${name}` was renamed to `${renamedArgs.${name}}` in 1.0.0 -- same behavior, new name (see CHANGELOG.md).";
   # `extra` is the ONE per-host layering slot: a bare key REPLACES the
   # default, `extra.<key>` ADDS to it. It replaced the two `additional*`
   # twins, which layered exactly two of the 21 arguments and left no way to
@@ -105,10 +94,6 @@ let
               " `extra` is a per-host layering slot of the hosts attrset that buildConfigurations/buildNixosConfigurations take; a direct call receives the merged arguments, so pass them directly."
             else
               ""
-          )
-          # a RENAMED name deserves its pointer, not just the typo verdict
-          + lib.concatStringsSep "" (
-            map (n: " ${renamedComplaint n}") (lib.filter (n: renamedArgs ? ${n}) bad)
           )
           + " Accepted: ${lib.concatStringsSep ", " allowed}."
         )
@@ -161,12 +146,8 @@ let
         name:
         if name == "hostname" then
           "- `hostname`: never a default -- it comes from each attribute key. Drop it."
-        else if lib.substring 0 10 name == "additional" then
-          "- `${name}`: the `additional*` arguments are gone. Put the shared value in `_defaults` and the per-host addition in that host's `extra` slot: `extra.${lib.substring 10 (-1) name} = [ ... ];` (a bare key replaces, `extra.<key>` adds)."
         else if name == "extra" then
           "- `extra`: the per-host layering slot, never a default -- `_defaults` holds the base values that `extra` adds to."
-        else if renamedArgs ? ${name} then
-          "- ${renamedComplaint name}"
         else
           "- `${name}`: not a builder argument (typo?). `_defaults` accepts: ${lib.concatStringsSep ", " allowedDefaultArgs}.";
       badDefaults = map defaultComplaint (
@@ -184,8 +165,6 @@ let
           null
         else if lib.elem name allowedDefaultArgs then
           null
-        else if renamedArgs ? ${name} then
-          "- `_groups.${groupName}`: ${renamedComplaint name}"
         else
           "- `_groups.${groupName}`: `${name}` is not a builder argument (typo?). Group entries accept the same names as `_defaults`, plus `extra`.";
       badGroups = lib.concatLists (
@@ -280,19 +259,13 @@ let
             else
               map (
                 k:
-                if renamedArgs ? ${k} then
-                  "- `${hostname}`: ${renamedComplaint k}"
-                else
-                  "- `${hostname}`: `${k}` is not a builder argument (typo?). Host entries accept: ${lib.concatStringsSep ", " allowedHostArgs}."
+                "- `${hostname}`: `${k}` is not a builder argument (typo?). Host entries accept: ${lib.concatStringsSep ", " allowedHostArgs}."
               ) (lib.filter (k: !(lib.elem k allowedHostArgs)) (lib.attrNames args))
               ++
                 map
                   (
                     k:
-                    if renamedArgs ? ${k} then
-                      "- `${hostname}`: `extra.${k}`: ${renamedComplaint k}"
-                    else
-                      "- `${hostname}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults`."
+                    "- `${hostname}`: `extra.${k}` is not a builder argument (typo?). `extra` accepts the same names as `_defaults`."
                   )
                   (
                     lib.filter (k: !(lib.elem k allowedDefaultArgs)) (
@@ -336,9 +309,9 @@ let
   # builderArgProblems/validateBuilderArgs -- so the thrown text and the
   # problems-as-data can never disagree. Complains, naming fnName, about:
   # a non-allowlisted `_defaults` key (with special explanations for
-  # `hostname` and the `additional*` per-host halves), a non-allowlisted
-  # host entry key, or a host entry whose inner `hostname` conflicts
-  # with its attribute key (a redundant EQUAL one is tolerated).
+  # `hostname` and `extra`), a non-allowlisted host entry key, or a host
+  # entry whose inner `hostname` conflicts with its attribute key (a
+  # redundant EQUAL one is tolerated).
   splitHostsArgs =
     fnName: hosts:
     let

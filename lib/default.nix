@@ -27,13 +27,14 @@ lib.fix (
   let
     load = path: import path { inherit lib self; };
 
-    # This library's release, as declared by CHANGELOG.md -- flake-level
-    # METADATA, not a function file, so it lives here rather than in a
-    # folder. It is reserved in the collision check below (a lib file
-    # exporting `version` would otherwise be shadowed silently) and
-    # excluded from the module-level half (internal/module-level.nix):
-    # inside modules, `lib.version` is nixpkgs' release and must stay so.
-    version = "1.0.0";
+    # This library's release -- flake-level METADATA, not a function file,
+    # so it lives here rather than in a folder. Pre-1.0: the API breaks
+    # freely between releases, without compatibility shims. It is reserved
+    # in the collision check below (a lib file exporting `version` would
+    # otherwise be shadowed silently) and excluded from the module-level
+    # half (internal/module-level.nix): inside modules, `lib.version` is
+    # nixpkgs' release and must stay so.
+    version = "0.1.0";
 
     namespaces = lib.mapAttrs (_: paths: lib.mergeAttrsList (map load paths)) {
       attrsets = [ ./attrsets/default.nix ];

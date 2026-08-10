@@ -103,12 +103,4 @@ in
   # `username` is this builder's own argument, hence the extra allowance.
   mkHomeConfiguration =
     args: shared.mkHome null (shared.validateBuilderArgs "mkHomeConfiguration" [ "username" ] args);
-
-  /**
-    Deprecated (1.0.0): renamed to `mkHomeConfiguration` -- same arguments,
-    same behavior, only the name changed (it builds ONE home; the old name
-    read like the plural `build*` family). Accessing this name throws with
-    that pointer.
-  */
-  homeConfigurationsBuilder = throw "nixpkgs-lib-extensions: `homeConfigurationsBuilder` was renamed to `mkHomeConfiguration` in 1.0.0 (same arguments, same behavior); update the call site. See CHANGELOG.md.";
 }

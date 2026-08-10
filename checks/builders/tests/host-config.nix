@@ -115,18 +115,14 @@ in
   tags-set-as-system-nixos-tags =
     custom.config.system.nixos.tags == [ "kitchen-sink" ] && laptop.config.system.nixos.tags == [ ];
   host-group-option = custom.config.nixpkgsLibExtensions.group == "server";
-  # the option's pre-1.0.0 path is a tombstone: reading it throws (with
-  # the renamed path in the message; text pinned in ext-options.nix tests)
-  host-group-option-tombstone =
-    !(builtins.tryEval custom.config.nixpkgsLibExtensions.hostGroup).success;
   # a specialArg the builder does not own passes through untouched
   special-args-passed-through = custom._module.specialArgs.probeArg == "from-special-args";
 
   # ... but redefining a RESERVED name throws: the builder-owned specialArgs
   # (`rootPath`, `extLib`, ...) because overriding one produced a
-  # split-brain host, and the MOVED names (`hostname`, `tags`, ...) because
-  # a specialArg of one would mask its tombstone and diverge from the
-  # `nixpkgsLibExtensions.*` options.
+  # split-brain host, and the option-backed names (`hostname`, `tags`, ...)
+  # because a specialArg of one would hand modules a value the
+  # `nixpkgsLibExtensions.*` options do not hold.
   special-args-shadow-throws =
     let
       shadows =
@@ -276,10 +272,9 @@ in
   # split out because verifying it is import-from-derivation over the whole
   # nixpkgs tree and blocked every cheap assertion here)
 
-  # `listOfUsernames` and `username` are layered AFTER specialArgs, so a
-  # specialArg of either name was silently discarded -- the two names the
-  # shadow check's own comment cites as proof the override promise was
-  # false, and the only ones it did not cover
+  # `users` is option-backed and `username` is layered AFTER specialArgs
+  # (so a specialArg of that name would be silently discarded): both are
+  # reserved and throw like the builder-owned names
   reserved-layered-names-shadow-throws =
     let
       shadows =
@@ -294,7 +289,7 @@ in
             })._module.specialArgs
         )).success;
     in
-    shadows "listOfUsernames" [ "injected" ] && shadows "username" "root";
+    shadows "users" [ "injected" ] && shadows "username" "root";
 
   # a host entry that is not an attrset used to die with a bare
   # "expected a set but found a path" naming neither the function nor the

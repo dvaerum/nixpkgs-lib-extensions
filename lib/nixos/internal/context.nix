@@ -18,9 +18,6 @@
 { lib, self, ... }:
 let
   inherit (import ./module-level.nix { inherit lib self; }) addOwnLib;
-  # the moved-specialArg names (values here: replacement paths, unused --
-  # only the NAMES matter for reserving them below)
-  movedSpecialArgs = (import ./ext-options.nix { inherit lib self; }).movedNixosSpecialArgs;
   inherit (import ./inputs.nix { inherit lib self; })
     detectHomeManager
     libOf
@@ -170,16 +167,9 @@ let
       # lib does not also define (e.g. `disko`, `nixos`, `imports` -- but
       # not `strings` or `attrsets`, which exist in nixpkgs too). These are
       # the only legitimate merge targets for an input's lib export.
-      # tryEval: the deprecation TOMBSTONES on `self` (renamed builders) are
-      # `throw` values, and a plain isAttrs would force them here -- a
-      # tombstone is by construction not a namespace.
-      ownedNamespaces = baseLib.filter (
-        n:
-        let
-          probe = builtins.tryEval (baseLib.isAttrs self.${n});
-        in
-        probe.success && probe.value && !(baseLib ? ${n})
-      ) (baseLib.attrNames self);
+      ownedNamespaces = baseLib.filter (n: baseLib.isAttrs self.${n} && !(baseLib ? ${n})) (
+        baseLib.attrNames self
+      );
 
       # Overwrite detection, per collision class:
       # - name unused              -> input lib added as `lib.<name>`
@@ -402,25 +392,29 @@ let
       # while networking.hostName kept the real one, and `rootPath` silently
       # moved the hosts/<host> file lookup. So: say so. Everything NOT
       # reserved here still passes through freely.
-      # The MOVED names (./ext-options.nix) stay reserved too: a specialArg
-      # of one would mask its `_module.args` tombstone and let modules read
-      # a value the `nixpkgsLibExtensions` options do not hold -- the same
-      # split brain wearing a new name. `username` is layered AFTER
-      # specialArgs by both home mechanisms, so a specialArg of that name
-      # would be silently discarded; reserved so it throws like the rest.
-      reserved =
-        builderOwned
-        // movedSpecialArgs
-        // {
-          username = null;
-        };
+      # The names of the `nixpkgsLibExtensions.*` options (plus `hostname`)
+      # are reserved for the same hazard: a module destructuring
+      # `{ tags, ... }` would read the specialArg while the option keeps the
+      # builder's real value -- a split brain, not an override. `username`
+      # is layered AFTER specialArgs by both home mechanisms, so a
+      # specialArg of that name would be silently discarded; reserved so it
+      # throws like the rest.
+      reserved = builderOwned // {
+        hostname = null;
+        tags = null;
+        group = null;
+        users = null;
+        inputPkgs = null;
+        channels = null;
+        username = null;
+      };
       shadowed = lib.attrNames (lib.intersectAttrs reserved specialArgs);
       shadowCheck =
         if shadowed == [ ] then
           null
         else
           throw ''
-            nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the reserved name(s) ${lib.concatStringsSep ", " shadowed}. `inputs`, `rootPath`, `extLib` and the `pkgs-*` variants are builder-owned -- derived from the builder's own arguments, so overriding them here changes what MODULES see without changing what the builder did. `hostname`, `tags`, `hostGroup`, `listOfUsernames`, `inputPkgs` and `username` are not specialArgs anymore at all: modules read the `nixpkgsLibExtensions.*` options (and `config.networking.hostName` / the `username` module argument) instead. Set the corresponding builder argument, or pick a different specialArg name.
+            nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the reserved name(s) ${lib.concatStringsSep ", " shadowed}. `inputs`, `rootPath`, `extLib` and the `pkgs-*` variants are builder-owned -- derived from the builder's own arguments, so overriding them here changes what MODULES see without changing what the builder did. `hostname`, `tags`, `group`, `users`, `inputPkgs`, `channels` and `username` are reserved because modules read them through the `nixpkgsLibExtensions.*` options (and `config.networking.hostName` / the `username` module argument) -- a specialArg of the same name would hand modules a value those options do not hold. Set the corresponding builder argument, or pick a different specialArg name.
           '';
 
       # `specialArgs` already carries any per-host `extra.specialArgs`,

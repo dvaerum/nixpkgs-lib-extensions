@@ -94,15 +94,6 @@ in
       h = { };
     }
   );
-  # a leftover `additional*` says where it went
-  defaults-additional-modules-throws = throws (
-    myLib.buildNixosConfigurations {
-      _defaults = {
-        additionalModules = [ ];
-      };
-      h = { };
-    }
-  );
   # ... and an unknown key inside `extra` is checked like any other
   host-extra-unknown-key-throws = throws (
     myLib.buildNixosConfigurations {
@@ -139,18 +130,9 @@ in
       h = { };
     }
   );
-  # ... and the additional* special-case fires for unknown names too
-  defaults-additional-prefix-throws = throws (
-    myLib.buildNixosConfigurations {
-      _defaults = {
-        additionalOverlays = [ ];
-      };
-      h = { };
-    }
-  );
 
-  # host entries are allowlisted too: a leftover argument (the removed
-  # `users`) or a typo throws instead of silently doing nothing
+  # host entries are allowlisted too: an unknown argument throws instead
+  # of silently doing nothing
   host-unknown-key-throws = throws (
     myLib.buildNixosConfigurations {
       h = {
@@ -432,12 +414,6 @@ in
     };
     h = { };
   } "it comes from each attribute key";
-  defaults-additional-complaint = complains {
-    _defaults = {
-      additionalModules = [ ];
-    };
-    h = { };
-  } "per-host addition in that host";
   defaults-typo-complaint = complains {
     _defaults = {
       homeConfiguration = { };
@@ -469,39 +445,6 @@ in
       inherit inputs system;
       hostname = "x";
       homesharedmodules = [ ];
-    }
-  );
-
-  # ── the 1.0.0 renames: tombstones at every argument door ──
-  # the old names are not typos, they are RENAMES -- the complaint names
-  # the replacement, in `_defaults` ...
-  renamed-extra-overlays-complaint = complains {
-    _defaults = {
-      extraOverlays = [ ];
-    };
-    h = { };
-  } "renamed to `overlays`";
-  # ... on a host entry ...
-  renamed-host-group-complaint = complains { h.hostGroup = "vm"; } "renamed to `group`";
-  # ... inside a host's `extra` slot ...
-  renamed-in-extra-complaint = complains {
-    h.extra.extraOverlays = [ ];
-  } "renamed to `overlays`";
-  # ... and at the direct-call door
-  direct-call-renamed-complaint = builtins.any (p: lib.hasInfix "renamed to `group`" p) (
-    shared.builderArgProblems "probe" [ ] {
-      inherit inputs system;
-      hostname = "x";
-      hostGroup = "vm";
-    }
-  );
-  # the tombstones THROW, not just complain
-  renamed-argument-throws = throws (
-    myLib.buildNixosConfigurations {
-      h = {
-        inherit inputs system;
-        hostGroup = "vm";
-      };
     }
   );
 

@@ -11,8 +11,6 @@ still included -- but the builders are what this repo is about now.
 - [docs/getting-started.md](docs/getting-started.md) — walkthrough of the
   NixOS/home-manager builders: concepts, recipes, gotchas
 - [docs/lib.md](docs/lib.md) — generated API reference for every function
-- [CHANGELOG.md](CHANGELOG.md) — releases, breaking changes, migration
-  notes
 
 ## The NixOS / home-manager builders
 
@@ -23,9 +21,6 @@ produces both outputs from one hosts attrset. See
 `buildConfigurations`, `buildNixosConfigurations`,
 `buildHomeConfigurations`, `mkNixosSystem`, `mkHomeConfiguration`,
 `homeManagerBootstrapModule` and `normalUserModule`.
-(`nixosConfigurationsBuilder` and `homeConfigurationsBuilder` are the
-pre-1.0.0 names of the two singular builders; they are deprecated and
-throw with a pointer to the replacement.)
 
 The quickest start is the flake template — a complete, working example
 (it is evaluated by this repo's own `nix flake check`, so it cannot rot):
@@ -54,22 +49,14 @@ Highlights:
   input's own `lib` is namespaced as `lib.<inputName>`, and your
   flake's own `lib` output as `lib.flake`.
 
-## Versioning and deprecation policy
+## Stability
 
-The library carries its release as `lib.version`, and every release is
-recorded in [CHANGELOG.md](CHANGELOG.md) with migration notes for
-anything that breaks. When a name is renamed or removed, the old name
-does not disappear silently: it becomes a **tombstone** -- a value (or
-argument check) that throws an error naming the replacement -- and
-stays that way for at least one release cycle before it is dropped
-entirely. So an upgrade never changes behavior silently; the worst case
-is a loud error that tells you what to write instead.
-
-Every function is reachable both flat (`extLib.buildConfigurations`)
-and namespaced (`extLib.nixos.buildConfigurations`). The **flat names
-are the canonical surface** -- the docs and examples use them, and the
-deprecation policy is stated for them; the namespaced duplicates exist
-for discoverability and follow along.
+The library is pre-1.0: breaking changes happen without compatibility
+shims, and the documentation describes only the current API. Every
+function is reachable both flat (`extLib.buildConfigurations`) and
+namespaced (`extLib.nixos.buildConfigurations`); the **flat names are
+the canonical surface** -- the docs and examples use them -- and the
+namespaced duplicates exist for discoverability.
 
 ## What else is in here
 

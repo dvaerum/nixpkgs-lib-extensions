@@ -240,8 +240,7 @@ The value also reaches your modules as
 on it. Without `group` nothing changes -- no extra subfolder is
 consulted. When the folder layout should NOT follow the
 classification, `hostFolder = "vm";` selects the folder segment on its
-own, whatever `group` says. (Before 1.0.0 both jobs were one argument,
-`hostGroup`; the old name throws naming `group`.)
+own, whatever `group` says.
 
 A group can also carry shared ARGUMENTS: a reserved `_groups.<name>`
 entry in the hosts attrset is merged between `_defaults` and every
@@ -609,25 +608,23 @@ in every home (both mechanisms):
 | Option | Content |
 |--------|---------|
 | `nixpkgsLibExtensions.tags` | host tags; modules can ADD tags (list definitions merge) |
-| `nixpkgsLibExtensions.group` | the call argument of the same name (read-only; `nixpkgsLibExtensions.hostGroup` is its pre-1.0.0 path and throws) |
+| `nixpkgsLibExtensions.group` | the call argument of the same name (read-only) |
 | `nixpkgsLibExtensions.users` | the host's registry-derived users (read-only) |
 | `nixpkgsLibExtensions.inputPkgs.<name>` | every input's packages, pre-selected for the host's system (read-only) |
 | `nixpkgsLibExtensions.channels.<variant>` | package set per `nixpkgs-*` input (read-only) |
 | `nixpkgsLibExtensions.hostname` | homes only: the host the home is built for -- NixOS modules read `config.networking.hostName` |
 
 Home-manager modules additionally receive `username` (whose home) as a
-module argument. These names used to be specialArgs; a module still
-reading one of the old ones (`hostname`, `tags`, `hostGroup`,
-`listOfUsernames`, `inputPkgs`) fails with a message naming the
-replacement path.
+module argument.
 
 Anything you pass as `specialArgs = { ... };` is merged alongside the
-kept specialArgs (a host adds to it with `extra.specialArgs`). The
-kept names are **builder-owned** and the moved names stay reserved:
-redefining either throws -- overriding one would change only what
-modules see, not what the builder did. Set the corresponding builder
-argument instead. `pkgs` is deliberately not a specialArg -- modules
-receive it from the module system.
+builder's own (a host adds to it with `extra.specialArgs`). The
+builder-owned names and the option-backed ones (`hostname`, `tags`,
+`group`, `users`, `inputPkgs`, `channels`, `username`) are reserved:
+redefining one throws -- it would change only what modules see, not
+what the builder did. Set the corresponding builder argument instead.
+`pkgs` is deliberately not a specialArg -- modules receive it from the
+module system.
 
 Example -- use a package from an input without any wiring:
 

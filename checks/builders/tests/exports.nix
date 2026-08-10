@@ -21,24 +21,15 @@
   internal-helpers-hidden = !(myLib ? mkContext) && !(myLib ? resolveUser);
   fixed-point-assembles = myLib ? stringToTitle;
 
-  # the singular builders were renamed in 1.0.0; the old names are
-  # throwing tombstones (flat and namespaced alike), not silent absences
-  renamed-builders-tombstoned =
-    !(builtins.tryEval myLib.nixosConfigurationsBuilder).success
-    && !(builtins.tryEval myLib.homeConfigurationsBuilder).success
-    && !(builtins.tryEval myLib.nixos.nixosConfigurationsBuilder).success
-    && !(builtins.tryEval myLib.nixos.homeConfigurationsBuilder).success;
-  # tryEval discards the message, so pin the pointer at the source: each
-  # tombstone must name its replacement
-  renamed-builders-tombstones-name-replacement =
-    lib.hasInfix "renamed to `mkNixosSystem`" (
-      builtins.readFile (repoDir + "/lib/nixos/mk-nixos-system.nix")
-    )
-    && lib.hasInfix "renamed to `mkHomeConfiguration`" (
-      builtins.readFile (repoDir + "/lib/nixos/mk-home-configuration.nix")
-    );
+  # pre-1.0: the pre-rename builder names are simply ABSENT -- no
+  # tombstones, no compatibility machinery, flat and namespaced alike
+  old-builder-names-absent =
+    !(myLib ? nixosConfigurationsBuilder)
+    && !(myLib ? homeConfigurationsBuilder)
+    && !(myLib.nixos ? nixosConfigurationsBuilder)
+    && !(myLib.nixos ? homeConfigurationsBuilder);
 
-  # `lib.version` is this library's release string (see CHANGELOG.md) ...
+  # `lib.version` is this library's release string ...
   version-exported = builtins.match "[0-9]+\\.[0-9]+\\.[0-9]+" myLib.version != null;
   # ... and stays OUT of the module-level half: inside modules,
   # `lib.version` is nixpkgs' release and must keep winning

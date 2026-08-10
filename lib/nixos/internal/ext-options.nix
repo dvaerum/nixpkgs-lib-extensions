@@ -2,22 +2,16 @@
 # `self` is the fully assembled nixpkgs-lib-extensions lib (a fixed point),
 # `lib` is nixpkgs'.
 #
-# The `nixpkgsLibExtensions` options namespace: the builder-derived values
-# modules used to receive as specialArgs (`tags`, `hostGroup` -- now the
-# `group` option, `listOfUsernames`, `inputPkgs`) declared as REAL module
-# options instead.
+# The `nixpkgsLibExtensions` options namespace: the builder-derived
+# per-host values (`tags`, `group`, `users`, `inputPkgs`, `channels`),
+# declared as REAL module options rather than specialArgs.
 # specialArgs are import-time constants -- no merging, no priorities, no
-# docs, and a shadow-throw was needed to guard every name. As options,
-# `tags` MERGES contributions from several modules, the read-only values
-# carry types and descriptions, and the module system itself rejects a
-# module trying to redefine what only the builder can know. Only the true
-# import-time values (`inputs`, `rootPath`, `extLib`, the legacy `pkgs-*`
-# variants) remain specialArgs -- see internal/context.nix.
-#
-# The REMOVED specialArgs do not disappear silently: `_module.args`
-# fallbacks throw with the replacement path, so a module still reading
-# `{ tags, ... }` fails naming `config.nixpkgsLibExtensions.tags` instead
-# of dying with "called with unexpected argument".
+# docs, and a shadow-throw would be needed to guard every name. As
+# options, `tags` MERGES contributions from several modules, the
+# read-only values carry types and descriptions, and the module system
+# itself rejects a module trying to redefine what only the builder can
+# know. Only the true import-time values (`inputs`, `rootPath`, `extLib`
+# and the `pkgs-*` variants) are specialArgs -- see internal/context.nix.
 { lib, self, ... }:
 let
   inherit (lib) mkOption types;
@@ -26,22 +20,6 @@ let
   # only `hostname` differs: a NixOS module reads config.networking.hostName
   # (the builder sets it), while a home has no such option, so the home
   # variant declares `nixpkgsLibExtensions.hostname` itself.
-  movedNixosSpecialArgs = {
-    hostname = "config.networking.hostName";
-    tags = "config.nixpkgsLibExtensions.tags";
-    hostGroup = "config.nixpkgsLibExtensions.group";
-    listOfUsernames = "config.nixpkgsLibExtensions.users";
-    inputPkgs = "config.nixpkgsLibExtensions.inputPkgs";
-  };
-  movedHomeSpecialArgs = movedNixosSpecialArgs // {
-    hostname = "config.nixpkgsLibExtensions.hostname";
-  };
-
-  # The tombstone text, exported as data so the tests can assert the
-  # MESSAGE (a throw's text is not recoverable through tryEval).
-  movedSpecialArgMessage =
-    name: replacement:
-    "nixpkgs-lib-extensions: `${name}` is no longer a specialArg (module argument); read `${replacement}` instead.";
 
   # The option declarations shared by both variants. `tags` is the one
   # MERGING option: the builder's `tags` argument arrives as an ordinary
@@ -79,18 +57,6 @@ let
           the builder argument instead.
         '';
       };
-      # the option's pre-1.0.0 path; reading it throws with the new one
-      # (defaultText spares documentation tooling from forcing the throw)
-      hostGroup = mkOption {
-        type = types.raw;
-        readOnly = true;
-        default = throw "nixpkgs-lib-extensions: the `nixpkgsLibExtensions.hostGroup` option was renamed to `nixpkgsLibExtensions.group` in 1.0.0; read that instead. See CHANGELOG.md.";
-        defaultText = "throws: renamed to `nixpkgsLibExtensions.group` (1.0.0)";
-        description = ''
-          Deprecated (1.0.0): renamed to `nixpkgsLibExtensions.group`.
-          Reading this path throws with that pointer.
-        '';
-      };
       users = mkOption {
         type = types.listOf types.str;
         readOnly = true;
@@ -124,20 +90,11 @@ let
       };
     };
 
-  mkConfig = moved: tags: {
+  mkConfig = tags: {
     nixpkgsLibExtensions.tags = tags;
-    # tombstones for the moved specialArgs: `_module.args` is consulted only
-    # when a name is NOT a specialArg, so after the move a module still
-    # destructuring `{ tags, ... }` reaches these throws -- a pointer to the
-    # replacement instead of a bare "unexpected argument" error.
-    _module.args = lib.mapAttrs (
-      name: replacement: throw (movedSpecialArgMessage name replacement)
-    ) moved;
   };
 in
 {
-  inherit movedNixosSpecialArgs movedHomeSpecialArgs movedSpecialArgMessage;
-
   # The `home.stateVersion` default, shared by both home mechanisms:
   # mk-system.nix wires it into `home-manager.sharedModules` (system-managed
   # homes), mk-home.nix into the standalone module list (login-managed).
@@ -199,7 +156,7 @@ in
           channels
           ;
       };
-      config = mkConfig movedNixosSpecialArgs tags;
+      config = mkConfig tags;
     };
 
   # The home-manager twin: the same namespace and values inside every home,
@@ -239,6 +196,6 @@ in
             '';
           };
         };
-      config = mkConfig movedHomeSpecialArgs tags;
+      config = mkConfig tags;
     };
 }

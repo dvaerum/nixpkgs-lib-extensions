@@ -112,10 +112,8 @@ in
     :
     : This list is an enforced ALLOWLIST: any other key throws, so typos
     : (`homeConfiguration`, ...) fail loudly instead of being dropped
-    : silently. `hostname` (it comes from each attribute key), the
-    : `additional*` arguments (the per-host halves of the layered pairs)
-    : and the pre-1.0.0 names (`hostGroup`, `extraOverlays`) get their
-    : own explanatory errors.
+    : silently. `hostname` (it comes from each attribute key) and `extra`
+    : (per-host only) get their own explanatory errors.
 
     _groups
     : Optional reserved entry of `hosts` (never a hostname): per-group

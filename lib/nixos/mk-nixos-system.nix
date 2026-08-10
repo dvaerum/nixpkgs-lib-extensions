@@ -72,11 +72,7 @@ in
     (whichever mechanism built it): `tags` (mergeable), `group`,
     `users`, `inputPkgs` and `channels` (read-only), plus `hostname` in
     homes only -- NixOS modules read `config.networking.hostName`, which
-    the builder sets. They used to be specialArgs; a module still reading
-    one of the old names (`hostname`, `tags`, `hostGroup`,
-    `listOfUsernames`, `inputPkgs`) fails with a message naming the
-    replacement path (as does reading the pre-1.0.0
-    `nixpkgsLibExtensions.hostGroup` option path).
+    the builder sets.
 
     The host's own configuration is included by convention: relative to
     `rootPath` (default: the consuming flake, `inputs.self`), either
@@ -275,9 +271,8 @@ in
     : for an example and the costs involved.
 
     overlays
-    : Overlays applied on top of the ones auto-collected from `inputs`
-    : (called `extraOverlays` before 1.0.0; the old name throws naming
-    : this one). Unlike `nixpkgsConfig`, this is not the only route: a
+    : Overlays applied on top of the ones auto-collected from `inputs`.
+    : Unlike `nixpkgsConfig`, this is not the only route: a
     : module's own `nixpkgs.overlays` works too and composes with these
     : (nixpkgs appends module overlays onto the package set passed in),
     : so a third-party module bringing its own overlays needs nothing
@@ -299,17 +294,16 @@ in
 
     specialArgs
     : Extra specialArgs, merged alongside the ones the builder assembles
-    : (`inputs`, `rootPath`, `extLib`, the legacy `pkgs-*`). Redefining a
-    : builder-owned name THROWS: overriding one changed only what modules
-    : see, not what the builder did. The MOVED names (`hostname`, `tags`,
-    : `hostGroup`, `listOfUsernames`, `inputPkgs`, `username`) throw too --
-    : they are options (or module arguments) now, and a specialArg of the
-    : same name would mask the real value. Set the corresponding builder
-    : argument instead. Default `{ }`.
+    : (`inputs`, `rootPath`, `extLib`, the `pkgs-*` variants). Redefining
+    : a builder-owned name THROWS: overriding one changed only what
+    : modules see, not what the builder did. The option-backed names
+    : (`hostname`, `tags`, `group`, `users`, `inputPkgs`, `channels`,
+    : `username`) throw too -- they are options (or module arguments),
+    : and a specialArg of the same name would mask the real value. Set
+    : the corresponding builder argument instead. Default `{ }`.
 
     group
-    : Free-form host classification, e.g. `"vm"` or `"server"` (called
-    : `hostGroup` before 1.0.0; the old name throws naming this one).
+    : Free-form host classification, e.g. `"vm"` or `"server"`.
     : Exposed to modules as the read-only `nixpkgsLibExtensions.group`
     : option; in a hosts attrset it also selects that host's `_groups`
     : defaults layer (see `buildNixosConfigurations`). When non-null the
@@ -379,12 +373,4 @@ in
   # Destructuring validArgs forces the check, so even a consumer that only
   # reads attrNames of the result hits it.
   mkNixosSystem = args: shared.mkSystem null (shared.validateBuilderArgs "mkNixosSystem" [ ] args);
-
-  /**
-    Deprecated (1.0.0): renamed to `mkNixosSystem` -- same arguments, same
-    behavior, only the name changed (it builds ONE system; the old name
-    read like the plural `build*` family). Accessing this name throws with
-    that pointer.
-  */
-  nixosConfigurationsBuilder = throw "nixpkgs-lib-extensions: `nixosConfigurationsBuilder` was renamed to `mkNixosSystem` in 1.0.0 (same arguments, same behavior); update the call site. See CHANGELOG.md.";
 }
