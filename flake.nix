@@ -122,18 +122,12 @@
     {
       lib = myLib;
 
-      # Helpers for consumers. Both carry only the module-level half, and
-      # can only ADD -- see lib/nixos/internal/module-level.nix: they feed
-      # a consuming flake's module `lib`, where the system builders have no
-      # meaning.
-      #
-      # `libOverlays.default` is the CANONICAL form (compose it with
-      # `lib.extend`, like any other input's); the builders prefer it over
-      # `extendLib` when an input exports both.
+      # Helper for consumers: the lib contribution as an overlay
+      # (final: prev: delta), composed with `lib.extend` like any other
+      # input's. It carries only the module-level half, and can only ADD --
+      # see lib/nixos/internal/module-level.nix: it feeds a consuming
+      # flake's module `lib`, where the system builders have no meaning.
       libOverlays.default = libOverlay;
-      # legacy endomorphism (lib -> newLib), kept as a wrapper defined FROM
-      # the overlay; for a lib that is not a fixed point, so no `extend`.
-      extendLib = lib: lib // libOverlay lib lib;
 
       # Keep overlay for pkgs.lib (works in some contexts)
       # ... and the same for pkgs.lib.

@@ -705,13 +705,11 @@ automatically when the matching input exists:
   default/sole-entry rule, but no exclusions -- overlays are collected
   from every input, nixpkgs trees included).
 - lib extensions from any input exposing a lib overlay
-  `libOverlays.default = final: prev: { ... };` (the canonical form --
-  it composes through `lib.extend`, so one addition can reference
-  another via `final`) or the legacy `extendLib` endomorphism
-  (`lib -> newLib`; the overlay wins when both exist). This repo's own
-  extensions are always applied to the system `lib` and also passed as
-  the `extLib` specialArg. Both forms are governed by the ONE
-  `extendLib` channel of `inputContributions`.
+  `libOverlays.default = final: prev: { ... };` -- it composes through
+  `lib.extend`, so one addition can reference another via `final`.
+  This repo's own extensions are always applied to the system `lib`
+  and also passed as the `extLib` specialArg. Governed by the
+  `libOverlays` channel of `inputContributions`.
 - each input's standalone `lib` export, namespaced by input name:
   `lib.<inputName>` in modules and `pkgs.lib.<inputName>` (e.g.
   `lib.NixVirt.domain`). Never merged flat -- a lib overlay is the
@@ -728,9 +726,7 @@ automatically when the matching input exists:
   `nixpkgsLibExtensions.channels.<variant>` option (e.g.
   `inputs.nixpkgs-unstable` becomes
   `config.nixpkgsLibExtensions.channels.unstable`), built with the same
-  overlays and config as the primary `pkgs`. The older `pkgs-<variant>`
-  specialArgs still work for now; the option path is the canonical one
-  (the specialArgs go away in the planned breaking release).
+  overlays and config as the primary `pkgs`.
 
 The whole `inputs` set is also passed through as the `inputs` specialArg
 (and home-manager extraSpecialArg), so modules can reach anything not
@@ -973,7 +969,7 @@ mkNixosSystem :: Attribute -> NixosSystem
 
 - **specialArgs**
   Extra specialArgs, merged alongside the ones the builder assembles
-  (`inputs`, `rootPath`, `extLib`, the `pkgs-*` variants). Redefining
+  (`inputs`, `rootPath`, `extLib`). Redefining
   a builder-owned name THROWS: overriding one changed only what
   modules see, not what the builder did. The option-backed names
   (`hostname`, `tags`, `group`, `users`, `inputPkgs`, `channels`,
@@ -1019,23 +1015,19 @@ mkNixosSystem :: Attribute -> NixosSystem
   A selection value is a list of entry names (auto-imported in the order
   given), `"*"` (every entry, alphabetically), or `null`/`[ ]` (none).
   The selectable channels are `nixosModules`, `homeModules` and
-  `overlays`; `extendLib` and `lib` hold a single value, so for them only
-  `null`/`[ ]` (off) and `"*"` (on) apply. The `extendLib` channel is
-  the lib-extension channel as such: it governs an input's
-  `libOverlays.default` and its legacy `extendLib` alike. A `homeModules` selection also
-  covers an input that only exports the older `homeManagerModules` name:
-  that alias is read when `homeModules` is absent, and never touched when
-  it is present (flakes deprecating it warn on access). Naming entries is how you take
+  `overlays`; `libOverlays` and `lib` hold a single value, so for them
+  only `null`/`[ ]` (off) and `"*"` (on) apply. Naming entries is how you take
   SEVERAL of a catalog's exports -- and it is validated: an unknown
   channel key, an unknown entry name, or a case keyed by an input that is
   not in `inputs` all throw, listing the valid options. An explicit
   selection also overrides the built-in skips (the home-manager input,
   nixpkgs trees), which only exist to prevent guessing. CHANNELS ONLY:
-  the `pkgs-*` specialArgs, `inputPkgs` and the home-manager capability
-  detection are computed from `inputs` directly and no case affects
-  them -- `inputContributions."nixpkgs-unstable" = null;` still yields a
-  `pkgs-unstable` specialArg. An input reached by hand via the
-  `inputs`/`inputPkgs` specialArgs likewise always works.
+  the `nixpkgsLibExtensions.channels` variants, `inputPkgs` and the
+  home-manager capability detection are computed from `inputs` directly
+  and no case affects them --
+  `inputContributions."nixpkgs-unstable" = null;` still yields a
+  `channels.unstable` entry. An input reached by hand via the `inputs`
+  specialArg or the `inputPkgs` option likewise always works.
   Example: `inputContributions."nixos-raspberrypi".overlays =
   [ "bootloader" "vendor-kernel" ];`
   Default `{ }`.

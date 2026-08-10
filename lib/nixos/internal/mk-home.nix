@@ -55,7 +55,7 @@ in
         home-manager.lib.homeManagerConfiguration {
           # `lib` explicitly: home-manager re-fixes the module lib via
           # lib.extend, so it must start from the context lib (extLib,
-          # input extendLibs and namespaced input libs are all inside its
+          # input lib overlays and namespaced input libs are all inside its
           # fixed point) -- with the default pkgs.lib the namespaced input
           # libs would be lost in that re-fix
           inherit pkgs lib;

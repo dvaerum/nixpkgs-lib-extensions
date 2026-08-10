@@ -10,8 +10,8 @@
 # options, `tags` MERGES contributions from several modules, the
 # read-only values carry types and descriptions, and the module system
 # itself rejects a module trying to redefine what only the builder can
-# know. Only the true import-time values (`inputs`, `rootPath`, `extLib`
-# and the `pkgs-*` variants) are specialArgs -- see internal/context.nix.
+# know. Only the true import-time values (`inputs`, `rootPath`, `extLib`)
+# are specialArgs -- see internal/context.nix.
 { lib, self, ... }:
 let
   inherit (lib) mkOption types;
@@ -84,8 +84,7 @@ let
           The package set of every `nixpkgs-<variant>` input, keyed by
           variant (e.g. `channels.unstable` for `inputs.nixpkgs-unstable`),
           instantiated with the same overlays and config as the primary
-          `pkgs`. The canonical home of what the legacy `pkgs-<variant>`
-          specialArgs expose. Read-only.
+          `pkgs`. Read-only.
         '';
       };
     };

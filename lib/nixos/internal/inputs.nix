@@ -64,16 +64,14 @@ let
   # list cannot drift away from the code that acts on it.
   entrySetChannels = {
     nixosModules = v: v.nixosModules or { };
-    # the older `homeManagerModules` name is read ONLY when `homeModules` is
-    # absent -- flakes that deprecated it (plasma-manager) warn on access
-    homeModules = v: v.homeModules or v.homeManagerModules or { };
+    homeModules = v: v.homeModules or { };
     overlays = v: v.overlays or { };
   };
   # These hold ONE value, so a selection can only switch them on or off, and
   # each is consumed at its own site inside the lib fixed point (context.nix)
   # rather than through a generic collector.
   singleValueChannels = [
-    "extendLib"
+    "libOverlays"
     "lib"
   ];
   channelNames = lib.attrNames entrySetChannels ++ singleValueChannels;
@@ -216,7 +214,7 @@ let
               "a value of type `${builtins.typeOf selection}`"
           }.'';
 
-  # Whether a SINGLE-VALUE channel (`extendLib`, `lib`) contributes. One
+  # Whether a SINGLE-VALUE channel (`libOverlays`, `lib`) contributes. One
   # value holds nothing to choose between, so a selection can only switch the
   # channel off.
   channelEnabled =
@@ -372,10 +370,8 @@ let
       # to collect the channel: a `homeModules` typo on a host with no
       # system-managed homes would otherwise never be forced, while the docs
       # promise every typo fails loudly. Scoped to the inputs the consumer
-      # named, so nothing else is probed (which also keeps a deprecated
-      # `homeManagerModules` alias untouched on inputs never mentioned).
-      # `length` forces the list's shape, never the entries, so catalog
-      # tombstones stay unforced.
+      # named, so nothing else is probed. `length` forces the list's shape,
+      # never the entries, so catalog tombstones stay unforced.
       selectionsChecked =
         let
           probe =

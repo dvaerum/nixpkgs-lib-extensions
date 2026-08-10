@@ -4,8 +4,8 @@
 #
 # Which half of this repo's lib belongs in a MODULE's `lib`, and how it is
 # merged in. There are three sites that must agree -- the module lib built in
-# ./context.nix, and the flake's own `extendLib` and `overlays.default` -- so
-# the rule lives here once.
+# ./context.nix, and the flake's own `libOverlays.default` and
+# `overlays.default` -- so the rule lives here once.
 { lib, self, ... }:
 let
   # The `nixos` namespace is FLAKE-level: it builds systems, and a module is

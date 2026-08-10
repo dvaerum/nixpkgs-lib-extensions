@@ -39,10 +39,10 @@ let
       users.groups.from-input-module = { };
     };
     overlays.default = final: prev: { from-input-overlay = "yes"; };
-    homeManagerModules.default = {
+    homeModules.default = {
       home.sessionVariables.FROM_INPUT_HM = "1";
     };
-    extendLib = prev: { autoExtMarker = "auto-ext-marker"; };
+    libOverlays.default = final: prev: { autoExtMarker = "auto-ext-marker"; };
     # a standalone `lib` export (NixVirt style): must appear namespaced,
     # as lib.fake-module-input.* / pkgs.lib.fake-module-input.*
     lib.probeGroup = "from-lib-probe";
@@ -146,17 +146,13 @@ let
     };
   };
 
-  # An input contributing home modules under the NEW `homeModules` name:
-  # its `default` is auto-loaded.
+  # An input exporting home modules ONLY under the pre-flake-convention
+  # `homeManagerModules` name, which this library does not read: it must
+  # contribute NOTHING, and the export must never be forced (its value here
+  # is a throw, so merely probing it would take the harness down).
   fake-home-modules-input = {
     outPath = "/nix/store/fake-home-modules-input";
-    homeModules.default = {
-      home.sessionVariables.FROM_INPUT_HOME_MODULES = "1";
-    };
-    # a plasma-manager-style deprecation alias: flakes make accessing the
-    # OLD name warn (here: throw, to prove the collector never touches it
-    # when homeModules exists)
-    homeManagerModules = throw "deprecated homeManagerModules alias must not be accessed when homeModules exists";
+    homeManagerModules = throw "`homeManagerModules` is not a collection convention and must never be consulted";
   };
 
   # A nixpkgs-TREE-shaped input (legacyPackages + lib.nixosSystem, like a
@@ -199,15 +195,15 @@ let
     nixosModules.the-only-one = {
       users.groups.single-module = { };
     };
-    homeManagerModules.the-only-one = {
+    homeModules.the-only-one = {
       home.sessionVariables.FROM_SINGLE_HM = "1";
     };
   };
 
   inputs = {
     inherit nixpkgs home-manager;
-    # A second package-set input: must be exposed as the `pkgs-unstable`
-    # specialArg (and its helper nixosModules must NOT be auto-imported).
+    # A second package-set input: must surface as the `channels.unstable`
+    # option (and its helper nixosModules must NOT be auto-imported).
     nixpkgs-unstable = nixpkgs;
     inherit
       fake-module-input
@@ -249,14 +245,13 @@ let
     outPath = "/nix/store/fake-nixpkgs-lib-extensions";
     lib = myLib;
     libOverlays.default = selfLibOverlay;
-    extendLib = lib': lib' // selfLibOverlay lib' lib';
   };
 
   # Every host in the suite sees this repo as one of its own inputs, exactly
   # as a consumer's does. That matters: the builders merge this repo's lib
-  # additions themselves AND then run every input's extendLib, so leaving the
-  # self-input out of a probe host hid a double-application bug that fired for
-  # real consumers.
+  # additions themselves AND then run every input's lib overlay, so leaving
+  # the self-input out of a probe host hid a double-application bug that
+  # fired for real consumers.
   inputsWithSelf = inputs // {
     nixpkgs-lib-extensions = selfInput;
   };
@@ -280,7 +275,7 @@ let
       (exampleDir + "/hosts/server/configuration.nix")
       { users.groups.from-additional-module = { }; }
       # observable through group names: the system `lib` must carry both the
-      # extension from fake-module-input's extendLib and this repo's own
+      # extension from fake-module-input's lib overlay and this repo's own
       (
         { lib, ... }:
         {

@@ -37,8 +37,8 @@ let
   };
 
   # A variant nixpkgs-* input must NOT be patched: a nixpkgs PR diff
-  # essentially never applies to a different tree, so doing so broke
-  # pkgs-unstable lazily, far from the `patches = [ ... ]` line.
+  # essentially never applies to a different tree, so doing so broke the
+  # variant channel lazily, far from the `patches = [ ... ]` line.
   variantUnpatched = myLib.mkNixosSystem {
     inputs = {
       inherit nixpkgs;
@@ -58,9 +58,9 @@ let
     # (raw eval-config, lib.nixosSystem is bypassed) the builder sets
     # nixpkgs.flake.source to the PATCHED tree itself
     patched-flake-source = toString patched.config.nixpkgs.flake.source == toString patched.pkgs.path;
-    # ... while the pkgs-* variant is built from the pristine one
+    # ... while the variant channel is built from the pristine one
     variant-not-patched =
-      !builtins.pathExists "${variantUnpatched._module.specialArgs.pkgs-variant.path}/nixpkgs-lib-extensions-test-marker";
+      !builtins.pathExists "${variantUnpatched.config.nixpkgsLibExtensions.channels.variant.path}/nixpkgs-lib-extensions-test-marker";
   };
 
   runner = import ./run-assertions.nix { inherit pkgs; };

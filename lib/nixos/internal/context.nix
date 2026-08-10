@@ -98,25 +98,20 @@ let
 
       # Extend the system lib with this repo's own extensions (`self`, always
       # available since the builders are part of nixpkgs-lib-extensions) plus
-      # every input's lib contribution, normalized to an OVERLAY
-      # (final: prev: delta): `libOverlays.default` is the canonical export
-      # and wins when both exist; the legacy `extendLib` endomorphism
-      # (lib -> newLib) is wrapped -- its whole result merges over prev, so
-      # it composes identically but cannot reference `final`. Both forms are
-      # governed by the `extendLib` channel of inputContributions (one
-      # lib-extension channel, whichever shape the input exports).
+      # every input's lib contribution: an OVERLAY (final: prev: delta),
+      # exported as `libOverlays.default` -- the shape `lib.extend`
+      # composes, so one addition can reference another through `final`.
+      # Governed by the `libOverlays` channel of inputContributions.
       # `channelEnabled` FIRST, like the `lib` channel below: behind the
-      # export guards a malformed selection on an input exporting neither
-      # form would be silently dropped instead of throwing.
+      # export guard a malformed selection on an input exporting no overlay
+      # would be silently dropped instead of throwing.
       libOverlaysFromInputs = baseLib.concatLists (
         baseLib.mapAttrsToList (
           name: v:
-          if !(channelEnabled name "extendLib" (caseOf name)) || !(baseLib.isAttrs v) then
+          if !(channelEnabled name "libOverlays" (caseOf name)) || !(baseLib.isAttrs v) then
             [ ]
           else if baseLib.isAttrs (v.libOverlays or null) && v.libOverlays ? default then
             [ v.libOverlays.default ]
-          else if v ? extendLib then
-            [ (final: prev: v.extendLib prev) ]
           else
             [ ]
         ) conventionInputs
@@ -125,7 +120,8 @@ let
       # Only the MODULE-LEVEL half of this repo's lib goes into the system
       # lib, merged under the "existing side wins" rule. Both the split and
       # the rule live in ./module-level.nix, because the flake's own
-      # `extendLib` and `overlays.default` must apply the identical one.
+      # `libOverlays.default` and `overlays.default` must apply the
+      # identical one.
       ownAdditions = addOwnLib baseLib self;
 
       extendedLib = baseLib.foldl' (acc: overlay: acc.extend overlay) (baseLib.extend (
@@ -135,7 +131,7 @@ let
       # Each input's standalone `lib` export, namespaced by input name:
       # exposed as `lib.<name>` in modules and as `pkgs.lib.<name>` (e.g.
       # `lib.NixVirt.domain`). A plain `lib` export is a foreign namespace
-      # and is never merged flat -- `extendLib` remains the composable way
+      # and is never merged flat -- a lib overlay is the composable way
       # into the flat lib. Skipped: nixpkgs trees (their lib IS the base).
       libsFromInputs =
         let
@@ -179,8 +175,8 @@ let
       # - any other existing name (nixpkgs's `strings`, ...) -> skipped
       #   with a warning; such an input name is almost always an accident
       # Computed ONCE per context and shared by the module lib, pkgs.lib
-      # and every pkgs-* variant, so a warning fires once per context, not
-      # once per lib construction.
+      # and every channels variant, so a warning fires once per context,
+      # not once per lib construction.
       inputLibAdditions =
         let
           existing = baseLib.intersectAttrs extendedLib libsFromInputs;
@@ -243,8 +239,8 @@ let
       # `src` is the tree to import, ALREADY patched (or not) by the caller:
       # `patches` are a fix for THIS host's nixpkgs, and a nixpkgs PR diff
       # essentially never applies to a different tree. Applying them to the
-      # `nixpkgs-*` variants too broke `pkgs-unstable` lazily, far from the
-      # `patches = [ ... ]` line and only for hosts that touched it.
+      # `nixpkgs-*` variants too broke `channels.unstable` lazily, far from
+      # the `patches = [ ... ]` line and only for hosts that touched it.
       mkPkgs =
         src:
         import src {
@@ -286,10 +282,8 @@ let
       # Every other `nixpkgs-*` input, keyed by variant (nixpkgs-unstable ->
       # unstable), with the same overlays and config as the primary but
       # WITHOUT `patches`: those target this host's own nixpkgs revision and
-      # would fail to apply to a different tree. Canonically exposed as the
-      # `nixpkgsLibExtensions.channels.<variant>` option; the legacy
-      # `pkgs-<variant>` specialArgs below are derived from this same table
-      # and stay until the planned breaking release.
+      # would fail to apply to a different tree. Exposed as the
+      # `nixpkgsLibExtensions.channels.<variant>` option.
       channels =
         lib.mapAttrs' (name: np: lib.nameValuePair (lib.removePrefix "nixpkgs-" name) (mkPkgs np))
           (
@@ -297,7 +291,6 @@ let
               name: v: lib.hasPrefix "nixpkgs-" name && lib.isAttrs v && v ? legacyPackages
             ) inputs
           );
-      pkgsFromInputs = lib.mapAttrs' (name: lib.nameValuePair "pkgs-${name}") channels;
 
       # Every input's packages, pre-selected for this system: e.g.
       # `inputPkgs.disko.disko-install`. Deliberately NOT merged into `pkgs`
@@ -318,7 +311,6 @@ let
         autoNixosModules
         autoHomeModules
         channels
-        pkgsFromInputs
         inputPkgs
         inputLibAdditions
         ;
@@ -367,15 +359,13 @@ let
       # that ever passes one.
       core = mkContextCoreOrGiven givenCore args;
 
-      # Only the true import-time values remain specialArgs: the whole
+      # Only the true import-time values are specialArgs: the whole
       # `inputs` set (so modules can reach anything the generic conventions
       # do not cover, e.g. inputs.fenix -- the lib carries no per-input
-      # special cases), `rootPath`, `extLib`, and the legacy `pkgs-*`
-      # variants (canonical home: the `nixpkgsLibExtensions.channels`
-      # option; the specialArgs stay until the planned breaking release).
-      # Everything else the builder derives lives in the always-imported
-      # `nixpkgsLibExtensions` options module (./ext-options.nix), where
-      # values merge, carry types and are guarded by the module system.
+      # special cases), `rootPath` and `extLib`. Everything else the
+      # builder derives lives in the always-imported `nixpkgsLibExtensions`
+      # options module (./ext-options.nix), where values merge, carry types
+      # and are guarded by the module system.
       # Note: `pkgs` deliberately not included — modules already receive it from
       # the module system, and `specialArgs.pkgs` would override that wiring
       # (nixpkgs warns about it).
@@ -384,8 +374,7 @@ let
         # the specialArg keeps its user-facing name; its value is the lib
         # loader's fixed point
         extLib = self;
-      }
-      // core.pkgsFromInputs;
+      };
 
       # Shadowing a builder-owned name used to "work" and produce a
       # split-brain host: `specialArgs.hostname = "other"` reached modules
@@ -414,7 +403,7 @@ let
           null
         else
           throw ''
-            nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the reserved name(s) ${lib.concatStringsSep ", " shadowed}. `inputs`, `rootPath`, `extLib` and the `pkgs-*` variants are builder-owned -- derived from the builder's own arguments, so overriding them here changes what MODULES see without changing what the builder did. `hostname`, `tags`, `group`, `users`, `inputPkgs`, `channels` and `username` are reserved because modules read them through the `nixpkgsLibExtensions.*` options (and `config.networking.hostName` / the `username` module argument) -- a specialArg of the same name would hand modules a value those options do not hold. Set the corresponding builder argument, or pick a different specialArg name.
+            nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the reserved name(s) ${lib.concatStringsSep ", " shadowed}. `inputs`, `rootPath` and `extLib` are builder-owned -- derived from the builder's own arguments, so overriding them here changes what MODULES see without changing what the builder did. `hostname`, `tags`, `group`, `users`, `inputPkgs`, `channels` and `username` are reserved because modules read them through the `nixpkgsLibExtensions.*` options (and `config.networking.hostName` / the `username` module argument) -- a specialArg of the same name would hand modules a value those options do not hold. Set the corresponding builder argument, or pick a different specialArg name.
           '';
 
       # `specialArgs` already carries any per-host `extra.specialArgs`,

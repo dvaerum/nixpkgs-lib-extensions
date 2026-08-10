@@ -39,11 +39,11 @@ in
     && laptop.config.nixpkgsLibExtensions.group == null
     && laptop.config.nixpkgsLibExtensions.users == exampleUsers;
 
-  # the canonical channels path mirrors the (legacy) pkgs-* specialArgs:
-  # same variant key, same instantiation
-  ext-channels-canonical-path =
-    laptop.config.nixpkgsLibExtensions.channels.unstable.path
-    == laptop._module.specialArgs.pkgs-unstable.path;
+  # the channels option is keyed by variant and instantiates the variant's
+  # tree (nixpkgs-unstable is aliased to nixpkgs in the test inputs)
+  ext-channels-variant-tree =
+    toString laptop.config.nixpkgsLibExtensions.channels.unstable.path
+    == toString inputs.nixpkgs.outPath;
 
   # ... and a module reads them through `config` like any option
   ext-options-readable-from-module =

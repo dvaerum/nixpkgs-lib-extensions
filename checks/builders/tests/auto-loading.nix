@@ -1,7 +1,7 @@
 # Auto-loading of inputs: the generic conventions (nixosModules,
-# homeManagerModules/homeModules, overlays, extendLib, nixpkgs-* package
-# sets), the inputContributions forms (per-channel selections, input-level
-# null, the function escape hatch) and the inputs/inputPkgs exposure.
+# homeModules, overlays, libOverlays, nixpkgs-* package sets), the
+# inputContributions forms (per-channel selections, input-level null, the
+# function escape hatch) and the inputs/inputPkgs exposure.
 {
   myLib,
   inputs,
@@ -21,7 +21,7 @@
 let
   moduleLib =
     (myLib.mkNixosSystem {
-      # inputsWithSelf, not inputs: this repo's own `extendLib` must run over
+      # inputsWithSelf, not inputs: this repo's own lib overlay must run over
       # a lib that already holds its additions, which is the case a consumer
       # actually hits
       inputs = inputsWithSelf;
@@ -63,8 +63,11 @@ let
   throwsGroups = sys: !(builtins.tryEval (builtins.attrNames sys.config.users.groups)).success;
 in
 {
-  # every `nixpkgs-*` input becomes a `pkgs-*` specialArg
-  pkgs-variant-exposed = laptop._module.specialArgs ? pkgs-unstable;
+  # every `nixpkgs-*` input surfaces ONLY as the channels option; there is
+  # no `pkgs-*` specialArg
+  pkgs-variant-only-a-channel =
+    laptop.config.nixpkgsLibExtensions.channels ? unstable
+    && !(laptop._module.specialArgs ? pkgs-unstable);
 
   auto-nixos-module-imported = laptop.config.users.groups ? from-input-module;
   # `legacyPackages` alone must not exclude an input from the module
@@ -111,9 +114,14 @@ in
     in
     !(groups ? multi-one) && !(groups ? multi-two);
   auto-overlay-applied = laptop.pkgs ? from-input-overlay;
-  auto-hm-modules-imported =
-    aliceHome.config.home.sessionVariables.FROM_INPUT_HM == "1"
-    && aliceHome.config.home.sessionVariables.FROM_INPUT_HOME_MODULES == "1";
+  auto-hm-modules-imported = aliceHome.config.home.sessionVariables.FROM_INPUT_HM == "1";
+
+  # `homeManagerModules` is NOT a collection convention: an input exporting
+  # ONLY that name contributes nothing, and the export is never even forced
+  # (fake-home-modules-input's value is a throw, and it sits in the shared
+  # `inputs` set every host here evaluates with)
+  home-manager-modules-name-not-read =
+    !(aliceHome.config.home.sessionVariables ? FROM_INPUT_HOME_MODULES);
 
   # NUR-shaped `modules.nixos`/`modules.homeManager` exports are NOT a
   # convention: nothing is imported from them, under the `nur` key or any
@@ -158,15 +166,14 @@ in
       ];
     }).config.home.sessionVariables.PROBE == "1";
 
-  # lib extensions: from an input's extendLib AND this repo's own, both
-  # reaching the system `lib` (see the extra.modules of `custom`)
-  input-extend-lib-applied = custom.config.users.groups ? auto-ext-marker;
+  # lib extensions: from an input's libOverlays.default AND this repo's
+  # own, both reaching the system `lib` (see the extra.modules of `custom`)
+  input-lib-extension-applied = custom.config.users.groups ? auto-ext-marker;
   own-ext-lib-in-system-lib = custom.config.users.groups ? Ext-marker;
 
-  # `libOverlays.default` is the CANONICAL lib-contribution form: a real
+  # `libOverlays.default` is the ONE lib-contribution form: a real
   # overlay reaches the system `lib`, and one addition can reference
-  # another through `final` -- which the endomorphic extendLib cannot
-  # express at all
+  # another through `final`
   input-lib-overlay-applied =
     (myLib.mkNixosSystem {
       inputs = inputs // {
@@ -186,27 +193,29 @@ in
       ];
     }).config.users.groups ? from-lib-overlay-via-final;
 
-  # when an input exports BOTH forms, the overlay wins and the legacy
-  # extendLib is never even consulted (its value here is a throw)
-  lib-overlay-preferred-over-extend-lib =
+  # an `extendLib` export (a lib -> lib endomorphism some flakes carry) is
+  # NOT a convention: it contributes nothing and is never even forced (the
+  # value here is a throw)
+  extend-lib-export-not-read =
     (myLib.mkNixosSystem {
       inputs = inputs // {
-        both-forms = {
-          outPath = "/nix/store/fake-both-forms-input";
-          libOverlays.default = final: prev: { bothFormsMarker = "overlay-won"; };
-          extendLib = throw "extendLib must not be consulted when libOverlays.default exists";
+        endo = {
+          outPath = "/nix/store/fake-endo-input";
+          extendLib = throw "`extendLib` is not a collection convention and must never be consulted";
         };
       };
       inherit system;
-      hostname = "bothforms";
+      hostname = "endoprobe";
       modules = [
         (exampleDir + "/hosts/server/configuration.nix")
-        ({ lib, ... }: { users.groups.${lib.bothFormsMarker} = { }; })
+        ({ lib, ... }: {
+          users.groups.${if lib ? autoExtMarker then "still-sane" else "broken"} = { };
+        })
       ];
-    }).config.users.groups ? overlay-won;
+    }).config.users.groups ? still-sane;
 
-  # ... and both forms answer to the ONE `extendLib` channel of
-  # inputContributions: opting it out drops the overlay too
+  # the overlay answers to the `libOverlays` channel of inputContributions:
+  # opting it out drops the contribution
   lib-overlay-respects-channel-opt-out =
     (myLib.mkNixosSystem {
       inputs = inputs // {
@@ -223,7 +232,7 @@ in
           users.groups.${if lib ? libOverlayMarker then "has-marker" else "no-marker"} = { };
         })
       ];
-      inputContributions."overlaid".extendLib = null;
+      inputContributions."overlaid".libOverlays = null;
     }).config.users.groups ? no-marker;
 
   # an input's standalone `lib` export is namespaced by input name into
@@ -387,7 +396,7 @@ in
     }).options ? home-manager;
 
   # input-level `null`: the input contributes NOTHING, on every channel --
-  # modules, overlays, extendLib and its namespaced lib
+  # modules, overlays, its lib overlay and its namespaced lib
   input-level-null-kills-every-channel =
     let
       sys = probeHost "nullcase" { } { "fake-module-input" = null; };
@@ -454,15 +463,15 @@ in
   input-special-cases-unknown-input-throws = throwsGroups (
     probeHost "selbadinput" { } { "no-such-input".overlays = null; }
   );
-  # extendLib/lib hold ONE value: there is nothing to name in them
+  # libOverlays/lib hold ONE value: there is nothing to name in them
   single-value-channel-selection-throws = throwsGroups (
-    probeHost "selsinglebad" { } { "fake-module-input".extendLib = [ "default" ]; }
+    probeHost "selsinglebad" { } { "fake-module-input".libOverlays = [ "default" ]; }
   );
   # ... and that check must not hide behind "does this input even export
-  # extendLib?" -- `fenix` exports none, so a guard in the wrong order would
-  # drop the malformed selection silently
+  # libOverlays?" -- `fenix` exports none, so a guard in the wrong order
+  # would drop the malformed selection silently
   single-value-selection-checked-without-export = throwsGroups (
-    probeHost "selsinglenoexport" { } { "fenix".extendLib = [ "default" ]; }
+    probeHost "selsinglenoexport" { } { "fenix".libOverlays = [ "default" ]; }
   );
   # a list must hold entry NAMES; anything else used to die in string
   # interpolation with an uncatchable coercion error
