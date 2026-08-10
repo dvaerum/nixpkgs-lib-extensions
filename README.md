@@ -11,6 +11,8 @@ still included -- but the builders are what this repo is about now.
 - [docs/getting-started.md](docs/getting-started.md) — walkthrough of the
   NixOS/home-manager builders: concepts, recipes, gotchas
 - [docs/lib.md](docs/lib.md) — generated API reference for every function
+- [docs/architecture.md](docs/architecture.md) — contributor notes: file
+  layout and the plan -> core -> mkSystem/mkHome flow
 
 ## The NixOS / home-manager builders
 

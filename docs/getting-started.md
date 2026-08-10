@@ -24,6 +24,10 @@ and the workflow.
 
 ## Quick start
 
+Everything here is flakes-based, so Nix must have the `nix-command`
+and `flakes` experimental features enabled (e.g.
+`experimental-features = nix-command flakes` in your `nix.conf`).
+
 Scaffold a working setup into an empty directory:
 
 ```
@@ -78,7 +82,7 @@ A host file then looks like:
 {
   imports = [ ./laptop-hardware.nix ];
   boot.loader.systemd-boot.enable = true;
-  system.stateVersion = "25.05";
+  system.stateVersion = "26.11";
 }
 ```
 
@@ -134,7 +138,7 @@ The registry keys define the host's users -- there is no separate
 
 Each host is one entry in the hosts attrset you hand to
 `buildConfigurations`; the key is the hostname. In your flake the full wiring looks like this (the scaffolded
-`flake.nix` is exactly this shape):
+`flake.nix` has this shape):
 
 ```nix
 {
@@ -598,7 +602,9 @@ specialArgs -- the true import-time values, usable even in `imports`:
 
 Everything else the builder derives is declared as ordinary module
 options under `nixpkgsLibExtensions.*`, in every NixOS module set and
-in every home (both mechanisms):
+in every home (both mechanisms). This table is the COMPLETE reference
+of that namespace -- a check compares it against the declared options,
+so it cannot silently miss one:
 
 | Option | Content |
 |--------|---------|

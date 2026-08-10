@@ -10,6 +10,7 @@
   custom,
   aliceHome,
   exampleDir,
+  repoDir,
   ...
 }:
 let
@@ -109,4 +110,36 @@ in
       (probeSystem "roprobe2" [ { nixpkgsLibExtensions.users = [ "mallory" ]; } ])
       .config.nixpkgsLibExtensions.users
     ).success;
+
+  # the guide's `nixpkgsLibExtensions.*` table is the options REFERENCE,
+  # and it cannot drift from the declarations, in either direction: every
+  # declared option name appears in docs/getting-started.md as
+  # `nixpkgsLibExtensions.<name>`, and every such mention in the guide
+  # names a declared option. The HOME variant is the superset (it adds
+  # `hostname`), so its declaration set is the one compared.
+  ext-options-documented-in-guide =
+    let
+      extOpts = import (repoDir + "/lib/nixos/internal/ext-options.nix") {
+        inherit lib;
+        self = myLib;
+      };
+      declared =
+        builtins.attrNames
+          (extOpts.extHomeOptionsModule {
+            hostname = "probe";
+            group = null;
+            tags = [ ];
+            users = [ ];
+            inputPkgs = { };
+            channels = { };
+          }).options.nixpkgsLibExtensions;
+      guide = builtins.readFile (repoDir + "/docs/getting-started.md");
+      mentioned = lib.unique (
+        lib.concatMap (m: if lib.isList m then m else [ ]) (
+          builtins.split "nixpkgsLibExtensions\\.([a-zA-Z]+)" guide
+        )
+      );
+    in
+    builtins.all (n: builtins.elem n mentioned) declared
+    && builtins.all (n: builtins.elem n declared) mentioned;
 }
