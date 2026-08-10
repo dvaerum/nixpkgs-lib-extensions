@@ -384,7 +384,7 @@ let
       {
         inherit args;
         # ALWAYS a core, never null. With null the builder recomputed one --
-        # and so did EVERY homeConfigurationsBuilder call for that host, so
+        # and so did EVERY mkHomeConfiguration call for that host, so
         # a non-sharing host with 4 login homes paid for 5 nixpkgs
         # evaluations. Computing it once per class moves that back to one.
         # Lazy: a host nobody forces costs nothing beyond tuple comparisons.

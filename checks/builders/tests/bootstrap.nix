@@ -32,7 +32,7 @@
   # a config-only user) has nothing to bootstrap: no service
   no-bootstrap-for-config-only-login-user =
     !(
-      (myLib.nixosConfigurationsBuilder {
+      (myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "evelogin";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -46,7 +46,7 @@
   # alice stays system-managed, no bootstrap appears
   unknown-login-users-ignored =
     let
-      sys = myLib.nixosConfigurationsBuilder {
+      sys = myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "ghostlogin";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];

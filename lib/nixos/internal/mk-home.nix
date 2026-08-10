@@ -1,7 +1,7 @@
 # PRIVATE (not listed in lib/default.nix). Takes the one calling convention: `self` is the
 # fully assembled nixpkgs-lib-extensions lib (a fixed point), `lib` is nixpkgs'.
 #
-# `mkHome` is the homeConfigurationsBuilder implementation, with the same
+# `mkHome` is the mkHomeConfiguration implementation, with the same
 # explicit `core` parameter as ./mk-system.nix -- see the note there.
 { lib, self, ... }:
 let
@@ -39,12 +39,12 @@ in
     (
       if home-manager == null then
         throw ''
-          homeConfigurationsBuilder: no home-manager input found (detected
+          mkHomeConfiguration: no home-manager input found (detected
           by capability: an input whose `lib` has `homeManagerConfiguration`).
         ''
       else if registryHomeModules == [ ] then
         throw ''
-          homeConfigurationsBuilder: `${username}` has no home.nix in
+          mkHomeConfiguration: `${username}` has no home.nix in
           `userRegistry` matching host `${hostname}` (unmatched keys,
           or a system-only entry shipping just a configuration.nix).
         ''
@@ -71,7 +71,7 @@ in
                 inherit (ctx) inputPkgs channels;
               })
               {
-                _file = ../homeConfigurationsBuilder.nix;
+                _file = ../mk-home-configuration.nix;
                 home.username = lib.mkDefault username;
                 home.homeDirectory = lib.mkDefault "/home/${username}";
                 home.stateVersion = lib.mkDefault lib.trivial.release;

@@ -40,7 +40,7 @@ in
   auto-host-dir-module = server.config.fileSystems."/".device == "/dev/vda1";
   # with hostGroup set the lookup moves under hosts/<hostGroup>/ ...
   typed-host-convention =
-    (myLib.nixosConfigurationsBuilder {
+    (myLib.mkNixosSystem {
       inherit inputs system;
       hostname = "typedhost";
       hostGroup = "vm";
@@ -50,7 +50,7 @@ in
   # name resolves to nothing under the plain hosts/ of that root)
   untyped-ignores-type-folders =
     !(
-      (myLib.nixosConfigurationsBuilder {
+      (myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "typedhost";
         rootPath = fixturesDir + "/typed-root";
@@ -60,7 +60,7 @@ in
   # both forms existing for one host is ambiguous -> throw
   ambiguous-host-config-throws =
     !(builtins.tryEval
-      (myLib.nixosConfigurationsBuilder {
+      (myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "both";
         rootPath = invalidFixturesDir + "/root-both";
@@ -76,7 +76,7 @@ in
   # ... merged LAST: it can override what the allowedUnfreePackages
   # shorthand produced
   nixpkgs-config-overrides-unfree-shorthand =
-    (myLib.nixosConfigurationsBuilder {
+    (myLib.mkNixosSystem {
       inherit inputs system;
       hostname = "unfreeoverride";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -102,7 +102,7 @@ in
         name: value:
         !(builtins.tryEval (
           builtins.attrNames
-            (myLib.nixosConfigurationsBuilder {
+            (myLib.mkNixosSystem {
               inherit inputs system;
               hostname = "shadowprobe";
               modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -143,7 +143,7 @@ in
   # silently dropped: there is nothing to layer onto there
   extra-rejected-by-direct-call =
     !(builtins.tryEval (
-      builtins.seq (myLib.nixosConfigurationsBuilder {
+      builtins.seq (myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "directextra";
         extra.modules = [ ];
@@ -154,7 +154,7 @@ in
   # inside the library's own store tree
   missing-root-path-throws =
     !(builtins.tryEval
-      (myLib.nixosConfigurationsBuilder {
+      (myLib.mkNixosSystem {
         inputs = {
           inherit (inputs) nixpkgs home-manager;
         };
@@ -172,7 +172,7 @@ in
   module-level-overlay-applies =
     let
       probe =
-        (myLib.nixosConfigurationsBuilder {
+        (myLib.mkNixosSystem {
           inherit inputs system;
           hostname = "moduleoverlay";
           modules = [
@@ -190,7 +190,7 @@ in
   # module-level nixpkgs.overlays compose path above
   module-level-host-platform-warns =
     builtins.any (w: lib.hasInfix "nixpkgs.hostPlatform" w)
-      (myLib.nixosConfigurationsBuilder {
+      (myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "platformprobe";
         modules = [
@@ -206,7 +206,7 @@ in
   # the `nixpkgsConfig` builder argument is the only route for it.
   module-level-nixpkgs-config-fails-assertion =
     !(builtins.all (a: a.assertion)
-      (myLib.nixosConfigurationsBuilder {
+      (myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "moduleconfig";
         modules = [
@@ -255,7 +255,7 @@ in
         name: value:
         !(builtins.tryEval (
           builtins.attrNames
-            (myLib.nixosConfigurationsBuilder {
+            (myLib.mkNixosSystem {
               inherit inputs system;
               hostname = "reservedprobe";
               modules = [ (exampleDir + "/hosts/server/configuration.nix") ];

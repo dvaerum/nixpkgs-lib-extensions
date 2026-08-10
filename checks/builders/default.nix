@@ -271,7 +271,7 @@ let
   execStart = laptop.config.systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart;
 
   # A kitchen-sink host covering the config knobs the example doesn't use.
-  custom = myLib.nixosConfigurationsBuilder {
+  custom = myLib.mkNixosSystem {
     inherit inputs system;
     hostname = "custom";
     # a DIRECT builder call takes the merged arguments -- there is no
@@ -301,7 +301,7 @@ let
     specialArgs.probeArg = "from-special-args";
   };
 
-  # The bootstrap module used directly (without nixosConfigurationsBuilder);
+  # The bootstrap module used directly (without mkNixosSystem);
   # `args` overrides the defaults below.
   bootstrapModuleFor =
     args:

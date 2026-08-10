@@ -60,7 +60,7 @@ to the motherboard's UUID.
 
 Prerequisites: the disko NixOS module must be imported (it provides
 the `disko.devices` options -- automatic when disko is a flake input
-of a `nixosConfigurationsBuilder` setup), and ZFS requires
+of a `mkNixosSystem` setup), and ZFS requires
 `networking.hostId` to be set.
 
 ### Example
@@ -315,7 +315,7 @@ buildConfigurations ::
 Build the standalone home-manager configurations of every host's
 LOGIN-managed users in one call: takes the SAME hosts attrset as
 `buildNixosConfigurations` (including `_defaults` and the allowlist
-validation), applies `homeConfigurationsBuilder` per login user, and
+validation), applies `mkHomeConfiguration` per login user, and
 merges everything into one `{ "<user>@<hostname>" = ...; }` set —
 assignable to a flake's `homeConfigurations` output directly.
 
@@ -390,7 +390,7 @@ buildHomeConfigurations ::
 ## `lib.nixos.buildNixosConfigurations`
 
 Build several NixOS systems in one call: applies
-`nixosConfigurationsBuilder` to every value of `hosts`, with the
+`mkNixosSystem` to every value of `hosts`, with the
 attribute key as the hostname. The result has the same keys, so it can
 be assigned to a flake's `nixosConfigurations` output directly.
 Duplicate hostnames are impossible by construction (attrset keys are
@@ -445,7 +445,7 @@ buildNixosConfigurations ::
 ### Arguments
 
 - **hosts**
-  Attribute set mapping hostnames to `nixosConfigurationsBuilder`
+  Attribute set mapping hostnames to `mkNixosSystem`
   argument sets. The key provides `hostname`, so entries do not set
   it themselves. Host entry keys are checked against the same
   allowlist as `_defaults` plus the per-host-only keys (`extra`, and a
@@ -456,7 +456,7 @@ buildNixosConfigurations ::
 - **_defaults**
   Optional reserved entry of `hosts` (never a hostname): arguments
   merged under every host entry, the host winning per argument. Can
-  provide a default for every `nixosConfigurationsBuilder` argument
+  provide a default for every `mkNixosSystem` argument
   except the per-host ones:
   
   - `inputs`
@@ -491,106 +491,13 @@ buildNixosConfigurations ::
 
 
 
-## `lib.nixos.homeConfigurationsBuilder`
-
-Build ONE user's standalone home-manager configuration for one host —
-the single-user primitive underneath `buildHomeConfigurations`, which
-calls it for every login-managed user of every host. Use it directly
-to export an individual home:
-
-```nix
-homeConfigurations."alice@laptop" =
-  extLib.homeConfigurationsBuilder {
-    inherit inputs system;
-    hostname = "laptop";
-    username = "alice";
-    userRegistry."alice" = ./users/alice;
-  };
-```
-
-The user's `home.nix` files come from the `userRegistry` entries
-matching the host (`"<user>@<host>"` and `"<user>@*"` merge; plain
-`"<user>"` is the standalone fallback). Companion `configuration.nix`
-files are ignored here — they are system configuration, imported by
-`nixosConfigurationsBuilder`. Shares the package set, `specialArgs`
-and auto-collected home-manager modules with the other builders (it
-accepts the same shared options). The home-manager input is detected
-by capability (its `lib` exposes `homeManagerConfiguration`),
-regardless of the input's name.
-
-Throws when no home-manager input exists or the user has no matching
-`home.nix` on this host — a single requested home that cannot be
-built is an error, not an empty result.
-
-### Example
-
-```nix
-# extLib = inputs.nixpkgs-lib-extensions.lib
-extLib.homeConfigurationsBuilder {
-  inherit inputs;
-  hostname = "laptop";
-  system   = "x86_64-linux";
-  username = "alice";
-  userRegistry = {
-    "alice@*"      = ./users/alice;
-    "alice@laptop" = ./users/alice-laptop; # merged in on laptop
-  };
-}
-=>
-<homeManagerConfiguration for alice@laptop>
-```
-
-### Type
-
-```
-homeConfigurationsBuilder :: Attribute -> HomeManagerConfiguration
-```
-
-### Arguments
-
-- **inputs**
-  The flake's `inputs` set. The home-manager input is detected by capability.
-
-- **hostname**
-  The host name the home is built for (selects the matching registry
-  entries).
-
-- **username**
-  The user whose home to build.
-
-- **system**
-  The system double, e.g. `"x86_64-linux"`.
-
-- **userRegistry**
-  The user registry (same shape as in `nixosConfigurationsBuilder`);
-  only the entries matching `username` on `hostname` are used here.
-  Default `{ }`.
-  NOTE: in a git-backed flake, `git add` new files or they are
-  invisible to the flake and skipped silently.
-
-- **homeModules**
-  home-manager modules added to the home configuration, on top of those
-  auto-collected from `inputs`. Default `[ ]`.
-
-The home configuration gets overridable (`mkDefault`) values for
-`home.username` (the user), `home.homeDirectory` (`/home/<user>`) and
-`home.stateVersion` -- the latter tracks the CURRENT nixpkgs release,
-so pin it in the user's `home.nix` if you rely on stateVersion
-semantics.
-
-- **nixpkgs, hostGroup, specialArgs, tags, patches, nixpkgsConfig, extraOverlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions**
-  Shared options (see `nixosConfigurationsBuilder`).
-
-
-
-
 ## `lib.nixos.homeManagerBootstrapModule`
 
 A NixOS module that provisions each user's standalone home-manager profile on
 login, via a systemd *user* service that runs `home-manager switch` in the
 background (so login is never hard-blocked). First-login-only by default.
 
-`nixosConfigurationsBuilder` includes this module automatically when it
+`mkNixosSystem` includes this module automatically when it
 has `loginHomes`, so it normally does not need to be wired up by hand —
 direct use is for custom setups that build their NixOS systems some
 other way. It is driven by the `userRegistry` filtered by `loginHomes`
@@ -601,7 +508,7 @@ input is missing or the flake reference is unset, the module is empty.
 ### Example
 
 ```nix
-# Only needed when NOT using nixosConfigurationsBuilder:
+# Only needed when NOT using mkNixosSystem:
 # extLib = inputs.nixpkgs-lib-extensions.lib
 {
   imports = [
@@ -640,7 +547,7 @@ homeManagerBootstrapModule :: Attribute -> Module
   The system double, e.g. `"x86_64-linux"`.
 
 - **userRegistry**
-  The user registry (as in `nixosConfigurationsBuilder`). Default `{ }`.
+  The user registry (as in `mkNixosSystem`). Default `{ }`.
 
 - **loginHomes**
   The usernames whose homes are login-managed; only these are
@@ -666,7 +573,107 @@ homeManagerBootstrapModule :: Attribute -> Module
 
 
 
-## `lib.nixos.nixosConfigurationsBuilder`
+## `lib.nixos.mkHomeConfiguration`
+
+Build ONE user's standalone home-manager configuration for one host —
+the single-user primitive underneath `buildHomeConfigurations`, which
+calls it for every login-managed user of every host. Use it directly
+to export an individual home:
+
+```nix
+homeConfigurations."alice@laptop" =
+  extLib.mkHomeConfiguration {
+    inherit inputs system;
+    hostname = "laptop";
+    username = "alice";
+    userRegistry."alice" = ./users/alice;
+  };
+```
+
+The user's `home.nix` files come from the `userRegistry` entries
+matching the host (`"<user>@<host>"` and `"<user>@*"` merge; plain
+`"<user>"` is the standalone fallback). Companion `configuration.nix`
+files are ignored here — they are system configuration, imported by
+`mkNixosSystem`. Shares the package set, `specialArgs`
+and auto-collected home-manager modules with the other builders (it
+accepts the same shared options). The home-manager input is detected
+by capability (its `lib` exposes `homeManagerConfiguration`),
+regardless of the input's name.
+
+Throws when no home-manager input exists or the user has no matching
+`home.nix` on this host — a single requested home that cannot be
+built is an error, not an empty result.
+
+### Example
+
+```nix
+# extLib = inputs.nixpkgs-lib-extensions.lib
+extLib.mkHomeConfiguration {
+  inherit inputs;
+  hostname = "laptop";
+  system   = "x86_64-linux";
+  username = "alice";
+  userRegistry = {
+    "alice@*"      = ./users/alice;
+    "alice@laptop" = ./users/alice-laptop; # merged in on laptop
+  };
+}
+=>
+<homeManagerConfiguration for alice@laptop>
+```
+
+### Type
+
+```
+mkHomeConfiguration :: Attribute -> HomeManagerConfiguration
+```
+
+### Arguments
+
+- **inputs**
+  The flake's `inputs` set. The home-manager input is detected by capability.
+
+- **hostname**
+  The host name the home is built for (selects the matching registry
+  entries).
+
+- **username**
+  The user whose home to build.
+
+- **system**
+  The system double, e.g. `"x86_64-linux"`.
+
+- **userRegistry**
+  The user registry (same shape as in `mkNixosSystem`);
+  only the entries matching `username` on `hostname` are used here.
+  Default `{ }`.
+  NOTE: in a git-backed flake, `git add` new files or they are
+  invisible to the flake and skipped silently.
+
+- **homeModules**
+  home-manager modules added to the home configuration, on top of those
+  auto-collected from `inputs`. Default `[ ]`.
+
+The home configuration gets overridable (`mkDefault`) values for
+`home.username` (the user), `home.homeDirectory` (`/home/<user>`) and
+`home.stateVersion` -- the latter tracks the CURRENT nixpkgs release,
+so pin it in the user's `home.nix` if you rely on stateVersion
+semantics.
+
+- **nixpkgs, hostGroup, specialArgs, tags, patches, nixpkgsConfig, extraOverlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions**
+  Shared options (see `mkNixosSystem`).
+
+## `lib.nixos.homeConfigurationsBuilder`
+
+Deprecated (1.0.0): renamed to `mkHomeConfiguration` -- same arguments,
+same behavior, only the name changed (it builds ONE home; the old name
+read like the plural `build*` family). Accessing this name throws with
+that pointer.
+
+
+
+
+## `lib.nixos.mkNixosSystem`
 
 Build a NixOS system for a host.
 
@@ -767,7 +774,7 @@ A home is managed by exactly one mechanism, by construction.
 
 ```nix
 # extLib = inputs.nixpkgs-lib-extensions.lib
-extLib.nixosConfigurationsBuilder {
+extLib.mkNixosSystem {
   inherit inputs;
   hostname = "laptop";
   system   = "x86_64-linux";
@@ -792,17 +799,17 @@ extLib.nixosConfigurationsBuilder {
 <nixosSystem>
 ```
 
-The system is returned BARE (like `homeConfigurationsBuilder`), so
+The system is returned BARE (like `mkHomeConfiguration`), so
 assign it to your flake's `nixosConfigurations` output under an
 explicit key, e.g.
-`nixosConfigurations.laptop = extLib.nixosConfigurationsBuilder { ... }`
+`nixosConfigurations.laptop = extLib.mkNixosSystem { ... }`
 — or use `buildNixosConfigurations` to build a whole keyed set of
 hosts in one call.
 
 ### Type
 
 ```
-nixosConfigurationsBuilder :: Attribute -> NixosSystem
+mkNixosSystem :: Attribute -> NixosSystem
 ```
 
 ### Arguments
@@ -897,7 +904,7 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
 - **homeModules**
   home-manager modules added to every SYSTEM-managed home (on top of
   those auto-collected from `inputs`). The same argument is read by
-  `homeConfigurationsBuilder`/`buildHomeConfigurations` for the
+  `mkHomeConfiguration`/`buildHomeConfigurations` for the
   login-managed homes, so in a shared hosts attrset it applies to
   both kinds. Default `[ ]`.
 
@@ -1008,8 +1015,15 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   [ "bootloader" "vendor-kernel" ];`
   Default `{ }`.
 
-`homeConfigurationsBuilder` accepts this same shared set, so both
+`mkHomeConfiguration` accepts this same shared set, so both
 builders can be called with one common argument attrset.
+
+## `lib.nixos.nixosConfigurationsBuilder`
+
+Deprecated (1.0.0): renamed to `mkNixosSystem` -- same arguments, same
+behavior, only the name changed (it builds ONE system; the old name
+read like the plural `build*` family). Accessing this name throws with
+that pointer.
 
 
 
@@ -1022,7 +1036,7 @@ user (the Debian/Fedora "user private group" scheme, instead of NixOS's
 shared `users` group) -- so by default a user is only a member of their
 own group.
 
-This is the default `userModule` of `nixosConfigurationsBuilder`, so
+This is the default `userModule` of `mkNixosSystem`, so
 every user derived from the `userRegistry` gets a login
 account automatically. Pass your own function when accounts need more,
 or `userModule = null` to disable account creation.

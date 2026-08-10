@@ -51,7 +51,7 @@ in
   system-user-conflict-explained =
     let
       cfg =
-        (myLib.nixosConfigurationsBuilder {
+        (myLib.mkNixosSystem {
           inherit inputs system;
           hostname = "sysuser";
           modules = [
@@ -71,7 +71,7 @@ in
   root-registry-entry-safe =
     let
       cfg =
-        (myLib.nixosConfigurationsBuilder {
+        (myLib.mkNixosSystem {
           inherit inputs system;
           hostname = "rootentry";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -101,7 +101,7 @@ in
   # home-manager's useUserPackages)
   user-module-fn-null-disables =
     !(
-      (myLib.nixosConfigurationsBuilder {
+      (myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "noaccounts";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];

@@ -99,7 +99,7 @@
   home-builder-throws-without-home-manager =
     !(builtins.tryEval (
       builtins.attrNames (
-        myLib.homeConfigurationsBuilder {
+        myLib.mkHomeConfiguration {
           inputs = {
             inherit nixpkgs;
             self = inputs.self;
@@ -125,7 +125,7 @@
   home-builder-throws-without-home-nix =
     !(builtins.tryEval (
       builtins.attrNames (
-        myLib.homeConfigurationsBuilder {
+        myLib.mkHomeConfiguration {
           inherit inputs system;
           hostname = "laptop";
           username = "eve";
@@ -138,7 +138,7 @@
   # list as the `nixpkgsLibExtensions.users` option
   username-reaches-login-homes =
     let
-      probe = myLib.homeConfigurationsBuilder {
+      probe = myLib.mkHomeConfiguration {
         inherit inputs system;
         hostname = "laptop";
         username = "alice";
@@ -169,7 +169,7 @@
     laptop.config.home-manager.useGlobalPkgs && laptop.config.home-manager.useUserPackages;
   # ... but only mkDefault: a module of the host wins
   system-homes-pkgs-options-overridable =
-    !(myLib.nixosConfigurationsBuilder {
+    !(myLib.mkNixosSystem {
       inherit inputs system;
       hostname = "hmopts";
       modules = [
@@ -185,7 +185,7 @@
   # `username` reaches system homes as a module argument too
   # (extraSpecialArgs cannot vary per user; _module.args can)
   username-reaches-system-homes =
-    (myLib.nixosConfigurationsBuilder {
+    (myLib.mkNixosSystem {
       inherit inputs system;
       hostname = "whoami";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -210,7 +210,7 @@
   # homes are dropped LOUDLY, not silently
   system-homes-dropped-without-home-manager-warns =
     !(
-      (myLib.nixosConfigurationsBuilder {
+      (myLib.mkNixosSystem {
         inputs = {
           inherit nixpkgs;
           self = inputs.self;

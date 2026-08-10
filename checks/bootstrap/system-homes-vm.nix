@@ -3,7 +3,7 @@
 # home-manager-<user>.service unit -- no login bootstrap, no flake
 # outputs involved.
 #
-# The node MIRRORS the wiring nixosConfigurationsBuilder produces for
+# The node MIRRORS the wiring mkNixosSystem produces for
 # its system-managed homes (import the home-manager NixOS module,
 # useGlobalPkgs/useUserPackages, sharedModules plus a per-user imports
 # list) instead of REUSING the builder: runNixOSTest owns the nixpkgs
@@ -11,7 +11,7 @@
 # node -- and the mirror keeps this runtime test independent of the
 # builder's eval-time plumbing, which checks/builders already covers.
 # Keep the wiring here in sync with the systemHomesModule of
-# lib/nixos/nixosConfigurationsBuilder.nix.
+# lib/nixos/internal/mk-system.nix.
 #
 # Deliberately light: no in-VM evaluation happens (the home closure is
 # part of the system closure), so no useNixStoreImage is needed.

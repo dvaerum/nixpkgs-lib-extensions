@@ -11,7 +11,7 @@
 
     Prerequisites: the disko NixOS module must be imported (it provides
     the `disko.devices` options -- automatic when disko is a flake input
-    of a `nixosConfigurationsBuilder` setup), and ZFS requires
+    of a `mkNixosSystem` setup), and ZFS requires
     `networking.hostId` to be set.
 
     # Example

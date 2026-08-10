@@ -27,6 +27,14 @@ lib.fix (
   let
     load = path: import path { inherit lib self; };
 
+    # This library's release, as declared by CHANGELOG.md -- flake-level
+    # METADATA, not a function file, so it lives here rather than in a
+    # folder. It is reserved in the collision check below (a lib file
+    # exporting `version` would otherwise be shadowed silently) and
+    # excluded from the module-level half (internal/module-level.nix):
+    # inside modules, `lib.version` is nixpkgs' release and must stay so.
+    version = "1.0.0";
+
     namespaces = lib.mapAttrs (_: paths: lib.mergeAttrsList (map load paths)) {
       attrsets = [ ./attrsets/default.nix ];
       strings = [ ./strings/default.nix ];
@@ -39,9 +47,9 @@ lib.fix (
         ./nixos/buildConfigurations.nix
         ./nixos/buildHomeConfigurations.nix
         ./nixos/buildNixosConfigurations.nix
-        ./nixos/homeConfigurationsBuilder.nix
         ./nixos/homeManagerBootstrapModule.nix
-        ./nixos/nixosConfigurationsBuilder.nix
+        ./nixos/mk-home-configuration.nix
+        ./nixos/mk-nixos-system.nix
         ./nixos/normalUserModule.nix
       ];
     };
@@ -58,7 +66,9 @@ lib.fix (
       let
         perName = lib.zipAttrsWith (name: values: values) (lib.attrValues namespaces);
         duplicates = lib.attrNames (lib.filterAttrs (name: values: lib.length values > 1) perName);
-        folderClashes = lib.filter (name: perName ? ${name}) (lib.attrNames namespaces);
+        # `version` is claimed by the metadata above, so a function of that
+        # name would be shadowed just like one named after a folder
+        folderClashes = lib.filter (name: perName ? ${name}) (lib.attrNames namespaces ++ [ "version" ]);
         clashes = duplicates ++ folderClashes;
       in
       if clashes == [ ] then
@@ -68,5 +78,6 @@ lib.fix (
   in
   # { attrsets = {...}; strings = {...}; <and the other namespaces> }
   #   // { func1 = ...; func2 = ...; }
-  namespaces // topLevel
+  #   // { version = "..."; }
+  namespaces // topLevel // { inherit version; }
 )

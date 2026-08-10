@@ -25,7 +25,7 @@ let
     +marker
   '';
 
-  patched = myLib.nixosConfigurationsBuilder {
+  patched = myLib.mkNixosSystem {
     inputs = {
       inherit nixpkgs;
       self.outPath = toString ../checks/example;
@@ -39,7 +39,7 @@ let
   # A variant nixpkgs-* input must NOT be patched: a nixpkgs PR diff
   # essentially never applies to a different tree, so doing so broke
   # pkgs-unstable lazily, far from the `patches = [ ... ]` line.
-  variantUnpatched = myLib.nixosConfigurationsBuilder {
+  variantUnpatched = myLib.mkNixosSystem {
     inputs = {
       inherit nixpkgs;
       nixpkgs-variant = nixpkgs;

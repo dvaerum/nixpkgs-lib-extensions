@@ -42,7 +42,7 @@
   # and the template should not ship an unreferenced user directory.
   shadowed-plain-entry-ignored =
     !(
-      (myLib.nixosConfigurationsBuilder {
+      (myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "shadowprobe";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -128,7 +128,7 @@
   null-registry-disables =
     let
       sys = (
-        myLib.nixosConfigurationsBuilder {
+        myLib.mkNixosSystem {
           inherit inputs system;
           hostname = "nullreg";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];

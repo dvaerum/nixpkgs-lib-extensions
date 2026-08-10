@@ -33,7 +33,7 @@ let
   # names reaches whatever the module read (or threw on).
   probeSystem =
     hostname: modules:
-    myLib.nixosConfigurationsBuilder {
+    myLib.mkNixosSystem {
       inherit inputs system hostname;
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ] ++ modules;
     };
@@ -44,7 +44,7 @@ let
     modules:
     !(builtins.tryEval (
       builtins.attrNames
-        (myLib.homeConfigurationsBuilder {
+        (myLib.mkHomeConfiguration {
           inherit inputs system;
           hostname = "laptop";
           username = "alice";
@@ -69,7 +69,7 @@ in
 
   # ... and a module reads them through `config` like any option
   ext-options-readable-from-module =
-    (myLib.nixosConfigurationsBuilder {
+    (myLib.mkNixosSystem {
       inherit inputs system;
       hostname = "optread";
       hostGroup = "vm";
@@ -100,7 +100,7 @@ in
   ext-tags-merge-from-modules =
     let
       merged =
-        (myLib.nixosConfigurationsBuilder {
+        (myLib.mkNixosSystem {
           inherit inputs system;
           hostname = "tagmerge";
           tags = [ "from-builder" ];

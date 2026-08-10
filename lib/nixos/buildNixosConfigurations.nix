@@ -7,7 +7,7 @@ in
 {
   /**
     Build several NixOS systems in one call: applies
-    `nixosConfigurationsBuilder` to every value of `hosts`, with the
+    `mkNixosSystem` to every value of `hosts`, with the
     attribute key as the hostname. The result has the same keys, so it can
     be assigned to a flake's `nixosConfigurations` output directly.
     Duplicate hostnames are impossible by construction (attrset keys are
@@ -62,7 +62,7 @@ in
     # Arguments
 
     hosts
-    : Attribute set mapping hostnames to `nixosConfigurationsBuilder`
+    : Attribute set mapping hostnames to `mkNixosSystem`
     : argument sets. The key provides `hostname`, so entries do not set
     : it themselves. Host entry keys are checked against the same
     : allowlist as `_defaults` plus the per-host-only keys (`extra`, and a
@@ -73,7 +73,7 @@ in
     _defaults
     : Optional reserved entry of `hosts` (never a hostname): arguments
     : merged under every host entry, the host winning per argument. Can
-    : provide a default for every `nixosConfigurationsBuilder` argument
+    : provide a default for every `mkNixosSystem` argument
     : except the per-host ones:
     :
     : - `inputs`

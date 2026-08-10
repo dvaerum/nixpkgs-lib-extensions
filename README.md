@@ -1,23 +1,31 @@
 # nixpkgs-lib-extensions
 
-Extra functions not originally in `nixpkgs.lib` which I find useful.
-Some I wrote myself and some I found on the internet.
+A library for building a fleet of NixOS hosts and their home-manager
+homes from one declarative description: a hosts attrset plus a per-user
+directory registry. It started as a handful of extra `nixpkgs.lib`
+functions (some written here, some collected), and those helpers are
+still included -- but the builders are what this repo is about now.
 
 **Documentation:**
 
 - [docs/getting-started.md](docs/getting-started.md) — walkthrough of the
   NixOS/home-manager builders: concepts, recipes, gotchas
 - [docs/lib.md](docs/lib.md) — generated API reference for every function
+- [CHANGELOG.md](CHANGELOG.md) — releases, breaking changes, migration
+  notes
 
 ## The NixOS / home-manager builders
 
-The main feature of this repo: build your `nixosConfigurations` and
-standalone `homeConfigurations` from one per-user directory convention.
-One `buildConfigurations` call produces both outputs from one hosts
-attrset. See [docs/lib.md](docs/lib.md) for the full reference of
-`buildConfigurations`, `buildNixosConfigurations`, `buildHomeConfigurations`,
-`nixosConfigurationsBuilder`, `homeConfigurationsBuilder`,
+Build your `nixosConfigurations` and standalone `homeConfigurations`
+from one per-user directory convention. One `buildConfigurations` call
+produces both outputs from one hosts attrset. See
+[docs/lib.md](docs/lib.md) for the full reference of
+`buildConfigurations`, `buildNixosConfigurations`,
+`buildHomeConfigurations`, `mkNixosSystem`, `mkHomeConfiguration`,
 `homeManagerBootstrapModule` and `normalUserModule`.
+(`nixosConfigurationsBuilder` and `homeConfigurationsBuilder` are the
+pre-1.0.0 names of the two singular builders; they are deprecated and
+throw with a pointer to the replacement.)
 
 The quickest start is the flake template — a complete, working example
 (it is evaluated by this repo's own `nix flake check`, so it cannot rot):
@@ -45,6 +53,23 @@ Highlights:
   exported by your flake inputs are wired in automatically; each
   input's own `lib` is namespaced as `lib.<inputName>`, and your
   flake's own `lib` output as `lib.flake`.
+
+## Versioning and deprecation policy
+
+The library carries its release as `lib.version`, and every release is
+recorded in [CHANGELOG.md](CHANGELOG.md) with migration notes for
+anything that breaks. When a name is renamed or removed, the old name
+does not disappear silently: it becomes a **tombstone** -- a value (or
+argument check) that throws an error naming the replacement -- and
+stays that way for at least one release cycle before it is dropped
+entirely. So an upgrade never changes behavior silently; the worst case
+is a loud error that tells you what to write instead.
+
+Every function is reachable both flat (`extLib.buildConfigurations`)
+and namespaced (`extLib.nixos.buildConfigurations`). The **flat names
+are the canonical surface** -- the docs and examples use them, and the
+deprecation policy is stated for them; the namespaced duplicates exist
+for discoverability and follow along.
 
 ## What else is in here
 
@@ -96,13 +121,12 @@ without the builders.
     system = "x86_64-linux";
 
   in {
-    # Directly import into `lib` by merging them together
+    # Directly import into `lib` via the canonical lib overlay
     nixosConfigurations.host_1 = nixpkgs.lib.nixosSystem {
       inherit system;
 
-      lib = nixpkgs.lib.extend (final: prev:
-        nixpkgs-lib-extensions.extendLib prev
-      );
+      lib = nixpkgs.lib.extend
+        nixpkgs-lib-extensions.libOverlays.default;
 
       modules = [
         ./configuration.nix
@@ -127,9 +151,8 @@ without the builders.
     nixosConfigurations.host_3 = import "${nixpkgs}/nixos/lib/eval-config.nix" {
       inherit system;
 
-      lib = nixpkgs.lib.extend (final: prev:
-        nixpkgs-lib-extensions.extendLib prev
-      );
+      lib = nixpkgs.lib.extend
+        nixpkgs-lib-extensions.libOverlays.default;
 
       modules = [
         ./configuration.nix

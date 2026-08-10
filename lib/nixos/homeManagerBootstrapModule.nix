@@ -11,7 +11,7 @@ in
     login, via a systemd *user* service that runs `home-manager switch` in the
     background (so login is never hard-blocked). First-login-only by default.
 
-    `nixosConfigurationsBuilder` includes this module automatically when it
+    `mkNixosSystem` includes this module automatically when it
     has `loginHomes`, so it normally does not need to be wired up by hand —
     direct use is for custom setups that build their NixOS systems some
     other way. It is driven by the `userRegistry` filtered by `loginHomes`
@@ -22,7 +22,7 @@ in
     # Example
 
     ```nix
-    # Only needed when NOT using nixosConfigurationsBuilder:
+    # Only needed when NOT using mkNixosSystem:
     # extLib = inputs.nixpkgs-lib-extensions.lib
     {
       imports = [
@@ -61,7 +61,7 @@ in
     : The system double, e.g. `"x86_64-linux"`.
 
     userRegistry
-    : The user registry (as in `nixosConfigurationsBuilder`). Default `{ }`.
+    : The user registry (as in `mkNixosSystem`). Default `{ }`.
 
     loginHomes
     : The usernames whose homes are login-managed; only these are

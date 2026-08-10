@@ -1,7 +1,7 @@
 # PRIVATE (not listed in lib/default.nix). Takes the one calling convention: `self` is the
 # fully assembled nixpkgs-lib-extensions lib (a fixed point), `lib` is nixpkgs'.
 #
-# `mkSystem` is the nixosConfigurationsBuilder implementation with the
+# `mkSystem` is the mkNixosSystem implementation with the
 # evaluation core as an EXPLICIT parameter rather than a `_core` key smuggled
 # through the public argument attrset. That is the whole reason this file
 # exists: planHosts has a core to hand over, and everything reachable from
@@ -97,11 +97,11 @@ in
       # instead of silently building a homeless system.
       wantSystemHomes =
         if systemUsersWithHome != [ ] && hmNixosModule == null then
-          lib.warn "nixosConfigurationsBuilder: host `${hostname}`: user(s) ${builtins.concatStringsSep ", " systemUsersWithHome} have a home.nix, but no home-manager input (or none exposing a NixOS module) exists -- their SYSTEM-managed homes are NOT built. Add a home-manager input, or move them to loginHomes." false
+          lib.warn "mkNixosSystem: host `${hostname}`: user(s) ${builtins.concatStringsSep ", " systemUsersWithHome} have a home.nix, but no home-manager input (or none exposing a NixOS module) exists -- their SYSTEM-managed homes are NOT built. Add a home-manager input, or move them to loginHomes." false
         else
           systemUsersWithHome != [ ] && hmNixosModule != null;
       systemHomesModule = {
-        _file = ../nixosConfigurationsBuilder.nix;
+        _file = ../mk-nixos-system.nix;
         imports = lib.optional wantSystemHomes (
           { ... }:
           {
@@ -120,7 +120,7 @@ in
                   # home that the system's own modules see
                   (extHomeOptionsModule (extOptionValues // { inherit hostname; }))
                   {
-                    _file = ../nixosConfigurationsBuilder.nix;
+                    _file = ../mk-nixos-system.nix;
                     home.stateVersion = lib.mkDefault lib.trivial.release;
                   }
                 ];
@@ -151,7 +151,7 @@ in
         in
         if fileExists && dirExists then
           throw ''
-            nixosConfigurationsBuilder: host `${hostname}` has both
+            mkNixosSystem: host `${hostname}` has both
             ${toString file} and ${toString dir}; keep only one.
           ''
         else
@@ -206,7 +206,7 @@ in
           (
             { config, options, ... }:
             {
-              _file = ../nixosConfigurationsBuilder.nix;
+              _file = ../mk-nixos-system.nix;
               networking.hostName = lib.mkDefault hostname;
               nixpkgs.hostPlatform = lib.mkDefault system;
               # host tags label the boot entry too -- the MERGED option value,
@@ -237,10 +237,10 @@ in
               # is a foreign definition.
               warnings =
                 lib.optional (options.nixpkgs.hostPlatform.highestPrio < (lib.mkDefault null).priority)
-                  "nixosConfigurationsBuilder: host `${hostname}`: a module sets `nixpkgs.hostPlatform`, which is IGNORED: the builder passes an externally built package set (`nixpkgs.pkgs`), whose platform comes from the builder's `system` argument. Set that argument instead."
+                  "mkNixosSystem: host `${hostname}`: a module sets `nixpkgs.hostPlatform`, which is IGNORED: the builder passes an externally built package set (`nixpkgs.pkgs`), whose platform comes from the builder's `system` argument. Set that argument instead."
                 ++
                   lib.optional (options.nixpkgs.buildPlatform.highestPrio < (lib.mkOptionDefault null).priority)
-                    "nixosConfigurationsBuilder: host `${hostname}`: a module sets `nixpkgs.buildPlatform`, which is IGNORED: the builder passes an externally built package set (`nixpkgs.pkgs`), and nixpkgs derives both platforms from it. Cross-compile by giving the builder a `nixpkgs`/`system` combination that builds the package set you mean.";
+                    "mkNixosSystem: host `${hostname}`: a module sets `nixpkgs.buildPlatform`, which is IGNORED: the builder passes an externally built package set (`nixpkgs.pkgs`), and nixpkgs derives both platforms from it. Cross-compile by giving the builder a `nixpkgs`/`system` combination that builds the package set you mean.";
             }
           )
           bootstrapModule
@@ -253,7 +253,7 @@ in
         ++ userNixosConfigs;
       };
     in
-    # Returned BARE (like homeConfigurationsBuilder): assign it to
+    # Returned BARE (like mkHomeConfiguration): assign it to
     # `nixosConfigurations.<hostname>` yourself, or let
     # buildNixosConfigurations key a whole set of hosts.
     #
@@ -279,7 +279,7 @@ in
           system = null;
           modules = evalArgs.modules ++ [
             {
-              _file = ../nixosConfigurationsBuilder.nix;
+              _file = ../mk-nixos-system.nix;
               # what lib.nixosSystem would have injected, pointed at the
               # selected tree (string coercion: selectedSrc may be the
               # applyPatches derivation)

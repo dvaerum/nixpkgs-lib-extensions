@@ -9,7 +9,7 @@ in
     Build the standalone home-manager configurations of every host's
     LOGIN-managed users in one call: takes the SAME hosts attrset as
     `buildNixosConfigurations` (including `_defaults` and the allowlist
-    validation), applies `homeConfigurationsBuilder` per login user, and
+    validation), applies `mkHomeConfiguration` per login user, and
     merges everything into one `{ "<user>@<hostname>" = ...; }` set —
     assignable to a flake's `homeConfigurations` output directly.
 

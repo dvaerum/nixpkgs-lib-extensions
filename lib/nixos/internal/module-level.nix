@@ -10,14 +10,23 @@
 let
   # The `nixos` namespace is FLAKE-level: it builds systems, and a module is
   # already inside one. `lib.buildConfigurations` inside a NixOS module was
-  # never meaningful. Everything else is module-level.
+  # never meaningful. `version` is flake-level too -- it is THIS library's
+  # release string (lib/default.nix), while a module's `lib.version` is
+  # nixpkgs' release and must keep winning. Everything else is module-level.
   #
   # DERIVED from the namespace, not transcribed: a new file under lib/nixos
   # is flake-level automatically, a new one under lib/disko or lib/imports is
   # module-level automatically. A hand-written list would rot the first time
   # someone added a builder.
   moduleLevelLib =
-    extLib: builtins.removeAttrs extLib ([ "nixos" ] ++ builtins.attrNames extLib.nixos);
+    extLib:
+    builtins.removeAttrs extLib (
+      [
+        "nixos"
+        "version"
+      ]
+      ++ builtins.attrNames extLib.nixos
+    );
 in
 {
   inherit moduleLevelLib;

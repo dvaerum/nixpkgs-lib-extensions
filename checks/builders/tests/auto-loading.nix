@@ -20,7 +20,7 @@
 }:
 let
   moduleLib =
-    (myLib.nixosConfigurationsBuilder {
+    (myLib.mkNixosSystem {
       # inputsWithSelf, not inputs: this repo's own `extendLib` must run over
       # a lib that already holds its additions, which is the case a consumer
       # actually hits
@@ -34,7 +34,7 @@ let
           {
             users.groups = lib.genAttrs (
               lib.optional (lib ? buildConfigurations) "flake-buildConfigurations"
-              ++ lib.optional (lib ? nixosConfigurationsBuilder) "flake-nixosConfigurationsBuilder"
+              ++ lib.optional (lib ? mkNixosSystem) "flake-mkNixosSystem"
               ++ lib.optional (lib.nixos ? buildConfigurations) "flake-nixos-namespace-polluted"
               ++ lib.optional (lib.nixos ? evalModules) "nixpkgs-nixos-evalModules"
               ++ lib.optional (lib ? declareZfsRootDisk) "mod-declareZfsRootDisk"
@@ -53,7 +53,7 @@ let
   # A minimal host whose only interesting part is its inputContributions.
   probeHost =
     hostname: extraInputs: cases:
-    myLib.nixosConfigurationsBuilder {
+    myLib.mkNixosSystem {
       inputs = inputs // extraInputs;
       inherit system hostname;
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -82,7 +82,7 @@ in
   # inputContributions remedies instead of silently skipping the input
   multi-export-without-default-throws =
     !(builtins.tryEval (
-      (myLib.nixosConfigurationsBuilder {
+      (myLib.mkNixosSystem {
         inputs = inputs // {
           inherit fake-multi-module-input;
         };
@@ -99,7 +99,7 @@ in
   catalog-opt-out-imports-nothing =
     let
       groups =
-        (myLib.nixosConfigurationsBuilder {
+        (myLib.mkNixosSystem {
           inputs = inputs // {
             inherit fake-multi-module-input;
           };
@@ -143,7 +143,7 @@ in
     == "fake-rust-toolchain";
   # ... and home-manager modules via extraSpecialArgs
   inputs-reach-home-modules =
-    (myLib.homeConfigurationsBuilder {
+    (myLib.mkHomeConfiguration {
       inherit inputs system;
       hostname = "laptop";
       username = "alice";
@@ -168,7 +168,7 @@ in
   # another through `final` -- which the endomorphic extendLib cannot
   # express at all
   input-lib-overlay-applied =
-    (myLib.nixosConfigurationsBuilder {
+    (myLib.mkNixosSystem {
       inputs = inputs // {
         overlaid = {
           outPath = "/nix/store/fake-lib-overlay-input";
@@ -189,7 +189,7 @@ in
   # when an input exports BOTH forms, the overlay wins and the legacy
   # extendLib is never even consulted (its value here is a throw)
   lib-overlay-preferred-over-extend-lib =
-    (myLib.nixosConfigurationsBuilder {
+    (myLib.mkNixosSystem {
       inputs = inputs // {
         both-forms = {
           outPath = "/nix/store/fake-both-forms-input";
@@ -208,7 +208,7 @@ in
   # ... and both forms answer to the ONE `extendLib` channel of
   # inputContributions: opting it out drops the overlay too
   lib-overlay-respects-channel-opt-out =
-    (myLib.nixosConfigurationsBuilder {
+    (myLib.mkNixosSystem {
       inputs = inputs // {
         overlaid = {
           outPath = "/nix/store/fake-lib-overlay-input";
@@ -229,7 +229,7 @@ in
   # an input's standalone `lib` export is namespaced by input name into
   # the module-arg lib ...
   input-lib-namespaced-in-module-lib =
-    (myLib.nixosConfigurationsBuilder {
+    (myLib.mkNixosSystem {
       inherit inputs system;
       hostname = "libprobe";
       modules = [
@@ -246,7 +246,7 @@ in
 
   # ... and home-manager modules see it too (via the context lib)
   input-lib-reaches-home-modules =
-    (myLib.homeConfigurationsBuilder {
+    (myLib.mkHomeConfiguration {
       inherit inputs system;
       hostname = "laptop";
       username = "alice";
@@ -284,7 +284,7 @@ in
   explicit-flake-input-wins-over-self-lib =
     let
       pkgsLib =
-        (myLib.nixosConfigurationsBuilder {
+        (myLib.mkNixosSystem {
           inherit system;
           inputs = inputs // {
             flake = {
@@ -391,7 +391,7 @@ in
   input-level-null-kills-every-channel =
     let
       sys = probeHost "nullcase" { } { "fake-module-input" = null; };
-      home = myLib.homeConfigurationsBuilder {
+      home = myLib.mkHomeConfiguration {
         inherit inputs system;
         hostname = "laptop";
         username = "alice";
@@ -410,7 +410,7 @@ in
   # a MISSING attribute, while `?` forces the value.
   throwing-lib-input-tolerated =
     let
-      sys = myLib.nixosConfigurationsBuilder {
+      sys = myLib.mkNixosSystem {
         inputs = inputs // {
           badlib = {
             outPath = "/nix/store/fake-badlib";
@@ -484,7 +484,7 @@ in
   # consumer-provided cases extend the built-in table: the
   # nur-shaped `not-nur` input can be normalized onto the conventions ...
   input-special-cases-consumer =
-    (myLib.nixosConfigurationsBuilder {
+    (myLib.mkNixosSystem {
       inherit inputs system;
       hostname = "scprobe";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -497,7 +497,7 @@ in
   # then silently discarded the result -- the documented escape hatch
   # evaluating, building and booting without the modules it was written for.
   input-special-cases-function-overrides-skip =
-    (myLib.nixosConfigurationsBuilder {
+    (myLib.mkNixosSystem {
       inputs = inputs // {
         distro = {
           outPath = "/nix/store/fake-distro";
@@ -517,7 +517,7 @@ in
   # ... and double as the per-input opt-out for any channel
   input-special-cases-opt-out =
     !(
-      (myLib.nixosConfigurationsBuilder {
+      (myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "scoptout";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
@@ -529,7 +529,7 @@ in
   # second home-manager-shaped input present, which detection would have
   # had to warn about)
   home-manager-explicit-override =
-    (myLib.homeConfigurationsBuilder {
+    (myLib.mkHomeConfiguration {
       inputs = inputs // {
         zz-hm-clone = inputs.home-manager;
       };
@@ -549,7 +549,7 @@ in
   # home-manager module carried lib.buildConfigurations and friends.
   module-lib-omits-flake-level-api =
     !(moduleLib ? flake-buildConfigurations)
-    && !(moduleLib ? flake-nixosConfigurationsBuilder)
+    && !(moduleLib ? flake-mkNixosSystem)
     # nixpkgs has its OWN `lib.nixos` (evalModules and friends). This repo's
     # `nixos` namespace used to be recursiveUpdate'd straight into it.
     && !(moduleLib ? flake-nixos-namespace-polluted)
@@ -571,5 +571,5 @@ in
   # which is what it is for
   ext-lib-special-arg-has-flake-level-api =
     laptop._module.specialArgs.extLib ? buildConfigurations
-    && laptop._module.specialArgs.extLib ? nixosConfigurationsBuilder;
+    && laptop._module.specialArgs.extLib ? mkNixosSystem;
 }

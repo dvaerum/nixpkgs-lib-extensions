@@ -9,7 +9,7 @@
     shared `users` group) -- so by default a user is only a member of their
     own group.
 
-    This is the default `userModule` of `nixosConfigurationsBuilder`, so
+    This is the default `userModule` of `mkNixosSystem`, so
     every user derived from the `userRegistry` gets a login
     account automatically. Pass your own function when accounts need more,
     or `userModule = null` to disable account creation.

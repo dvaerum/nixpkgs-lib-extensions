@@ -1,5 +1,5 @@
-# Shared helpers for the builders in lib/nixos (nixosConfigurationsBuilder,
-# homeConfigurationsBuilder and homeManagerBootstrapModule).
+# Shared helpers for the builders in lib/nixos (mkNixosSystem,
+# mkHomeConfiguration and homeManagerBootstrapModule).
 #
 # This file is PRIVATE because lib/default.nix does not list it: the loader
 # publishes exactly the files it names, and nothing under internal/ is named.
@@ -16,8 +16,8 @@
 #                  conventions, inputContributions classification/selection)
 #   registry.nix   userRegistry resolution (matching, validation, user lists)
 #   context.nix    the shared evaluation context (mkContext)
-#   mk-system.nix  the nixosConfigurationsBuilder implementation (mkSystem)
-#   mk-home.nix    the homeConfigurationsBuilder implementation (mkHome)
+#   mk-system.nix  the mkNixosSystem implementation (mkSystem)
+#   mk-home.nix    the mkHomeConfiguration implementation (mkHome)
 #   hosts-args.nix argument allowlists and hosts-attrset validation
 #
 # Like the builder files each of them takes the loader's `{ lib, self, ... }`:

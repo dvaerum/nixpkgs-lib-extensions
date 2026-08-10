@@ -14,7 +14,7 @@ in
 
     ```nix
     homeConfigurations."alice@laptop" =
-      extLib.homeConfigurationsBuilder {
+      extLib.mkHomeConfiguration {
         inherit inputs system;
         hostname = "laptop";
         username = "alice";
@@ -26,7 +26,7 @@ in
     matching the host (`"<user>@<host>"` and `"<user>@*"` merge; plain
     `"<user>"` is the standalone fallback). Companion `configuration.nix`
     files are ignored here — they are system configuration, imported by
-    `nixosConfigurationsBuilder`. Shares the package set, `specialArgs`
+    `mkNixosSystem`. Shares the package set, `specialArgs`
     and auto-collected home-manager modules with the other builders (it
     accepts the same shared options). The home-manager input is detected
     by capability (its `lib` exposes `homeManagerConfiguration`),
@@ -40,7 +40,7 @@ in
 
     ```nix
     # extLib = inputs.nixpkgs-lib-extensions.lib
-    extLib.homeConfigurationsBuilder {
+    extLib.mkHomeConfiguration {
       inherit inputs;
       hostname = "laptop";
       system   = "x86_64-linux";
@@ -57,7 +57,7 @@ in
     # Type
 
     ```
-    homeConfigurationsBuilder :: Attribute -> HomeManagerConfiguration
+    mkHomeConfiguration :: Attribute -> HomeManagerConfiguration
     ```
 
     # Arguments
@@ -76,7 +76,7 @@ in
     : The system double, e.g. `"x86_64-linux"`.
 
     userRegistry
-    : The user registry (same shape as in `nixosConfigurationsBuilder`);
+    : The user registry (same shape as in `mkNixosSystem`);
     : only the entries matching `username` on `hostname` are used here.
     : Default `{ }`.
     : NOTE: in a git-backed flake, `git add` new files or they are
@@ -93,14 +93,21 @@ in
     semantics.
 
     nixpkgs, hostGroup, specialArgs, tags, patches, nixpkgsConfig, extraOverlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions
-    : Shared options (see `nixosConfigurationsBuilder`).
+    : Shared options (see `mkNixosSystem`).
   */
   # The long definition-list term above must stay on ONE line: gen-docs
   # recognizes a term by a one-line lookahead to the `:` marker, and a
   # wrapped term renders mangled (half prose, half bolded term).
-  # See nixosConfigurationsBuilder: validate here, delegate with no core.
+  # See mkNixosSystem: validate here, delegate with no core.
   # `username` is this builder's own argument, hence the extra allowance.
-  homeConfigurationsBuilder =
-    args:
-    shared.mkHome null (shared.validateBuilderArgs "homeConfigurationsBuilder" [ "username" ] args);
+  mkHomeConfiguration =
+    args: shared.mkHome null (shared.validateBuilderArgs "mkHomeConfiguration" [ "username" ] args);
+
+  /**
+    Deprecated (1.0.0): renamed to `mkHomeConfiguration` -- same arguments,
+    same behavior, only the name changed (it builds ONE home; the old name
+    read like the plural `build*` family). Accessing this name throws with
+    that pointer.
+  */
+  homeConfigurationsBuilder = throw "nixpkgs-lib-extensions: `homeConfigurationsBuilder` was renamed to `mkHomeConfiguration` in 1.0.0 (same arguments, same behavior); update the call site. See CHANGELOG.md.";
 }

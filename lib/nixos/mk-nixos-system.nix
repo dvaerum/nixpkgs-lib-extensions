@@ -106,7 +106,7 @@ in
 
     ```nix
     # extLib = inputs.nixpkgs-lib-extensions.lib
-    extLib.nixosConfigurationsBuilder {
+    extLib.mkNixosSystem {
       inherit inputs;
       hostname = "laptop";
       system   = "x86_64-linux";
@@ -131,17 +131,17 @@ in
     <nixosSystem>
     ```
 
-    The system is returned BARE (like `homeConfigurationsBuilder`), so
+    The system is returned BARE (like `mkHomeConfiguration`), so
     assign it to your flake's `nixosConfigurations` output under an
     explicit key, e.g.
-    `nixosConfigurations.laptop = extLib.nixosConfigurationsBuilder { ... }`
+    `nixosConfigurations.laptop = extLib.mkNixosSystem { ... }`
     — or use `buildNixosConfigurations` to build a whole keyed set of
     hosts in one call.
 
     # Type
 
     ```
-    nixosConfigurationsBuilder :: Attribute -> NixosSystem
+    mkNixosSystem :: Attribute -> NixosSystem
     ```
 
     # Arguments
@@ -236,7 +236,7 @@ in
     homeModules
     : home-manager modules added to every SYSTEM-managed home (on top of
     : those auto-collected from `inputs`). The same argument is read by
-    : `homeConfigurationsBuilder`/`buildHomeConfigurations` for the
+    : `mkHomeConfiguration`/`buildHomeConfigurations` for the
     : login-managed homes, so in a shared hosts attrset it applies to
     : both kinds. Default `[ ]`.
 
@@ -347,7 +347,7 @@ in
     : [ "bootloader" "vendor-kernel" ];`
     : Default `{ }`.
 
-    `homeConfigurationsBuilder` accepts this same shared set, so both
+    `mkHomeConfiguration` accepts this same shared set, so both
     builders can be called with one common argument attrset.
   */
   # Validate here, where the caller's function name is known, then hand the
@@ -358,6 +358,13 @@ in
   #
   # Destructuring validArgs forces the check, so even a consumer that only
   # reads attrNames of the result hits it.
-  nixosConfigurationsBuilder =
-    args: shared.mkSystem null (shared.validateBuilderArgs "nixosConfigurationsBuilder" [ ] args);
+  mkNixosSystem = args: shared.mkSystem null (shared.validateBuilderArgs "mkNixosSystem" [ ] args);
+
+  /**
+    Deprecated (1.0.0): renamed to `mkNixosSystem` -- same arguments, same
+    behavior, only the name changed (it builds ONE system; the old name
+    read like the plural `build*` family). Accessing this name throws with
+    that pointer.
+  */
+  nixosConfigurationsBuilder = throw "nixpkgs-lib-extensions: `nixosConfigurationsBuilder` was renamed to `mkNixosSystem` in 1.0.0 (same arguments, same behavior); update the call site. See CHANGELOG.md.";
 }

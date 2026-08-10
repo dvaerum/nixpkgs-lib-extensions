@@ -311,7 +311,7 @@ in
   # swallow typos or stale argument names
   direct-nixos-call-typo-throws =
     !(builtins.tryEval (
-      builtins.seq (myLib.nixosConfigurationsBuilder {
+      builtins.seq (myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "typo";
         users = [ "root" ];
@@ -319,7 +319,7 @@ in
     )).success;
   direct-home-call-typo-throws =
     !(builtins.tryEval (
-      builtins.seq (myLib.homeConfigurationsBuilder {
+      builtins.seq (myLib.mkHomeConfiguration {
         inherit inputs system;
         hostname = "laptop";
         username = "alice";
@@ -360,7 +360,7 @@ in
           nixpkgsConfig.cudaSupport = true;
         };
       };
-      reference = myLib.nixosConfigurationsBuilder {
+      reference = myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "plainhost";
         tags = [ "shared-core" ];

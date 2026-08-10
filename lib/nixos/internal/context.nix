@@ -170,9 +170,16 @@ let
       # lib does not also define (e.g. `disko`, `nixos`, `imports` -- but
       # not `strings` or `attrsets`, which exist in nixpkgs too). These are
       # the only legitimate merge targets for an input's lib export.
-      ownedNamespaces = builtins.filter (n: baseLib.isAttrs self.${n} && !(baseLib ? ${n})) (
-        builtins.attrNames self
-      );
+      # tryEval: the deprecation TOMBSTONES on `self` (renamed builders) are
+      # `throw` values, and a plain isAttrs would force them here -- a
+      # tombstone is by construction not a namespace.
+      ownedNamespaces = builtins.filter (
+        n:
+        let
+          probe = builtins.tryEval (baseLib.isAttrs self.${n});
+        in
+        probe.success && probe.value && !(baseLib ? ${n})
+      ) (builtins.attrNames self);
 
       # Overwrite detection, per collision class:
       # - name unused              -> input lib added as `lib.<name>`

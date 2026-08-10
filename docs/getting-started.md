@@ -320,12 +320,12 @@ missing, the service fails with "flake ... does not provide attribute
 homeConfigurations..." on first login. The skeleton above covers it:
 `buildConfigurations hosts` produces the homeConfigurations half from
 that same host list. (The underlying single-user function is
-`homeConfigurationsBuilder`, if you need one specific home.)
+`mkHomeConfiguration`, if you need one specific home.)
 
 ### The bootstrap without the builders
 
 `homeManagerBootstrapModule` is a plain NixOS module and can be used
-on its own, for systems built without `nixosConfigurationsBuilder`.
+on its own, for systems built without `mkNixosSystem`.
 A complete flake:
 
 ```nix
@@ -387,7 +387,7 @@ A complete flake:
       # the homes the bootstrap activates:
       # "alice@laptop" MUST exist here
       homeConfigurations."alice@laptop" =
-        extLib.homeConfigurationsBuilder {
+        extLib.mkHomeConfiguration {
           inherit inputs system
             userRegistry;
           hostname = "laptop";
@@ -400,7 +400,7 @@ A complete flake:
 At login the service runs
 `home-manager switch --flake <loginFlakeRef>#alice@laptop` exactly as
 in the builder setup. Two things the standalone module does NOT do
-(they are `nixosConfigurationsBuilder` features): it never creates
+(they are `mkNixosSystem` features): it never creates
 user accounts, and it never imports the registry directories'
 `configuration.nix` files. It does read the matched registry
 directories, but only to see which users ship a `home.nix` -- so an
@@ -726,7 +726,7 @@ eval-level changes.
   a name no host's registry mentions at all throws (typo), but a name
   that merely does not apply to some host is legal there -- one shared
   list in `_defaults` is the normal shape. In a DIRECT
-  `nixosConfigurationsBuilder`/`homeConfigurationsBuilder` call there
+  `mkNixosSystem`/`mkHomeConfiguration` call there
   is only one host in view, so unknown names are silently ignored.
 
 ## Verifying your setup
