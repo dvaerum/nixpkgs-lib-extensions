@@ -11,7 +11,7 @@
 #                  FIRST parameter is the core -- `null` to compute one,
 #                  or one planHosts already built, which is how
 #                  buildNixosConfigurations/buildHomeConfigurations share
-#                  ONE core across all hosts that stick to the defaults
+#                  ONE core across all hosts agreeing on the core arguments
 #
 # Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully
 # assembled nixpkgs-lib-extensions lib.
@@ -28,8 +28,8 @@ let
 
   # The argument names mkContextCore consumes -- everything the
   # host-independent part of the context depends on. The build* functions
-  # use this list to decide whether a host entry may share the defaults'
-  # core: only when it overrides NONE of these.
+  # use this list to group hosts into core-sharing equivalence classes:
+  # hosts agreeing on ALL of these share one core.
   #
   # DERIVED, not transcribed. As a hand-written list it was a silent
   # correctness hazard: add a parameter to mkContextCore below, forget the
@@ -38,6 +38,25 @@ let
   # reads the formals of the lambda without forcing its body, so this cannot
   # drift.
   coreArgNames = builtins.attrNames (builtins.functionArgs mkContextCore);
+
+  # The DEFAULT VALUES of mkContextCore's optional core arguments, in one
+  # place: the formals below read them from here, and planHosts reads the
+  # same attrset to fill in what a host left unsaid before comparing hosts
+  # for core sharing. It used to hand-transcribe these values, and a changed
+  # default with a stale copy makes a host silently share the WRONG core.
+  # Not here: `inputs`/`system` (required, no default) and `nixpkgs`, whose
+  # default is COMPUTED from `inputs` rather than a constant.
+  # checks/builders/tests/defaults.nix asserts this table and the formals
+  # cannot drift apart.
+  coreDefaults = {
+    patches = [ ];
+    extraOverlays = [ ];
+    allowedUnfreePackages = [ ];
+    permittedInsecurePackages = [ ];
+    nixpkgsConfig = { };
+    homeManager = null;
+    inputContributions = { };
+  };
 
   # The host-independent context core: lib, pkgs, the auto-collected
   # module/overlay sets and the derived package sets -- everything that
@@ -49,13 +68,13 @@ let
       inputs,
       system,
       nixpkgs ? inputs.nixpkgs,
-      patches ? [ ],
-      extraOverlays ? [ ],
-      allowedUnfreePackages ? [ ],
-      permittedInsecurePackages ? [ ],
-      nixpkgsConfig ? { },
-      homeManager ? null,
-      inputContributions ? { },
+      patches ? coreDefaults.patches,
+      extraOverlays ? coreDefaults.extraOverlays,
+      allowedUnfreePackages ? coreDefaults.allowedUnfreePackages,
+      permittedInsecurePackages ? coreDefaults.permittedInsecurePackages,
+      nixpkgsConfig ? coreDefaults.nixpkgsConfig,
+      homeManager ? coreDefaults.homeManager,
+      inputContributions ? coreDefaults.inputContributions,
       ...
     }:
     let
@@ -291,7 +310,8 @@ let
   # here via `...`. Adds the per-host layer (mySpecialArguments) on top of a
   # context core, which arrives as the FIRST parameter: `null` to compute one
   # from these arguments, or a core planHosts already built from the same
-  # ones, so hosts sharing `_defaults` share one nixpkgs evaluation.
+  # ones, so hosts agreeing on the core arguments share one nixpkgs
+  # evaluation.
   #
   # It used to arrive as a `_core` KEY in the argument attrset, which meant it
   # was reachable from any public builder call: the argument allowlist had to
@@ -388,5 +408,10 @@ let
     };
 in
 {
-  inherit coreArgNames mkContextCore mkContext;
+  inherit
+    coreArgNames
+    coreDefaults
+    mkContextCore
+    mkContext
+    ;
 }

@@ -332,19 +332,31 @@ in
   # set, a host overriding no core argument reuses the `_defaults` context
   # core, a host overriding one (nixpkgsConfig) gets its own -- the
   # overriding host's pkgs must reflect its override while the sharing
-  # host matches a directly-built reference (which never sees `_core`).
+  # host matches a directly-built reference (which never sees a plan core).
+  # And sharing is per EQUIVALENCE CLASS, not defaults-or-own: two
+  # NON-default hosts stating the same override share ONE core between
+  # them. Proven by pkgs IDENTITY, not equal-looking config: the probe
+  # overlay allocates a fresh lambda per pkgs fixed point, and Nix's `==`
+  # only calls two lambdas equal when they are pointer-identical -- so the
+  # probe lists compare equal iff both hosts hold the SAME instantiation.
   defaults-core-sharing-equivalence =
     let
+      identityProbe = final: prev: { coreSharingProbe = [ (x: x) ]; };
       built = myLib.buildNixosConfigurations {
         _defaults = {
           inherit inputs system;
+          extraOverlays = [ identityProbe ];
         };
         # overrides no core argument (tags is per-host layer): shares the core
         plainhost = {
           tags = [ "shared-core" ];
         };
-        # overrides a core argument: must get its own context
+        # override a core argument, TWICE with the same value: one shared
+        # core for the class, distinct from the defaults' core
         cudahost = {
+          nixpkgsConfig.cudaSupport = true;
+        };
+        cudahost2 = {
           nixpkgsConfig.cudaSupport = true;
         };
       };
@@ -352,6 +364,7 @@ in
         inherit inputs system;
         hostname = "plainhost";
         tags = [ "shared-core" ];
+        extraOverlays = [ identityProbe ];
       };
     in
     built.cudahost.pkgs.config.cudaSupport
@@ -359,7 +372,26 @@ in
     && !reference.pkgs.config.cudaSupport
     && built.plainhost._module.specialArgs.hostname == "plainhost"
     && built.cudahost._module.specialArgs.hostname == "cudahost"
-    && built.plainhost._module.specialArgs.tags == reference._module.specialArgs.tags;
+    && built.plainhost._module.specialArgs.tags == reference._module.specialArgs.tags
+    # the two non-default hosts share one pkgs instantiation ...
+    && built.cudahost.pkgs.coreSharingProbe == built.cudahost2.pkgs.coreSharingProbe
+    # ... which is NOT the defaults-class instantiation
+    && built.plainhost.pkgs.coreSharingProbe != built.cudahost.pkgs.coreSharingProbe;
+
+  # mkContextCore's formals and the shared coreDefaults table cannot drift:
+  # every optional core argument except `nixpkgs` (its default is COMPUTED
+  # from `inputs`) must take its default from coreDefaults -- a changed
+  # default with a stale table makes a host silently share the WRONG core.
+  core-defaults-cover-optional-args =
+    let
+      ctx = import (repoDir + "/lib/nixos/internal/context.nix") {
+        inherit lib;
+        self = myLib;
+      };
+      formals = builtins.functionArgs ctx.mkContextCore;
+    in
+    builtins.filter (n: formals.${n} && n != "nixpkgs") (builtins.attrNames formals)
+    == builtins.attrNames ctx.coreDefaults;
 
   # The core-sharing decision is driven by mkContextCore's own formals
   # (coreArgNames is derived from them), so a parameter added there can

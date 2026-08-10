@@ -65,7 +65,11 @@ let
     "z"
   ];
 
-  inherit (import ./context.nix { inherit lib self; }) coreArgNames mkContextCore;
+  inherit (import ./context.nix { inherit lib self; })
+    coreArgNames
+    coreDefaults
+    mkContextCore
+    ;
   inherit (import ./mk-system.nix { inherit lib self; }) mkSystem;
   inherit (import ./mk-home.nix { inherit lib self; }) mkHome;
   inherit (import ./registry.nix { inherit lib self; })
@@ -319,10 +323,9 @@ let
         ) (builtins.filter (k: !(builtins.elem k allowedDefaultArgs)) (builtins.attrNames rawDefaults)));
 
   # ONE plan per hosts attrset, shared by every hosts-level builder: split
-  # and validate, merge `_defaults` under each entry, and decide once
-  # whether the host can reuse the defaults' context core. Returns
-  # `{ <hostname> = { args; core; }; }` with `core = null` meaning "build
-  # your own from args".
+  # and validate, merge `_defaults` under each entry, and build ONE context
+  # core per EQUIVALENCE CLASS of core arguments. Returns
+  # `{ <hostname> = { args; core; registry; }; }`.
   #
   # Doing this once is not only deduplication: buildNixosConfigurations and
   # buildHomeConfigurations each used to compute their own core from the
@@ -333,43 +336,12 @@ let
     fnName: hosts:
     let
       split = splitHostsArgs fnName hosts;
-      defaultsCore = mkContextCore split.defaults;
       coreArgSet = builtins.listToAttrs (
         map (n: {
           name = n;
           value = null;
         }) coreArgNames
       );
-      # A host shares the defaults' core when every core argument it
-      # mentions resolves to the SAME VALUE the defaults would give. Mere
-      # PRESENCE used to disqualify it, so writing `inherit inputs system;`
-      # inside each host entry -- the most natural thing to write --
-      # silently gave every host its own nixpkgs evaluation.
-      #
-      # Compared against the EFFECTIVE default, not against `null`: when
-      # `_defaults` omits a core argument, a host writing the builder's own
-      # documented default (`nixpkgsConfig = { }`, `extraOverlays = [ ]`,
-      # `patches = [ ]`) would otherwise be compared with null and lose the
-      # core for documenting itself.
-      coreDefaults = builtins.functionArgs mkContextCore;
-      effectiveDefault =
-        n:
-        if split.defaults ? ${n} then
-          { v = split.defaults.${n}; }
-        # functionArgs reports `true` for a formal WITH a default but cannot
-        # give its value, so only the ones we can name are compared.
-        else if n == "nixpkgsConfig" then
-          { v = { }; }
-        else if n == "extraOverlays" || n == "patches" || n == "allowedUnfreePackages" then
-          { v = [ ]; }
-        else if n == "permittedInsecurePackages" then
-          { v = [ ]; }
-        else if n == "inputContributions" then
-          { v = { }; }
-        else if n == "homeManager" then
-          { v = null; }
-        else
-          null;
       # Cheap identity first: flake inputs carry `outPath`, so two of them
       # are the same tree iff those match. Plain `==` on genuinely different
       # same-size attrsets descends arbitrarily deep -- a probe comparing
@@ -386,18 +358,23 @@ let
             probe = builtins.tryEval (a == b);
           in
           probe.success && probe.value;
-      sharesCore =
-        entry:
-        # `extra` touching a core argument always means a new core: it ADDS
-        # to the default, so the result differs by construction.
-        builtins.intersectAttrs coreArgSet (entry.extra or { }) == { }
-        && builtins.all (
-          n:
-          let
-            d = effectiveDefault n;
-          in
-          d != null && sameValue entry.${n} d.v
-        ) (builtins.attrNames (builtins.intersectAttrs coreArgSet entry));
+      # A host's EFFECTIVE core-argument tuple: every core argument made
+      # explicit -- what the merged arguments state, over the builder's own
+      # defaults. Compared over effective VALUES, not presence: a host
+      # restating `inherit inputs system;` or writing a documented default
+      # (`patches = [ ]`, ...) -- the most natural things to write -- must
+      # still share. `coreDefaults` is mkContextCore's OWN defaults table
+      # (context.nix), so the comparison cannot disagree with what
+      # mkContextCore would build; `nixpkgs` is the one COMPUTED default
+      # and is filled in from the host's `inputs`.
+      coreArgsOf =
+        args:
+        coreDefaults
+        // {
+          nixpkgs = args.nixpkgs or (args.inputs.nixpkgs or null);
+        }
+        // builtins.intersectAttrs coreArgSet args;
+      sameCoreArgs = a: b: builtins.all (n: sameValue (a.${n} or null) (b.${n} or null)) coreArgNames;
 
       # A bare key replaces; `extra.<key>` adds to whatever the merge
       # produced. Lists concatenate, attrsets merge with `extra` winning a
@@ -445,13 +422,46 @@ let
             ${k} = if acc ? ${k} then combine hostname k acc.${k} extra.${k} else extra.${k};
           }
         ) merged (builtins.attrNames extra);
+      # `_defaults` merged under each entry, `extra` layered on top -- the
+      # arguments each builder finally receives.
+      mergedArgs = builtins.mapAttrs (
+        hostname: entry:
+        applyExtra hostname (
+          split.defaults // (builtins.removeAttrs entry [ "extra" ]) // { inherit hostname; }
+        ) (entry.extra or { })
+      ) split.hostEntries;
+      coreTuples = builtins.mapAttrs (_: coreArgsOf) mergedArgs;
+
+      # ONE core per equivalence class. Sharing used to be binary
+      # (match `_defaults` exactly or pay a full nixpkgs evaluation), so
+      # two aarch64 hosts in an x86 fleet each paid for the SAME deviation.
+      # Eval time now scales with the number of DISTINCT core-argument
+      # tuples, not with fleet size. The fold only ever compares tuples
+      # (cheap: outPath identity first); each `mkContextCore` application
+      # stays an unforced thunk until some host uses its class's core.
+      coreClasses = builtins.foldl' (
+        acc: hostname:
+        let
+          tuple = coreTuples.${hostname};
+        in
+        if builtins.any (c: sameCoreArgs c.tuple tuple) acc then
+          acc
+        else
+          acc
+          ++ [
+            {
+              inherit tuple;
+              core = mkContextCore tuple;
+            }
+          ]
+      ) [ ] (builtins.attrNames coreTuples);
+      # total by construction: every host's tuple seeded a class above
+      coreFor =
+        hostname: (lib.findFirst (c: sameCoreArgs c.tuple coreTuples.${hostname}) null coreClasses).core;
     in
     builtins.mapAttrs (
-      hostname: entry:
+      hostname: args:
       let
-        args = applyExtra hostname (
-          split.defaults // (builtins.removeAttrs entry [ "extra" ]) // { inherit hostname; }
-        ) (entry.extra or { });
         rawRegistry = args.userRegistry or { };
       in
       {
@@ -459,14 +469,14 @@ let
         # ALWAYS a core, never null. With null the builder recomputed one --
         # and so did EVERY homeConfigurationsBuilder call for that host, so
         # a non-sharing host with 4 login homes paid for 5 nixpkgs
-        # evaluations. Computing it once per plan entry moves that back to
-        # one. Lazy, so a host nobody forces still costs nothing.
-        core = if sharesCore entry then defaultsCore else mkContextCore args;
+        # evaluations. Computing it once per class moves that back to one.
+        # Lazy: a host nobody forces costs nothing beyond tuple comparisons.
+        core = coreFor hostname;
         # `null` is a documented value for userRegistry; normalized ONCE
         # here so every consumer of the plan sees an attrset.
         registry = if rawRegistry == null then { } else rawRegistry;
       }
-    ) split.hostEntries;
+    ) mergedArgs;
 
   # A loginHomes typo is otherwise silent: the home flips to the
   # system-managed mechanism and everything still builds and boots. Only
