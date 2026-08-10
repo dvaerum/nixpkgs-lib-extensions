@@ -12,7 +12,9 @@ let
   # already inside one. `lib.buildConfigurations` inside a NixOS module was
   # never meaningful. `version` is flake-level too -- it is THIS library's
   # release string (lib/default.nix), while a module's `lib.version` is
-  # nixpkgs' release and must keep winning. Everything else is module-level.
+  # nixpkgs' release and must keep winning. `_paths` is the loader's
+  # introspection list (consumed by the exports check) and belongs in no
+  # module lib at all. Everything else is module-level.
   #
   # DERIVED from the namespace, not transcribed: a new file under lib/nixos
   # is flake-level automatically, a new one under lib/disko or lib/imports is
@@ -24,6 +26,7 @@ let
       [
         "nixos"
         "version"
+        "_paths"
       ]
       ++ lib.attrNames extLib.nixos
     );

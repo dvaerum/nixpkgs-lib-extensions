@@ -391,10 +391,13 @@ in
     in
     builtins.all (n: builtins.elem n shared.allowedDefaultArgs) shared.coreArgNames;
 
-  # the allowlist and its documentation cannot drift: every allowlisted
-  # name must appear backtick-quoted in the buildNixosConfigurations doc
-  # comment (this is exactly the drift that happened with the loginHomes
-  # renames)
+  # the allowlist and its documentation cannot drift, in EITHER direction:
+  # every allowlisted name must appear as a "- `name`" bullet in the
+  # buildNixosConfigurations _defaults reference (a prose mention
+  # elsewhere must not satisfy this -- that is exactly the drift that
+  # happened with the loginHomes renames), and every bulleted name must
+  # still be in the allowlist (a removed argument must take its bullet
+  # with it)
   allowlist-documented =
     let
       doc = builtins.readFile (repoDir + "/lib/nixos/build-nixos-configurations.nix");
@@ -402,8 +405,13 @@ in
         inherit lib;
         self = myLib;
       };
+      # the names of every "- `name`" bullet in the doc comment
+      bulleted = lib.concatMap (m: if lib.isList m then m else [ ]) (
+        builtins.split "- `([a-zA-Z]+)`" doc
+      );
     in
-    builtins.all (n: lib.hasInfix "`${n}`" doc) shared.allowedDefaultArgs;
+    builtins.all (n: builtins.elem n bulleted) shared.allowedDefaultArgs
+    && builtins.all (n: builtins.elem n shared.allowedDefaultArgs) bulleted;
 
   # ── the complaints themselves, not merely "something threw" ──
   # tryEval discards the message, so each of the throws-assertions above is

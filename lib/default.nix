@@ -36,7 +36,7 @@ lib.fix (
     # nixpkgs' release and must stay so.
     version = "0.1.0";
 
-    namespaces = lib.mapAttrs (_: paths: lib.mergeAttrsList (map load paths)) {
+    namespacePaths = {
       attrsets = [ ./attrsets/default.nix ];
       strings = [ ./strings/default.nix ];
       disko = [ ./disko/declare-zfs-root-disk.nix ];
@@ -54,6 +54,16 @@ lib.fix (
         ./nixos/normal-user-module.nix
       ];
     };
+    namespaces = lib.mapAttrs (_: paths: lib.mergeAttrsList (map load paths)) namespacePaths;
+
+    # The loaded files as a flat list -- INTROSPECTION, not API (the `_`
+    # says so). gen-docs documents every non-internal file under lib/ by
+    # `find`; a file added there but not listed above would be DOCUMENTED
+    # yet unreachable through the lib. checks/builders/tests/exports.nix
+    # compares this list against the on-disk tree, so the two ways of
+    # enumerating "the library" cannot disagree. Excluded from the
+    # module-level half (internal/module-level.nix) like `version`.
+    _paths = lib.concatLists (lib.attrValues namespacePaths);
 
     # Every function is ALSO reachable unnamespaced -- `extLib.declareZfsRootDisk`
     # as well as `extLib.disko.declareZfsRootDisk`. Deliberate: the docs head
@@ -67,9 +77,16 @@ lib.fix (
       let
         perName = lib.zipAttrs (lib.attrValues namespaces);
         duplicates = lib.attrNames (lib.filterAttrs (name: values: lib.length values > 1) perName);
-        # `version` is claimed by the metadata above, so a function of that
-        # name would be shadowed just like one named after a folder
-        folderClashes = lib.filter (name: perName ? ${name}) (lib.attrNames namespaces ++ [ "version" ]);
+        # `version` and `_paths` are claimed by the metadata above, so a
+        # function of either name would be shadowed just like one named
+        # after a folder
+        folderClashes = lib.filter (name: perName ? ${name}) (
+          lib.attrNames namespaces
+          ++ [
+            "version"
+            "_paths"
+          ]
+        );
         clashes = duplicates ++ folderClashes;
       in
       if clashes == [ ] then
@@ -79,6 +96,6 @@ lib.fix (
   in
   # { attrsets = {...}; strings = {...}; <and the other namespaces> }
   #   // { func1 = ...; func2 = ...; }
-  #   // { version = "..."; }
-  namespaces // topLevel // { inherit version; }
+  #   // { version = "..."; _paths = [ ... ]; }
+  namespaces // topLevel // { inherit version _paths; }
 )
