@@ -25,19 +25,27 @@
       };
 
       # The collision decision is made against PRISTINE nixpkgs -- never
-      # against the lib being extended. `extendLib` is applied to a lib that
+      # against the lib being extended. The overlay is applied to a lib that
       # may ALREADY hold these additions: the builders merge them in
       # themselves (lib/nixos/internal/context.nix) and then run every
-      # input's extendLib, this repo's included. Judging against the
+      # input's lib contribution, this repo's included. Judging against the
       # accumulated lib made every name collide with its own earlier self and
       # get "skipped" with a warning naming nixpkgs for functions nixpkgs has
       # never defined.
-      #
-      # `recursiveUpdate ours l`, not `l // ours`: whatever is already in `l`
-      # wins at the leaves (so an addition still cannot displace anything,
-      # including a previous application of itself) while namespaces merge, so
-      # `attrsets.recursiveMerge` survives alongside nixpkgs' own attrsets.
       ownLibAdditions = moduleLevel.addOwnLib nixpkgs.lib myLib;
+
+      # The canonical lib contribution: an OVERLAY (final: prev: delta), the
+      # shape `lib.extend` composes and other flakes' overlays already use.
+      # The delta covers exactly this repo's names; for a name `prev`
+      # already holds, `recursiveUpdate ours theirs` lets the existing side
+      # win at the leaves (an addition can never displace anything,
+      # including a previous application of itself) while namespaces merge,
+      # so `attrsets.recursiveMerge` survives alongside nixpkgs' own
+      # attrsets. `final` is unused here, but the overlay form is what lets
+      # OTHER flakes' additions reference each other through it.
+      libOverlay =
+        final: prev:
+        nixpkgs.lib.recursiveUpdate ownLibAdditions (builtins.intersectAttrs ownLibAdditions prev);
 
       # The platforms this lib is realistically used on. Keep the list short:
       # every entry multiplies the cost of `nix flake check --all-systems`
@@ -114,11 +122,18 @@
     {
       lib = myLib;
 
-      # Helper for consumers
-      # Only the module-level half, and it can only ADD -- see
-      # lib/nixos/internal/module-level.nix. `extendLib` feeds a consuming
-      # flake's module `lib`, where the system builders have no meaning.
-      extendLib = lib: nixpkgs.lib.recursiveUpdate ownLibAdditions lib;
+      # Helpers for consumers. Both carry only the module-level half, and
+      # can only ADD -- see lib/nixos/internal/module-level.nix: they feed
+      # a consuming flake's module `lib`, where the system builders have no
+      # meaning.
+      #
+      # `libOverlays.default` is the CANONICAL form (compose it with
+      # `lib.extend`, like any other input's); the builders prefer it over
+      # `extendLib` when an input exports both.
+      libOverlays.default = libOverlay;
+      # legacy endomorphism (lib -> newLib), kept as a wrapper defined FROM
+      # the overlay; for a lib that is not a fixed point, so no `extend`.
+      extendLib = lib: lib // libOverlay lib lib;
 
       # Keep overlay for pkgs.lib (works in some contexts)
       # ... and the same for pkgs.lib.

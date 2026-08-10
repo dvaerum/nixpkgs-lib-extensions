@@ -686,12 +686,17 @@ automatically when the matching input exists:
 - overlays from any input exposing `overlays.default` (same
   default/sole-entry rule, but no exclusions -- overlays are collected
   from every input, nixpkgs trees included).
-- lib extensions from any input exposing an `extendLib` function; this repo's
-  own extensions are always applied to the system `lib` and also passed as the
-  `extLib` specialArg.
+- lib extensions from any input exposing a lib overlay
+  `libOverlays.default = final: prev: { ... };` (the canonical form --
+  it composes through `lib.extend`, so one addition can reference
+  another via `final`) or the legacy `extendLib` endomorphism
+  (`lib -> newLib`; the overlay wins when both exist). This repo's own
+  extensions are always applied to the system `lib` and also passed as
+  the `extLib` specialArg. Both forms are governed by the ONE
+  `extendLib` channel of `inputContributions`.
 - each input's standalone `lib` export, namespaced by input name:
   `lib.<inputName>` in modules and `pkgs.lib.<inputName>` (e.g.
-  `lib.NixVirt.domain`). Never merged flat -- `extendLib` is the
+  `lib.NixVirt.domain`). Never merged flat -- a lib overlay is the
   composable way into the flat lib -- and never overwriting: if the
   name is a namespace this repo owns (`disko`, ...) the input's lib is
   MERGED into it with the existing side winning every conflict (so a
@@ -983,7 +988,9 @@ nixosConfigurationsBuilder :: Attribute -> NixosSystem
   given), `"*"` (every entry, alphabetically), or `null`/`[ ]` (none).
   The selectable channels are `nixosModules`, `homeModules` and
   `overlays`; `extendLib` and `lib` hold a single value, so for them only
-  `null`/`[ ]` (off) and `"*"` (on) apply. A `homeModules` selection also
+  `null`/`[ ]` (off) and `"*"` (on) apply. The `extendLib` channel is
+  the lib-extension channel as such: it governs an input's
+  `libOverlays.default` and its legacy `extendLib` alike. A `homeModules` selection also
   covers an input that only exports the older `homeManagerModules` name:
   that alias is read when `homeModules` is absent, and never touched when
   it is present (flakes deprecating it warn on access). Naming entries is how you take

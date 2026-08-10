@@ -419,7 +419,7 @@ For every flake input, by convention:
 | `nixosModules.default`           | imported into every host     |
 | `homeModules.default` / `homeManagerModules.default` | added to every home |
 | `overlays.default`               | applied to `pkgs`            |
-| `extendLib`                      | merged into the system `lib` |
+| `libOverlays.default` (or legacy `extendLib`) | merged into the system `lib` |
 | `lib`                            | namespaced: `lib.<name>.*`   |
 | `nixpkgs-*` (package sets)       | `nixpkgsLibExtensions.channels.<variant>` option (and legacy `pkgs-*` specialArgs) |
 
@@ -470,7 +470,9 @@ The four selection values are: a **list of names** (taken in the
 order given), `"*"` (all of them), `null` or `[ ]` (none), and --
 by leaving the channel out entirely -- the default `default`/single-entry
 rule above. `extendLib` and `lib` hold a single value rather than a
-set, so for those only `null`/`[ ]` (off) and `"*"` (on) apply.
+set, so for those only `null`/`[ ]` (off) and `"*"` (on) apply. The
+`extendLib` channel is the lib-extension channel as such: it governs
+an input's `libOverlays.default` and its legacy `extendLib` alike.
 
 Two shorthands: `inputContributions."x" = null;` switches off *every*
 channel of an input at once, and a function value is the escape hatch
@@ -495,7 +497,9 @@ modules = [
 
 An input's standalone `lib` export is added under its own name --
 `lib.NixVirt.domain` in any module (and `pkgs.lib.NixVirt` too), no
-wiring needed. It is namespaced, never merged flat: `extendLib` is
+wiring needed. It is namespaced, never merged flat: a lib overlay
+(`libOverlays.default = final: prev: { ... };` -- or the legacy
+`extendLib` function, with the overlay preferred when both exist) is
 the convention for extending the flat lib. Collisions are handled by
 who owns the name:
 

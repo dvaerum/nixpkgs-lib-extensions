@@ -191,8 +191,20 @@ in
         modules = [
           # the builder-derived values as declared options -- always imported
           (extNixosOptionsModule extOptionValues)
+          # nixpkgs' `nixosModules.readOnlyPkgs` -- upstream's companion to
+          # passing `nixpkgs.pkgs` -- is deliberately NOT imported here. It
+          # replaces the whole nixpkgs module and turns `nixpkgs.overlays`
+          # into a hard error (types.unique), but this builder BLESSES
+          # module-level `nixpkgs.overlays`: nixpkgs composes them onto the
+          # injected set via `cfg.pkgs.appendOverlays cfg.overlays` (see
+          # the NOTE below, pinned by the module-level-overlay-applies
+          # test), and third-party modules bringing their own overlays rely
+          # on exactly that. What readOnlyPkgs would guard beyond overlays
+          # is covered without it: `nixpkgs.config` hard-fails nixpkgs' own
+          # assertion, and hostPlatform/buildPlatform definitions get the
+          # warnings below instead of being silently ignored.
           (
-            { config, ... }:
+            { config, options, ... }:
             {
               _file = ../nixosConfigurationsBuilder.nix;
               networking.hostName = lib.mkDefault hostname;
@@ -214,6 +226,21 @@ in
               # only route for THAT one. (The nixpkgs warning about ignored
               # options applies to `specialArgs.pkgs`, which this builder
               # deliberately does not use -- see internal/context.nix.)
+              #
+              # The PLATFORM options genuinely are ignored with `pkgs`
+              # injected, so a module defining one deserves a word.
+              # Detected by definition PRIORITY, not isDefined: an option
+              # DEFAULT registers as an (mkOptionDefault) definition too,
+              # so anything beating the builder's own mkDefault pin above
+              # (for hostPlatform) or the option default (for
+              # buildPlatform; upstream's hasBuildPlatform does the same)
+              # is a foreign definition.
+              warnings =
+                lib.optional (options.nixpkgs.hostPlatform.highestPrio < (lib.mkDefault null).priority)
+                  "nixosConfigurationsBuilder: host `${hostname}`: a module sets `nixpkgs.hostPlatform`, which is IGNORED: the builder passes an externally built package set (`nixpkgs.pkgs`), whose platform comes from the builder's `system` argument. Set that argument instead."
+                ++
+                  lib.optional (options.nixpkgs.buildPlatform.highestPrio < (lib.mkOptionDefault null).priority)
+                    "nixosConfigurationsBuilder: host `${hostname}`: a module sets `nixpkgs.buildPlatform`, which is IGNORED: the builder passes an externally built package set (`nixpkgs.pkgs`), and nixpkgs derives both platforms from it. Cross-compile by giving the builder a `nixpkgs`/`system` combination that builds the package set you mean.";
             }
           )
           bootstrapModule

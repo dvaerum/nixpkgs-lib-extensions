@@ -163,6 +163,69 @@ in
   input-extend-lib-applied = custom.config.users.groups ? auto-ext-marker;
   own-ext-lib-in-system-lib = custom.config.users.groups ? Ext-marker;
 
+  # `libOverlays.default` is the CANONICAL lib-contribution form: a real
+  # overlay reaches the system `lib`, and one addition can reference
+  # another through `final` -- which the endomorphic extendLib cannot
+  # express at all
+  input-lib-overlay-applied =
+    (myLib.nixosConfigurationsBuilder {
+      inputs = inputs // {
+        overlaid = {
+          outPath = "/nix/store/fake-lib-overlay-input";
+          libOverlays.default = final: prev: {
+            libOverlayMarker = "from-lib-overlay";
+            libOverlayViaFinal = final.libOverlayMarker + "-via-final";
+          };
+        };
+      };
+      inherit system;
+      hostname = "liboverlay";
+      modules = [
+        (exampleDir + "/hosts/server/configuration.nix")
+        ({ lib, ... }: { users.groups.${lib.libOverlayViaFinal} = { }; })
+      ];
+    }).config.users.groups ? from-lib-overlay-via-final;
+
+  # when an input exports BOTH forms, the overlay wins and the legacy
+  # extendLib is never even consulted (its value here is a throw)
+  lib-overlay-preferred-over-extend-lib =
+    (myLib.nixosConfigurationsBuilder {
+      inputs = inputs // {
+        both-forms = {
+          outPath = "/nix/store/fake-both-forms-input";
+          libOverlays.default = final: prev: { bothFormsMarker = "overlay-won"; };
+          extendLib = throw "extendLib must not be consulted when libOverlays.default exists";
+        };
+      };
+      inherit system;
+      hostname = "bothforms";
+      modules = [
+        (exampleDir + "/hosts/server/configuration.nix")
+        ({ lib, ... }: { users.groups.${lib.bothFormsMarker} = { }; })
+      ];
+    }).config.users.groups ? overlay-won;
+
+  # ... and both forms answer to the ONE `extendLib` channel of
+  # inputContributions: opting it out drops the overlay too
+  lib-overlay-respects-channel-opt-out =
+    (myLib.nixosConfigurationsBuilder {
+      inputs = inputs // {
+        overlaid = {
+          outPath = "/nix/store/fake-lib-overlay-input";
+          libOverlays.default = final: prev: { libOverlayMarker = "from-lib-overlay"; };
+        };
+      };
+      inherit system;
+      hostname = "liboverlayoff";
+      modules = [
+        (exampleDir + "/hosts/server/configuration.nix")
+        ({ lib, ... }: {
+          users.groups.${if lib ? libOverlayMarker then "has-marker" else "no-marker"} = { };
+        })
+      ];
+      inputContributions."overlaid".extendLib = null;
+    }).config.users.groups ? no-marker;
+
   # an input's standalone `lib` export is namespaced by input name into
   # the module-arg lib ...
   input-lib-namespaced-in-module-lib =

@@ -241,10 +241,15 @@ let
   # What the resolved nixpkgs-lib-extensions input looks like to a consumer.
   # It mirrors flake.nix exactly, through the same shared rule: a fixture that
   # merged differently from the real export would test a setup nobody has.
+  ownLibAdditions = moduleLevel.addOwnLib nixpkgs.lib myLib;
+  selfLibOverlay =
+    final: prev:
+    nixpkgs.lib.recursiveUpdate ownLibAdditions (builtins.intersectAttrs ownLibAdditions prev);
   selfInput = {
     outPath = "/nix/store/fake-nixpkgs-lib-extensions";
     lib = myLib;
-    extendLib = lib': nixpkgs.lib.recursiveUpdate (moduleLevel.addOwnLib nixpkgs.lib myLib) lib';
+    libOverlays.default = selfLibOverlay;
+    extendLib = lib': lib' // selfLibOverlay lib' lib';
   };
 
   # Every host in the suite sees this repo as one of its own inputs, exactly

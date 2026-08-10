@@ -183,6 +183,24 @@ in
     in
     probe ? from-module-overlay && probe ? from-input-overlay;
 
+  # a module-level `nixpkgs.hostPlatform` IS ignored (the injected pkgs
+  # carries the platform), so the builder warns instead of staying silent
+  # -- nixpkgs' readOnlyPkgs module would make it a hard error, but is
+  # deliberately not imported because it also forbids the blessed
+  # module-level nixpkgs.overlays compose path above
+  module-level-host-platform-warns =
+    builtins.any (w: lib.hasInfix "nixpkgs.hostPlatform" w)
+      (myLib.nixosConfigurationsBuilder {
+        inherit inputs system;
+        hostname = "platformprobe";
+        modules = [
+          (exampleDir + "/hosts/server/configuration.nix")
+          { nixpkgs.hostPlatform = "aarch64-linux"; }
+        ];
+      }).config.warnings
+    # ... and only then: an untouched host carries no such warning
+    && !(builtins.any (w: lib.hasInfix "nixpkgs.hostPlatform" w) laptop.config.warnings);
+
   # ... while `nixpkgs.config` genuinely cannot be set that way: nixpkgs
   # asserts it must be empty when an externally built pkgs is passed in, so
   # the `nixpkgsConfig` builder argument is the only route for it.

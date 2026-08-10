@@ -100,17 +100,28 @@ let
         ;
 
       # Extend the system lib with this repo's own extensions (`self`, always
-      # available since the builders are part of nixpkgs-lib-extensions) plus any
-      # other input that exposes an `extendLib` function.
+      # available since the builders are part of nixpkgs-lib-extensions) plus
+      # every input's lib contribution, normalized to an OVERLAY
+      # (final: prev: delta): `libOverlays.default` is the canonical export
+      # and wins when both exist; the legacy `extendLib` endomorphism
+      # (lib -> newLib) is wrapped -- its whole result merges over prev, so
+      # it composes identically but cannot reference `final`. Both forms are
+      # governed by the `extendLib` channel of inputContributions (one
+      # lib-extension channel, whichever shape the input exports).
       # `channelEnabled` FIRST, like the `lib` channel below: behind the
-      # `v ? extendLib` guard a malformed selection on an input that exports
-      # no extendLib would be silently dropped instead of throwing.
-      libExtenders = baseLib.concatLists (
+      # export guards a malformed selection on an input exporting neither
+      # form would be silently dropped instead of throwing.
+      libOverlaysFromInputs = baseLib.concatLists (
         baseLib.mapAttrsToList (
           name: v:
-          baseLib.optional (
-            channelEnabled name "extendLib" (caseOf name) && baseLib.isAttrs v && v ? extendLib
-          ) v.extendLib
+          if !(channelEnabled name "extendLib" (caseOf name)) || !(baseLib.isAttrs v) then
+            [ ]
+          else if baseLib.isAttrs (v.libOverlays or null) && v.libOverlays ? default then
+            [ v.libOverlays.default ]
+          else if v ? extendLib then
+            [ (final: prev: v.extendLib prev) ]
+          else
+            [ ]
         ) conventionInputs
       );
 
@@ -120,9 +131,9 @@ let
       # `extendLib` and `overlays.default` must apply the identical one.
       ownAdditions = addOwnLib baseLib self;
 
-      extendedLib = baseLib.foldl' (acc: ext: acc.extend (final: prev: ext prev)) (baseLib.extend (
+      extendedLib = baseLib.foldl' (acc: overlay: acc.extend overlay) (baseLib.extend (
         final: prev: ownAdditions
-      )) libExtenders;
+      )) libOverlaysFromInputs;
 
       # Each input's standalone `lib` export, namespaced by input name:
       # exposed as `lib.<name>` in modules and as `pkgs.lib.<name>` (e.g.
