@@ -92,11 +92,12 @@ in
     so pin it in the user's `home.nix` if you rely on stateVersion
     semantics.
 
-    nixpkgs, hostGroup, specialArgs, tags, patches,
-    nixpkgsConfig, extraOverlays, allowedUnfreePackages,
-    permittedInsecurePackages, rootPath, homeManager, inputContributions
+    nixpkgs, hostGroup, specialArgs, tags, patches, nixpkgsConfig, extraOverlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions
     : Shared options (see `nixosConfigurationsBuilder`).
   */
+  # The long definition-list term above must stay on ONE line: gen-docs
+  # recognizes a term by a one-line lookahead to the `:` marker, and a
+  # wrapped term renders mangled (half prose, half bolded term).
   # See nixosConfigurationsBuilder: validate here, delegate with no core.
   # `username` is this builder's own argument, hence the extra allowance.
   homeConfigurationsBuilder =

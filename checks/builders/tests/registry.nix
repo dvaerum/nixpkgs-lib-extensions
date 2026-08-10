@@ -10,6 +10,7 @@
   server,
   homesThrow,
   exampleDir,
+  fixturesDir,
   invalidFixturesDir,
   ...
 }:
@@ -36,7 +37,9 @@
   # here rather than in the example: the warning fires on every evaluation
   # of whatever registry contains it, and the example doubles as the
   # `nix flake init` template, where four warnings on a first build look
-  # like something is broken.
+  # like something is broken. The shadowed directory lives in
+  # checks/fixtures/ for the same reason: only this probe references it,
+  # and the template should not ship an unreferenced user directory.
   shadowed-plain-entry-ignored =
     !(
       (myLib.nixosConfigurationsBuilder {
@@ -45,7 +48,7 @@
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         userRegistry = {
           "grace@*" = exampleDir + "/users/grace-base";
-          "grace" = exampleDir + "/users/grace-plain";
+          "grace" = fixturesDir + "/grace-plain";
         };
       }).config.users.groups ? grace-legacy
     );

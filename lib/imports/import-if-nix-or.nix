@@ -25,7 +25,11 @@
     from `import` is uncatchable, and `builtins.readFile` refuses binary
     files), so the probe runs `nix-instantiate --parse` in a small
     derivation -- import-from-derivation, built during evaluation on the
-    machine doing the evaluating, and cached per file content.
+    machine doing the evaluating (`preferLocalBuild`, no substitution),
+    and cached per file content. IFD is REQUIRED: any evaluation using
+    `importIfNix`/`importIfNixOr` fails under
+    `--no-allow-import-from-derivation` (the builders' `patches`
+    argument shares this constraint).
 
     # Example
 
@@ -68,23 +72,33 @@
         builtins.warn "importIfNixOr: ${toString path} ${reason}; using the default instead" default;
 
       # "does this file parse as Nix?" -- answered by a tiny derivation,
-      # since pure evaluation cannot inspect arbitrary file contents
+      # since pure evaluation cannot inspect arbitrary file contents.
+      # preferLocalBuild/allowSubstitutes: evaluation BLOCKS on this
+      # build, so shipping a seconds-long parse probe to a remote builder
+      # or asking a substituter for it costs more than running it here --
+      # and its output is per-machine throwaway, never worth caching
+      # remotely.
       parses =
         file:
         builtins.readFile (
-          pkgs.runCommand "is-valid-nix" { } ''
-            # give nix-instantiate writable state so it can start up
-            # inside the build sandbox; only the parser is used
-            export HOME=$TMPDIR
-            export NIX_STORE_DIR=$TMPDIR/nix/store
-            export NIX_STATE_DIR=$TMPDIR/nix/state
-            export NIX_CONF_DIR=$TMPDIR/nix/conf
-            if ${pkgs.nix}/bin/nix-instantiate --parse ${file} > /dev/null 2>&1; then
-              printf ok > $out
-            else
-              printf invalid > $out
-            fi
-          ''
+          pkgs.runCommand "is-valid-nix"
+            {
+              preferLocalBuild = true;
+              allowSubstitutes = false;
+            }
+            ''
+              # give nix-instantiate writable state so it can start up
+              # inside the build sandbox; only the parser is used
+              export HOME=$TMPDIR
+              export NIX_STORE_DIR=$TMPDIR/nix/store
+              export NIX_STATE_DIR=$TMPDIR/nix/state
+              export NIX_CONF_DIR=$TMPDIR/nix/conf
+              if ${pkgs.nix}/bin/nix-instantiate --parse ${file} > /dev/null 2>&1; then
+                printf ok > $out
+              else
+                printf invalid > $out
+              fi
+            ''
         ) == "ok";
     in
     if type == null then

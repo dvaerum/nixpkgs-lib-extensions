@@ -673,7 +673,11 @@ What it costs: the whole nixpkgs tree is copied into the store with
 the patches applied, and that copy must be BUILT before evaluation
 can continue (import-from-derivation) -- the first build pays a
 one-time cost, and eval-only workflows such as
-`nix flake check --no-build` stop working for that host.
+`nix flake check --no-build` stop working for that host. For the
+same reason a host with `patches` fails to evaluate at all under
+`--no-allow-import-from-derivation` (as does this library's
+`importIfNix`/`importIfNixOr`, whose parse probe is also a
+during-evaluation build).
 
 When NOT to use it: to change or fix a single package, an overlay
 (`extraOverlays`) is lighter and needs no source copy. Patches are
@@ -697,13 +701,20 @@ eval-level changes.
   `loginFlakeRef`) must be set -- all are required, and the service
   is simply absent otherwise. Users NOT in `loginHomes` never touch
   the bootstrap: their homes activate with `nixos-rebuild switch`.
+- A `loginHomes` name is only checked across the WHOLE hosts attrset:
+  a name no host's registry mentions at all throws (typo), but a name
+  that merely does not apply to some host is legal there -- one shared
+  list in `_defaults` is the normal shape. In a DIRECT
+  `nixosConfigurationsBuilder`/`homeConfigurationsBuilder` call there
+  is only one host in view, so unknown names are silently ignored.
 
 ## Verifying your setup
 
 This repo's own test suite doubles as living documentation: the
 example under [checks/example/](../checks/example/) is evaluated by
-`nix flake check`, and three further VM tests boot a machine: two log a
-user in and run a real `home-manager switch`, one checks that a
-system-managed home activates with the system. Reading
+`nix flake check`, and three further VM tests boot a machine: one logs
+a user in and runs a real `home-manager switch`, one verifies the
+login-service wiring with a recording home-manager stub, and one
+checks that a system-managed home activates with the system. Reading
 [checks/builders/tests/](../checks/builders/tests/) shows the exact
 guaranteed behavior of every feature described above.

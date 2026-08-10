@@ -186,9 +186,12 @@ in
     : flake must export those `homeConfigurations` outputs (built by
     : `buildHomeConfigurations` from the same hosts attrset). Accounts
     : and `configuration.nix` handling are unaffected. Names not
-    : matching any of this host's users are ignored (the list is
-    : usually shared through `_defaults` across hosts). Default `[ ]`
-    : (every home is system-managed).
+    : matching any of this host's users are ignored in a DIRECT call
+    : like this (the list is usually shared through `_defaults` across
+    : hosts, so "not on this host" is normal) -- but the hosts-attrset
+    : builders see every host at once, and a name that matches no
+    : registry user on ANY host is a typo and THROWS there. Default
+    : `[ ]` (every home is system-managed).
 
     loginFlakeRef
     : Where the login bootstrap finds the home configurations of
@@ -235,7 +238,10 @@ in
     patches
     : Patch files applied to the nixpkgs SOURCE tree (via `applyPatches`)
     : before the system is evaluated from it. Default `[ ]` (no patching,
-    : no source copy). See
+    : no source copy). A non-empty list requires import-from-derivation:
+    : the patched tree is BUILT during evaluation, so that host fails
+    : under `--no-allow-import-from-derivation` (and eval-only workflows
+    : like `nix flake check --no-build` stop working for it). See
     : [Patching nixpkgs itself](getting-started.md#patching-nixpkgs-itself)
     : for an example and the costs involved.
 
