@@ -31,6 +31,26 @@ let
       inherit inputs system hostname;
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ] ++ modules;
     };
+
+  # The declared `nixpkgsLibExtensions.*` option names, from the HOME
+  # variant -- the superset (it adds `hostname`). ext-options.nix depends
+  # only on `lib`, so it can be imported directly.
+  declaredOptionNames =
+    builtins.attrNames
+      (
+        (import (repoDir + "/lib/nixos/internal/ext-options.nix") {
+          inherit lib;
+          self = myLib;
+        }).extHomeOptionsModule
+        {
+          hostname = "probe";
+          group = null;
+          tags = [ ];
+          users = [ ];
+          inputPkgs = { };
+          channels = { };
+        }
+      ).options.nixpkgsLibExtensions;
 in
 {
   # ── the options hold the builder's values, in NixOS modules ──
@@ -115,24 +135,9 @@ in
   # and it cannot drift from the declarations, in either direction: every
   # declared option name appears in docs/getting-started.md as
   # `nixpkgsLibExtensions.<name>`, and every such mention in the guide
-  # names a declared option. The HOME variant is the superset (it adds
-  # `hostname`), so its declaration set is the one compared.
+  # names a declared option.
   ext-options-documented-in-guide =
     let
-      extOpts = import (repoDir + "/lib/nixos/internal/ext-options.nix") {
-        inherit lib;
-        self = myLib;
-      };
-      declared =
-        builtins.attrNames
-          (extOpts.extHomeOptionsModule {
-            hostname = "probe";
-            group = null;
-            tags = [ ];
-            users = [ ];
-            inputPkgs = { };
-            channels = { };
-          }).options.nixpkgsLibExtensions;
       guide = builtins.readFile (repoDir + "/docs/getting-started.md");
       mentioned = lib.unique (
         lib.concatMap (m: if lib.isList m then m else [ ]) (
@@ -140,6 +145,22 @@ in
         )
       );
     in
-    builtins.all (n: builtins.elem n mentioned) declared
-    && builtins.all (n: builtins.elem n declared) mentioned;
+    builtins.all (n: builtins.elem n mentioned) declaredOptionNames
+    && builtins.all (n: builtins.elem n declaredOptionNames) mentioned;
+
+  # the reserved-specialArgs guard in context.nix tracks the options: its
+  # option-backed names and the declared option names are the SAME set -- a
+  # declared option whose name is not reserved would let a specialArg
+  # split-brain it, silently. The home variant is compared because its
+  # declarations are the superset: `hostname` is an option only there,
+  # yet reserved everywhere. The one deliberate delta, `username`, is on
+  # NEITHER side: reserved in context.nix for the same hazard, but wired
+  # by both home mechanisms as a module ARGUMENT, never declared as an
+  # option -- so it must stay out of the option-backed list too.
+  reserved-names-match-declared-options =
+    builtins.attrNames
+      (import (repoDir + "/lib/nixos/internal/context.nix") {
+        inherit lib;
+        self = myLib;
+      }).optionBackedReserved == declaredOptionNames;
 }

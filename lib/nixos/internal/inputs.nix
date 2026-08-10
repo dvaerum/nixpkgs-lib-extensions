@@ -59,8 +59,8 @@ let
   # can only switch on or off.
   #
   # Each entry-set channel maps to HOW its exports are located on an input.
-  # internal/context.nix derives its collectors from this very table, so a
-  # channel added here gets collected by construction -- the accepted-keys
+  # collectFromInputs below derives its collectors from this very table, so
+  # a channel added here gets collected by construction -- the accepted-keys
   # list cannot drift away from the code that acts on it.
   entrySetChannels = {
     nixosModules = v: v.nixosModules or { };
@@ -401,20 +401,16 @@ let
   isNixpkgsTree = v: v ? legacyPackages && (libOf v) ? nixosSystem;
 in
 {
-  # Exported = consumed elsewhere. The channel lists, pickExported and the
-  # rest stay private: they are implementation detail of the functions
-  # below, and re-exporting them would read as public surface.
+  # Exported = consumed elsewhere (context.nix, hosts-args.nix and
+  # shared.nix). The channel tables, the case machinery (classifyCase,
+  # resolveEntrySet, ...) and pickExported stay private: implementation
+  # detail of the functions below, and re-exporting them would read as
+  # public surface.
   inherit
     detectHomeManager
     libOf
-    collectFromInputs
-    entrySetChannels
-    classifyCase
-    resolveEntrySet
     channelEnabled
-    validateCases
-    builtinInputSpecialCases
-    normalizeInput
+    collectFromInputs
     isNixpkgsTree
     ;
 }

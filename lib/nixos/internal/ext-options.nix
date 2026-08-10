@@ -15,6 +15,7 @@
 { lib, self, ... }:
 let
   inherit (lib) mkOption types literalMD;
+  inherit (import ./priorities.nix { inherit lib; }) builderDefaultPriority mkBuilderDefault;
 
   # One options module serves BOTH module systems (NixOS and home-manager);
   # only `hostname` differs: a NixOS module reads config.networking.hostName
@@ -105,15 +106,16 @@ in
   # makes a first home build work -- but a home that actually RELIES on it
   # is warned: stateVersion exists to be pinned, and a default that
   # silently tracks the moving release defeats it. The default is emitted
-  # BELOW mkDefault priority (mkOverride 1250, above the option-default
-  # 1500): the warning itself recommends pinning via a shared homeModules
-  # entry, and such an entry naturally writes `lib.mkDefault` -- at equal
-  # priority that recipe would COLLIDE with this very default instead of
-  # beating it. Detection is by definition priority (the same technique as
-  # the platform warnings in mk-system.nix): any definition beating 1250
-  # is a pin, and for a pinned home neither the warning nor the default
-  # value is ever evaluated -- losing definitions are discarded by
-  # priority alone, unforced. The message lands twice on purpose: as an
+  # at mkBuilderDefault strength (see ./priorities.nix: below mkDefault,
+  # above the option default): the warning itself recommends pinning via a
+  # shared homeModules entry, and such an entry naturally writes
+  # `lib.mkDefault` -- at equal priority that recipe would COLLIDE with
+  # this very default instead of beating it. Detection is by definition
+  # priority (the same technique as the platform warnings in
+  # mk-system.nix): any definition beating builderDefaultPriority is a
+  # pin, and for a pinned home neither the warning nor the default value
+  # is ever evaluated -- losing definitions are discarded by priority
+  # alone, unforced. The message lands twice on purpose: as an
   # eval warning on the value (visible wherever the home is evaluated) and
   # as a `warnings` entry (testable data; NixOS and home-manager surface
   # it through their normal warning plumbing).
@@ -132,11 +134,11 @@ in
           ...
         }:
         let
-          relies = options.home.stateVersion.highestPrio >= (lib.mkOverride 1250 null).priority;
-          msg = "nixpkgs-lib-extensions: host `${hostname}`: the home of `${username}` does not pin `home.stateVersion`, so it follows the CURRENT nixpkgs release (now ${lib.trivial.release}) and changes meaning on every nixpkgs bump. Pin it in that user's home.nix (`home.stateVersion = \"${lib.trivial.release}\";`), or fleet-wide via an entry in the shared `homeModules` builder argument.";
+          relies = options.home.stateVersion.highestPrio >= builderDefaultPriority;
+          msg = "nixpkgs-lib-extensions: host `${hostname}`: the home of `${username}` does not pin `home.stateVersion` (no definition beats the builder's default priority -- a `lib.mkOptionDefault` definition is still unpinned), so it follows the CURRENT nixpkgs release (now ${lib.trivial.release}) and changes meaning on every nixpkgs bump. Pin it in that user's home.nix (`home.stateVersion = \"${lib.trivial.release}\";`), or fleet-wide via an entry in the shared `homeModules` builder argument.";
         in
         {
-          home.stateVersion = lib.mkOverride 1250 (lib.warn msg lib.trivial.release);
+          home.stateVersion = mkBuilderDefault (lib.warn msg lib.trivial.release);
           warnings = lib.optional relies msg;
         }
       )

@@ -338,6 +338,26 @@ let
   # is simply out of reach, and all three could go.
   mkContextCoreOrGiven = core: args: if core == null then mkContextCore args else core;
 
+  # The option-backed half of mkContext's reserved specialArgs names:
+  # modules read these through the `nixpkgsLibExtensions.*` options, so a
+  # specialArg of the same name would hand a module a value the option does
+  # not hold -- a split brain, not an override. This is the HOME variant's
+  # declaration set, the superset: only homes declare `hostname` (NixOS
+  # modules read config.networking.hostName), but the specialArg name is
+  # reserved either way. NOT here, though reserved for the same hazard:
+  # `username`, which is a module ARGUMENT (`_module.args.username`, layered
+  # after specialArgs by both home mechanisms), not an option.
+  # checks/builders/tests/ext-options.nix asserts these names and the option
+  # declarations in ./ext-options.nix cannot drift apart.
+  optionBackedReserved = {
+    hostname = null;
+    tags = null;
+    group = null;
+    users = null;
+    inputPkgs = null;
+    channels = null;
+  };
+
   mkContext =
     givenCore:
     {
@@ -381,31 +401,27 @@ let
       # while networking.hostName kept the real one, and `rootPath` silently
       # moved the hosts/<host> file lookup. So: say so. Everything NOT
       # reserved here still passes through freely.
-      # The names of the `nixpkgsLibExtensions.*` options (plus `hostname`)
-      # are reserved for the same hazard: a module destructuring
-      # `{ tags, ... }` would read the specialArg while the option keeps the
-      # builder's real value -- a split brain, not an override. `username`
-      # is layered AFTER specialArgs by both home mechanisms, so a
-      # specialArg of that name would be silently discarded; reserved so it
-      # throws like the rest. The MODULE-SYSTEM-owned arguments (`pkgs`,
+      # The option-backed names (optionBackedReserved above) are reserved
+      # for the same hazard: a module destructuring `{ tags, ... }` would
+      # read the specialArg while the option keeps the builder's real value.
+      # `username` is layered AFTER specialArgs by both home mechanisms, so
+      # a specialArg of that name would be silently discarded; reserved so
+      # it throws like the rest. The MODULE-SYSTEM-owned arguments (`pkgs`,
       # `lib`, `config`, `options`, `modulesPath`) are reserved too: a
       # specialArg of one of those names overrides the module system's own
       # wiring (nixpkgs warns about `specialArgs.pkgs`; the others break in
       # quieter ways).
-      reserved = builderOwned // {
-        hostname = null;
-        tags = null;
-        group = null;
-        users = null;
-        inputPkgs = null;
-        channels = null;
-        username = null;
-        pkgs = null;
-        lib = null;
-        config = null;
-        options = null;
-        modulesPath = null;
-      };
+      reserved =
+        builderOwned
+        // optionBackedReserved
+        // {
+          username = null;
+          pkgs = null;
+          lib = null;
+          config = null;
+          options = null;
+          modulesPath = null;
+        };
       shadowed = lib.attrNames (lib.intersectAttrs reserved specialArgs);
       shadowCheck =
         if shadowed == [ ] then
@@ -441,5 +457,6 @@ in
     coreDefaults
     mkContextCore
     mkContext
+    optionBackedReserved
     ;
 }

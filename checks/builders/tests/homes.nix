@@ -160,6 +160,8 @@
     && lib.hasInfix "`unpinned`" warning
     && lib.hasInfix "home.nix" warning
     && lib.hasInfix "homeModules" warning
+    # ... and says what counts as a pin: mkOptionDefault does not
+    && lib.hasInfix "mkOptionDefault" warning
     && probe.config.home.stateVersion == lib.trivial.release;
   # homeModules (set in the example's _defaults) reach login homes
   home-shared-modules-applied = aliceHome.config.programs.direnv.enable;
@@ -186,6 +188,29 @@
     in
     probe.config.home.stateVersion == "25.05"
     && !(builtins.any (w: lib.hasInfix "home.stateVersion" w) probe.config.warnings);
+
+  # ... while the warning's mkOptionDefault clause holds: a definition AT
+  # OR BELOW the builder's default priority is not a pin -- the builder's
+  # default still wins and the home still counts as unpinned
+  home-state-version-mkoptiondefault-still-warns =
+    let
+      probe = myLib.mkHomeConfiguration {
+        inherit inputs system;
+        hostname = "laptop";
+        username = "unpinned";
+        userRegistry."unpinned" = fixturesDir + "/unpinned-home";
+        homeModules = [
+          (
+            { lib, ... }:
+            {
+              home.stateVersion = lib.mkOptionDefault "25.05";
+            }
+          )
+        ];
+      };
+    in
+    probe.config.home.stateVersion == lib.trivial.release
+    && builtins.any (w: lib.hasInfix "home.stateVersion" w) probe.config.warnings;
 
   # ... and throws when the matched registry entries ship no home.nix at
   # all (eve is a system-only user: configuration.nix, no home.nix)
