@@ -16,7 +16,7 @@
 }:
 {
   users-derived-from-registry =
-    laptop._module.specialArgs.listOfUsernames == [
+    laptop.config.nixpkgsLibExtensions.users == [
       "alice"
       "bob"
       "dave"
@@ -106,7 +106,7 @@
     ];
 
   # the server has no registry: no users
-  server-no-users = server._module.specialArgs.listOfUsernames == [ ];
+  server-no-users = server.config.nixpkgsLibExtensions.users == [ ];
 
   # a plain entry still applies when the user's only @-entries target OTHER
   # hosts (shadowing needs a matching @-entry, not any @-entry)
@@ -136,7 +136,7 @@
         }
       );
     in
-    sys._module.specialArgs.listOfUsernames == [ ]
+    sys.config.nixpkgsLibExtensions.users == [ ]
     && !(sys.config.systemd.user.services ? home-manager-bootstrap);
 
   # ── registry keys that cannot match anything ──
@@ -182,7 +182,7 @@
           "frank@*" = exampleDir + "/users/frank-base";
         };
       };
-    }).laptop._module.specialArgs.listOfUsernames == [
+    }).laptop.config.nixpkgsLibExtensions.users == [
       "alice"
       "bob"
       "frank"

@@ -59,10 +59,10 @@ in
   defaults-applied =
     built.defhost.config.users.groups ? from-defaults-module
     && built.defhost._module.specialArgs.fromDefaults == "d"
-    && built.defhost._module.specialArgs.tags == [ "default-tag" ];
+    && built.defhost.config.nixpkgsLibExtensions.tags == [ "default-tag" ];
 
   # per-argument merge, host wins entirely
-  defaults-host-override-wins = built.overridehost._module.specialArgs.tags == [ "host-tag" ];
+  defaults-host-override-wins = built.overridehost.config.nixpkgsLibExtensions.tags == [ "host-tag" ];
 
   # `extra.modules` ADDS to _defaults.modules rather than replacing it
   defaults-modules-layering =
@@ -124,7 +124,7 @@ in
         h.extra.tags = [ "host" ];
       };
     in
-    built.h._module.specialArgs.tags == [
+    built.h.config.nixpkgsLibExtensions.tags == [
       "base"
       "host"
     ];
@@ -370,9 +370,9 @@ in
     built.cudahost.pkgs.config.cudaSupport
     && !built.plainhost.pkgs.config.cudaSupport
     && !reference.pkgs.config.cudaSupport
-    && built.plainhost._module.specialArgs.hostname == "plainhost"
-    && built.cudahost._module.specialArgs.hostname == "cudahost"
-    && built.plainhost._module.specialArgs.tags == reference._module.specialArgs.tags
+    && built.plainhost.config.networking.hostName == "plainhost"
+    && built.cudahost.config.networking.hostName == "cudahost"
+    && built.plainhost.config.nixpkgsLibExtensions.tags == reference.config.nixpkgsLibExtensions.tags
     # the two non-default hosts share one pkgs instantiation ...
     && built.cudahost.pkgs.coreSharingProbe == built.cudahost2.pkgs.coreSharingProbe
     # ... which is NOT the defaults-class instantiation

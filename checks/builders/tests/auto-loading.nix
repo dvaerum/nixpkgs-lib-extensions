@@ -136,9 +136,11 @@ in
   # the whole inputs set is exposed (no per-input policy): NixOS modules
   # get it as a specialArg ...
   inputs-special-arg = laptop._module.specialArgs.inputs ? fenix;
-  # ... with every input's packages pre-selected for this system
-  input-pkgs-special-arg =
-    (laptop._module.specialArgs.inputPkgs.fenix.complete.withComponents [ ]) == "fake-rust-toolchain";
+  # ... with every input's packages pre-selected for this system, as the
+  # `nixpkgsLibExtensions.inputPkgs` option (no longer a specialArg)
+  input-pkgs-option =
+    (laptop.config.nixpkgsLibExtensions.inputPkgs.fenix.complete.withComponents [ ])
+    == "fake-rust-toolchain";
   # ... and home-manager modules via extraSpecialArgs
   inputs-reach-home-modules =
     (myLib.homeConfigurationsBuilder {

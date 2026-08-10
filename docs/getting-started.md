@@ -235,9 +235,10 @@ Both existing at once is an error. Anything extra goes in `modules`.
 With many machines, group them by kind: set `hostGroup = "vm";` on a
 host and the lookup moves one folder deeper, to
 `hosts/vm/<hostname>.nix` (or `hosts/vm/<hostname>/configuration.nix`).
-The value also reaches your modules as the `hostGroup` specialArg,
-so shared modules can branch on it. Without `hostGroup` nothing
-changes -- no extra subfolder is consulted.
+The value also reaches your modules as
+`config.nixpkgsLibExtensions.hostGroup`, so shared modules can branch
+on it. Without `hostGroup` nothing changes -- no extra subfolder is
+consulted.
 
 ## Accounts
 
@@ -420,7 +421,7 @@ For every flake input, by convention:
 | `overlays.default`               | applied to `pkgs`            |
 | `extendLib`                      | merged into the system `lib` |
 | `lib`                            | namespaced: `lib.<name>.*`   |
-| `nixpkgs-*` (package sets)       | `pkgs-*` specialArgs         |
+| `nixpkgs-*` (package sets)       | `nixpkgsLibExtensions.channels.<variant>` option (and legacy `pkgs-*` specialArgs) |
 
 The `default` export is auto-loaded. Without one, a set with exactly
 ONE entry is unambiguous and that entry is used (sops-nix and
@@ -557,36 +558,52 @@ named it, and its NixOS module is never auto-imported absent an
 explicit selection (the builder
 wires it in deliberately where system-managed homes need it).
 
-## What your modules receive (specialArgs)
+## What your modules receive
 
-Both NixOS modules and home-manager modules get:
+Both NixOS modules and home-manager modules get a small set of
+specialArgs -- the true import-time values, usable even in `imports`:
 
 | Arg | Content |
 |-----|---------|
 | `inputs` | the whole flake inputs set |
-| `inputPkgs.<name>` | every input's packages, pre-selected for the host's system |
-| `pkgs-<variant>` | package set per `nixpkgs-*` input |
 | `extLib` | this repo's lib (also merged into `lib`) |
-| `hostname`, `rootPath`, `tags`, `hostGroup` | the call arguments of the same name |
-| `listOfUsernames` | the host's registry-derived users |
-| `username` | home-manager configs only: whose home |
+| `rootPath` | the root of the `hosts/<hostname>` convention |
+| `pkgs-<variant>` | legacy: package set per `nixpkgs-*` input (canonical path below) |
 
-Anything you pass as `specialArgs = { ... };` is merged alongside these,
-(a host adds to it with `extra.specialArgs`). The names in the table
-above are **builder-owned**: redefining one throws, because overriding
-it would change only what modules see and not what the builder did --
-a `hostname` specialArg used to give modules one name while
-`networking.hostName` and the `hosts/<hostname>` lookup kept another.
-Set the corresponding builder argument instead. `pkgs` is deliberately
-not a specialArg -- modules receive it from the module system.
+Everything else the builder derives is declared as ordinary module
+options under `nixpkgsLibExtensions.*`, in every NixOS module set and
+in every home (both mechanisms):
+
+| Option | Content |
+|--------|---------|
+| `nixpkgsLibExtensions.tags` | host tags; modules can ADD tags (list definitions merge) |
+| `nixpkgsLibExtensions.hostGroup` | the call argument of the same name (read-only) |
+| `nixpkgsLibExtensions.users` | the host's registry-derived users (read-only) |
+| `nixpkgsLibExtensions.inputPkgs.<name>` | every input's packages, pre-selected for the host's system (read-only) |
+| `nixpkgsLibExtensions.channels.<variant>` | package set per `nixpkgs-*` input (read-only) |
+| `nixpkgsLibExtensions.hostname` | homes only: the host the home is built for -- NixOS modules read `config.networking.hostName` |
+
+Home-manager modules additionally receive `username` (whose home) as a
+module argument. These names used to be specialArgs; a module still
+reading one of the old ones (`hostname`, `tags`, `hostGroup`,
+`listOfUsernames`, `inputPkgs`) fails with a message naming the
+replacement path.
+
+Anything you pass as `specialArgs = { ... };` is merged alongside the
+kept specialArgs (a host adds to it with `extra.specialArgs`). The
+kept names are **builder-owned** and the moved names stay reserved:
+redefining either throws -- overriding one would change only what
+modules see, not what the builder did. Set the corresponding builder
+argument instead. `pkgs` is deliberately not a specialArg -- modules
+receive it from the module system.
 
 Example -- use a package from an input without any wiring:
 
 ```nix
-{ inputPkgs, ... }:
+{ config, ... }:
 {
   environment.systemPackages = [
-    inputPkgs.disko.disko-install
+    config.nixpkgsLibExtensions.inputPkgs.disko.disko-install
   ];
 }
 ```
@@ -635,8 +652,8 @@ Package-set knobs per host (full reference in [lib.md](lib.md)):
 
 ```nix
 laptop = {
-  # reach modules as `tags` and label the
-  # boot-menu entries (system.nixos.tags)
+  # reach modules as config.nixpkgsLibExtensions.tags
+  # and label the boot-menu entries (system.nixos.tags)
   tags = [ "gpu" ];
   # merged into nixpkgs.config
   nixpkgsConfig = { cudaSupport = true; };

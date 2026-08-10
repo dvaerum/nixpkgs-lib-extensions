@@ -18,6 +18,9 @@
 { lib, self, ... }:
 let
   inherit (import ./module-level.nix { inherit lib self; }) addOwnLib;
+  # the moved-specialArg names (values here: replacement paths, unused --
+  # only the NAMES matter for reserving them below)
+  movedSpecialArgs = (import ./ext-options.nix { inherit lib self; }).movedNixosSpecialArgs;
   inherit (import ./inputs.nix { inherit lib self; })
     detectHomeManager
     libOf
@@ -269,17 +272,21 @@ let
       autoNixosModules = collected.nixosModules;
       autoHomeModules = collected.homeModules;
 
-      # Expose every other `nixpkgs-*` input as a `pkgs-*` specialArg, with
-      # the same overlays and config as the primary (e.g. nixpkgs-unstable ->
-      # pkgs-unstable) but WITHOUT `patches`: those target this host's own
-      # nixpkgs revision and would fail to apply to a different tree.
-      pkgsFromInputs =
-        lib.mapAttrs' (name: np: lib.nameValuePair "pkgs-${lib.removePrefix "nixpkgs-" name}" (mkPkgs np))
+      # Every other `nixpkgs-*` input, keyed by variant (nixpkgs-unstable ->
+      # unstable), with the same overlays and config as the primary but
+      # WITHOUT `patches`: those target this host's own nixpkgs revision and
+      # would fail to apply to a different tree. Canonically exposed as the
+      # `nixpkgsLibExtensions.channels.<variant>` option; the legacy
+      # `pkgs-<variant>` specialArgs below are derived from this same table
+      # and stay until the planned breaking release.
+      channels =
+        lib.mapAttrs' (name: np: lib.nameValuePair (lib.removePrefix "nixpkgs-" name) (mkPkgs np))
           (
             lib.filterAttrs (
               name: v: lib.hasPrefix "nixpkgs-" name && lib.isAttrs v && v ? legacyPackages
             ) inputs
           );
+      pkgsFromInputs = lib.mapAttrs' (name: lib.nameValuePair "pkgs-${name}") channels;
 
       # Every input's packages, pre-selected for this system: e.g.
       # `inputPkgs.disko.disko-install`. Deliberately NOT merged into `pkgs`
@@ -299,6 +306,7 @@ let
         autoOverlays
         autoNixosModules
         autoHomeModules
+        channels
         pkgsFromInputs
         inputPkgs
         inputLibAdditions
@@ -326,9 +334,7 @@ let
     {
       inputs,
       hostname,
-      tags ? [ ],
       specialArgs ? { },
-      hostGroup ? null,
       # a throw, not a silent nonsense default: without inputs.self the
       # old `./.` fallback pointed INSIDE this library's own store tree,
       # so the hosts/<hostname> convention searched the wrong repo
@@ -344,21 +350,20 @@ let
       # that ever passes one.
       core = mkContextCoreOrGiven givenCore args;
 
-      # The whole `inputs` set is exposed so modules can reach anything not
-      # covered by the generic conventions (e.g. inputs.fenix) themselves --
-      # the lib carries no per-input special cases.
+      # Only the true import-time values remain specialArgs: the whole
+      # `inputs` set (so modules can reach anything the generic conventions
+      # do not cover, e.g. inputs.fenix -- the lib carries no per-input
+      # special cases), `rootPath`, `extLib`, and the legacy `pkgs-*`
+      # variants (canonical home: the `nixpkgsLibExtensions.channels`
+      # option; the specialArgs stay until the planned breaking release).
+      # Everything else the builder derives lives in the always-imported
+      # `nixpkgsLibExtensions` options module (./ext-options.nix), where
+      # values merge, carry types and are guarded by the module system.
       # Note: `pkgs` deliberately not included — modules already receive it from
       # the module system, and `specialArgs.pkgs` would override that wiring
       # (nixpkgs warns about it).
       builderOwned = {
-        inherit
-          hostname
-          inputs
-          rootPath
-          tags
-          hostGroup
-          ;
-        inherit (core) inputPkgs;
+        inherit inputs rootPath;
         # the specialArg keeps its user-facing name; its value is the lib
         # loader's fixed point
         extLib = self;
@@ -367,28 +372,28 @@ let
 
       # Shadowing a builder-owned name used to "work" and produce a
       # split-brain host: `specialArgs.hostname = "other"` reached modules
-      # while networking.hostName kept the real one, and `rootPath` /
-      # `hostGroup` silently moved the hosts/<host> file lookup. The
-      # override promise was never true anyway -- `listOfUsernames` and
-      # `username` are layered after specialArgs and cannot be overridden.
-      # So: say so. Everything NOT owned here still passes through freely.
-      # `listOfUsernames` and `username` are layered AFTER specialArgs by
-      # both builders, so a specialArg of either name is silently discarded
-      # -- the two names this check's own comment cites as proof the
-      # override promise was false. Reserved here so they throw like the
-      # rest instead of being the exception that teaches "silence means
-      # accepted".
-      reserved = builderOwned // {
-        listOfUsernames = null;
-        username = null;
-      };
+      # while networking.hostName kept the real one, and `rootPath` silently
+      # moved the hosts/<host> file lookup. So: say so. Everything NOT
+      # reserved here still passes through freely.
+      # The MOVED names (./ext-options.nix) stay reserved too: a specialArg
+      # of one would mask its `_module.args` tombstone and let modules read
+      # a value the `nixpkgsLibExtensions` options do not hold -- the same
+      # split brain wearing a new name. `username` is layered AFTER
+      # specialArgs by both home mechanisms, so a specialArg of that name
+      # would be silently discarded; reserved so it throws like the rest.
+      reserved =
+        builderOwned
+        // movedSpecialArgs
+        // {
+          username = null;
+        };
       shadowed = builtins.attrNames (builtins.intersectAttrs reserved specialArgs);
       shadowCheck =
         if shadowed == [ ] then
           null
         else
           throw ''
-            nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the builder-owned name(s) ${builtins.concatStringsSep ", " shadowed}. They are derived from the builder's own arguments, and overriding them here changes what MODULES see without changing what the builder did -- e.g. a `hostname` specialArg leaves networking.hostName and the hosts/<hostname> lookup on the real name. Set the corresponding builder argument instead, or pick a different specialArg name.
+            nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the reserved name(s) ${builtins.concatStringsSep ", " shadowed}. `inputs`, `rootPath`, `extLib` and the `pkgs-*` variants are builder-owned -- derived from the builder's own arguments, so overriding them here changes what MODULES see without changing what the builder did. `hostname`, `tags`, `hostGroup`, `listOfUsernames`, `inputPkgs` and `username` are not specialArgs anymore at all: modules read the `nixpkgsLibExtensions.*` options (and `config.networking.hostName` / the `username` module argument) instead. Set the corresponding builder argument, or pick a different specialArg name.
           '';
 
       # `specialArgs` already carries any per-host `extra.specialArgs`,
@@ -403,6 +408,8 @@ let
         home-manager
         autoNixosModules
         autoHomeModules
+        inputPkgs
+        channels
         ;
       inherit mySpecialArguments;
     };

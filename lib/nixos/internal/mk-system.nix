@@ -16,6 +16,10 @@
 { lib, self, ... }:
 let
   inherit (import ./context.nix { inherit lib self; }) mkContext;
+  inherit (import ./ext-options.nix { inherit lib self; })
+    extNixosOptionsModule
+    extHomeOptionsModule
+    ;
   inherit (import ./registry.nix { inherit lib self; })
     resolveUser
     usersFromRegistry
@@ -37,6 +41,7 @@ in
       loginFlakeRef ? null,
       loginReactivateEveryLogin ? false,
       tags ? [ ],
+      hostGroup ? null,
       ...
     }@args:
     let
@@ -50,6 +55,14 @@ in
         autoHomeModules
         home-manager
         ;
+
+      # The builder-derived values every module reads as the
+      # `nixpkgsLibExtensions.*` options (plus `hostname` for the home
+      # variant, where no networking.hostName exists).
+      extOptionValues = {
+        inherit hostGroup tags users;
+        inherit (ctx) inputPkgs channels;
+      };
 
       registry = if userRegistry == null then { } else userRegistry;
 
@@ -96,13 +109,14 @@ in
               # both mkDefault: override in your own modules if needed
               useGlobalPkgs = lib.mkDefault true;
               useUserPackages = lib.mkDefault true;
-              extraSpecialArgs = mySpecialArguments // {
-                listOfUsernames = users;
-              };
+              extraSpecialArgs = mySpecialArguments;
               sharedModules =
                 autoHomeModules
                 ++ homeModules
                 ++ [
+                  # the same `nixpkgsLibExtensions.*` options inside every
+                  # home that the system's own modules see
+                  (extHomeOptionsModule (extOptionValues // { inherit hostname; }))
                   {
                     _file = ../nixosConfigurationsBuilder.nix;
                     home.stateVersion = lib.mkDefault lib.trivial.release;
@@ -127,10 +141,7 @@ in
       autoHostModules =
         let
           hostsDir =
-            mySpecialArguments.rootPath
-            + (
-              if mySpecialArguments.hostGroup == null then "/hosts" else "/hosts/${mySpecialArguments.hostGroup}"
-            );
+            mySpecialArguments.rootPath + (if hostGroup == null then "/hosts" else "/hosts/${hostGroup}");
           file = hostsDir + "/${hostname}.nix";
           dir = hostsDir + "/${hostname}/configuration.nix";
           fileExists = builtins.pathExists file;
@@ -169,18 +180,19 @@ in
     # buildNixosConfigurations key a whole set of hosts.
     (import "${selectedSrc}/nixos/lib/eval-config.nix" {
       inherit system lib pkgs;
-      specialArgs = mySpecialArguments // {
-        listOfUsernames = users;
-      };
+      specialArgs = mySpecialArguments;
       modules = [
+        # the builder-derived values as declared options -- always imported
+        (extNixosOptionsModule extOptionValues)
         (
-          { ... }:
+          { config, ... }:
           {
             _file = ../nixosConfigurationsBuilder.nix;
             networking.hostName = lib.mkDefault hostname;
-            # host tags label the boot entry too; a host setting the
-            # option itself overrides this
-            system.nixos.tags = lib.mkDefault tags;
+            # host tags label the boot entry too -- the MERGED option value,
+            # so tags contributed by modules land there as well; a host
+            # setting the option itself overrides this
+            system.nixos.tags = lib.mkDefault config.nixpkgsLibExtensions.tags;
             # NOTE: this used to warn that module-level nixpkgs.overlays /
             # nixpkgs.config are ignored because the builder provides
             # `pkgs`. That was WRONG. Passing `pkgs` as an eval-config

@@ -6,6 +6,7 @@
 { lib, self, ... }:
 let
   inherit (import ./context.nix { inherit lib self; }) mkContext;
+  inherit (import ./ext-options.nix { inherit lib self; }) extHomeOptionsModule;
   inherit (import ./registry.nix { inherit lib self; }) resolveUser usersFromRegistry;
 in
 {
@@ -18,6 +19,8 @@ in
       username,
       userRegistry ? { },
       homeModules ? [ ],
+      tags ? [ ],
+      hostGroup ? null,
       ...
     }@args:
     let
@@ -53,21 +56,29 @@ in
           # fixed point) -- with the default pkgs.lib the namespaced input
           # libs would be lost in that re-fix
           inherit pkgs lib;
-          extraSpecialArgs = mySpecialArguments // {
-            inherit username;
-            listOfUsernames = usersFromRegistry registry hostname;
-          };
+          extraSpecialArgs = mySpecialArguments;
           modules =
             autoHomeModules
             ++ homeModules
             # all matched home.nix files: "<user>@*" and "<user>@<host>" merge
             ++ registryHomeModules
             ++ [
+              # the same `nixpkgsLibExtensions.*` options a SYSTEM-managed
+              # home gets via home-manager.sharedModules (mk-system.nix)
+              (extHomeOptionsModule {
+                inherit hostname hostGroup tags;
+                users = usersFromRegistry registry hostname;
+                inherit (ctx) inputPkgs channels;
+              })
               {
                 _file = ../homeConfigurationsBuilder.nix;
                 home.username = lib.mkDefault username;
                 home.homeDirectory = lib.mkDefault "/home/${username}";
                 home.stateVersion = lib.mkDefault lib.trivial.release;
+                # `username` stays a per-home module argument, like the
+                # system-managed mechanism wires it (extraSpecialArgs cannot
+                # vary per user there; _module.args can)
+                _module.args.username = username;
               }
             ];
         }

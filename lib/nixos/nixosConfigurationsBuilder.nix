@@ -40,8 +40,13 @@ in
       flake's own `lib` output (`inputs.self`) is renamed to `lib.flake`
       -- export your helper functions there and every module gets them as
       `lib.flake.<helper>` with zero wiring.
-    - every `nixpkgs-*` input as a `pkgs-*` specialArg (e.g. `inputs.nixpkgs-unstable`
-      becomes the `pkgs-unstable` specialArg).
+    - every `nixpkgs-*` input as a package set under the
+      `nixpkgsLibExtensions.channels.<variant>` option (e.g.
+      `inputs.nixpkgs-unstable` becomes
+      `config.nixpkgsLibExtensions.channels.unstable`), built with the same
+      overlays and config as the primary `pkgs`. The older `pkgs-<variant>`
+      specialArgs still work for now; the option path is the canonical one
+      (the specialArgs go away in the planned breaking release).
 
     The whole `inputs` set is also passed through as the `inputs` specialArg
     (and home-manager extraSpecialArg), so modules can reach anything not
@@ -51,10 +56,21 @@ in
     applied strictly by input name -- currently empty (NUR, its one
     former entry, contributes via `overlays.default` like any other
     input).
-    As a convenience, `inputPkgs` holds every input's packages pre-selected
-    for the host's system (`inputPkgs.disko.disko-install`); they are
+    As a convenience, `nixpkgsLibExtensions.inputPkgs` holds every input's
+    packages pre-selected for the host's system
+    (`config.nixpkgsLibExtensions.inputPkgs.disko.disko-install`); they are
     deliberately not merged into `pkgs`, where input names would shadow
     nixpkgs attributes.
+
+    The builder-derived per-host values are declared as options under
+    `nixpkgsLibExtensions.*` in every NixOS module set AND every home
+    (whichever mechanism built it): `tags` (mergeable), `hostGroup`,
+    `users`, `inputPkgs` and `channels` (read-only), plus `hostname` in
+    homes only -- NixOS modules read `config.networking.hostName`, which
+    the builder sets. They used to be specialArgs; a module still reading
+    one of the old names (`hostname`, `tags`, `hostGroup`,
+    `listOfUsernames`, `inputPkgs`) fails with a message naming the
+    replacement path.
 
     The host's own configuration is included by convention: relative to
     `rootPath` (default: the consuming flake, `inputs.self`), either
@@ -173,7 +189,8 @@ in
     :                      directory explicitly from an @-entry to reuse it)
     : Example: with `"alice@*"` and `"alice@laptop"` both defined, both
     : apply on laptop; a plain `"alice"` would then never be used anywhere.
-    : The keys define the host's users (exposed as `listOfUsernames`).
+    : The keys define the host's users (exposed as the
+    : `nixpkgsLibExtensions.users` option).
     : `null` or `{ }` disables it. Default `{ }`.
     : WARNING: in a git-backed flake only TRACKED files exist -- `git add` a
     : new home.nix/configuration.nix or it is skipped silently.
@@ -219,10 +236,12 @@ in
     : both kinds. Default `[ ]`.
 
     tags
-    : List of string tags, passed to modules as the `tags` specialArg and
-    : set as `system.nixos.tags` (mkDefault) so they label the host's
-    : boot-menu entries; a host defining that option itself overrides
-    : this. Tags carry no other behavior. Default `[ ]`.
+    : List of string tags, seeding the `nixpkgsLibExtensions.tags` option
+    : -- modules can ADD tags by defining that option, and the list
+    : definitions merge. The merged value is set as `system.nixos.tags`
+    : (mkDefault) so tags label the host's boot-menu entries; a host
+    : defining that option itself overrides this. Tags carry no other
+    : behavior. Default `[ ]`.
 
     nixpkgsConfig
     : Attribute set merged into `nixpkgs.config` for the host's package
@@ -263,19 +282,21 @@ in
     : Default `[ ]`.
 
     specialArgs
-    : Extra specialArgs, merged alongside the ones the builder assembles.
-    : Redefining a builder-OWNED name (`hostname`, `inputs`, `rootPath`,
-    : `tags`, `extLib`, `hostGroup`, `inputPkgs`, any `pkgs-*`) THROWS:
-    : overriding one changed only what modules see, not what the builder
-    : did, so `specialArgs.hostname` gave modules one name while
-    : `networking.hostName` and the `hosts/<hostname>` lookup kept another.
-    : Set the corresponding builder argument instead. Default `{ }`.
+    : Extra specialArgs, merged alongside the ones the builder assembles
+    : (`inputs`, `rootPath`, `extLib`, the legacy `pkgs-*`). Redefining a
+    : builder-owned name THROWS: overriding one changed only what modules
+    : see, not what the builder did. The MOVED names (`hostname`, `tags`,
+    : `hostGroup`, `listOfUsernames`, `inputPkgs`, `username`) throw too --
+    : they are options (or module arguments) now, and a specialArg of the
+    : same name would mask the real value. Set the corresponding builder
+    : argument instead. Default `{ }`.
 
     hostGroup
-    : Free-form host classification, e.g. `"vm"` or `"server"`. Passed to
-    : modules as the `hostGroup` specialArg, and when non-null the host
-    : config convention looks under `hosts/<hostGroup>/` instead of
-    : `hosts/`. Default `null` (no grouping folder).
+    : Free-form host classification, e.g. `"vm"` or `"server"`. Exposed to
+    : modules as the read-only `nixpkgsLibExtensions.hostGroup` option, and
+    : when non-null the host config convention looks under
+    : `hosts/<hostGroup>/` instead of `hosts/`. Default `null` (no grouping
+    : folder).
 
     rootPath
     : The root for the `hosts/<hostname>` convention and the `rootPath`

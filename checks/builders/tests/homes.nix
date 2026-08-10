@@ -134,8 +134,8 @@
       )
     )).success;
 
-  # login homes get `username` and `listOfUsernames` as module arguments
-  # (via extraSpecialArgs)
+  # login homes get `username` as a module argument, and the host's user
+  # list as the `nixpkgsLibExtensions.users` option
   username-reaches-login-homes =
     let
       probe = myLib.homeConfigurationsBuilder {
@@ -148,10 +148,10 @@
         };
         homeModules = [
           (
-            { username, listOfUsernames, ... }:
+            { username, config, ... }:
             {
               home.sessionVariables.WHOAMI = username;
-              home.sessionVariables.ALL_USERS = builtins.concatStringsSep "," listOfUsernames;
+              home.sessionVariables.ALL_USERS = builtins.concatStringsSep "," config.nixpkgsLibExtensions.users;
             }
           )
         ];

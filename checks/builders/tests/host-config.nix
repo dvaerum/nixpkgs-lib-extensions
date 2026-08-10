@@ -79,16 +79,15 @@ in
   # tags also label the boot entry (mkDefault); no tags -> NixOS default []
   tags-set-as-system-nixos-tags =
     custom.config.system.nixos.tags == [ "kitchen-sink" ] && laptop.config.system.nixos.tags == [ ];
-  system-type-special-arg = custom._module.specialArgs.hostGroup == "server";
+  host-group-option = custom.config.nixpkgsLibExtensions.hostGroup == "server";
   # a specialArg the builder does not own passes through untouched
   special-args-passed-through = custom._module.specialArgs.probeArg == "from-special-args";
 
-  # ... but redefining a builder-OWNED name throws. It used to "work" and
-  # produce a split-brain host: `specialArgs.hostname` reached modules while
-  # networking.hostName and the hosts/<hostname> lookup kept the real name,
-  # and `rootPath`/`hostGroup` silently moved that lookup. The override
-  # promise was never true anyway -- listOfUsernames and username are
-  # layered afterwards and were never overridable.
+  # ... but redefining a RESERVED name throws: the builder-owned specialArgs
+  # (`rootPath`, `extLib`, ...) because overriding one produced a
+  # split-brain host, and the MOVED names (`hostname`, `tags`, ...) because
+  # a specialArg of one would mask its tombstone and diverge from the
+  # `nixpkgsLibExtensions.*` options.
   special-args-shadow-throws =
     let
       shadows =
