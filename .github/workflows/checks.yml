@@ -1,14 +1,25 @@
 name: Flake Checks
 
 on:
+  # push covers only main (the merge target); pull_request covers PR
+  # branches. The old `push: branches: '**'` ran every PR twice -- once
+  # per trigger.
   push:
     branches:
-      - '**'
+      - main
   pull_request:
+
+# a superseded run of the same ref is cancelled, not raced
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   flake-check:
     runs-on: ubuntu-latest
+    # generous: a cold-cache run builds several VM tests; the point is
+    # bounding a hung run, not racing a healthy one
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repository
@@ -18,6 +29,19 @@ jobs:
         uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+
+      # Nix store persisted through the GitHub Actions cache -- the
+      # zero-config option: no secrets, unlike cachix (auth token), and
+      # magic-nix-cache has been discontinued upstream. Keyed by
+      # flake.lock so an input bump starts a fresh cache but still
+      # restores the nearest older one; gc keeps it under the runner
+      # cache budget.
+      - name: Cache the Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 5G
 
       # ubuntu-latest runners expose /dev/kvm, which the VM tests require
       # (deliberately not listed here -- the list grows and this comment
