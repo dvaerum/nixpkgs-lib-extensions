@@ -123,6 +123,7 @@ Key forms:
 | `"user@host"` | on that host only |
 | `"user@*"`    | on every host; MERGES with a matching `"user@host"` |
 | `"user"`      | standalone default, used only when NO @-entry matched -- never merged with @-entries, and a shadowed plain entry prints a warning |
+| `hosts/<host>/` inside a `"user@*"` directory | auto-detected per-host override, same effect as an explicit `"user@<host>"` entry -- see below |
 
 Every value must be a **directory** containing one or both of:
 
