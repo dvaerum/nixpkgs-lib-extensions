@@ -87,11 +87,14 @@ in
     : auto-collected from `inputs`. Default `[ ]`.
 
     The home configuration gets overridable (`mkDefault`) values for
-    `home.username` (the user), `home.homeDirectory` (`/home/<user>`) and
-    `home.stateVersion` -- the latter tracks the CURRENT nixpkgs release,
-    and a home actually relying on that moving default is WARNED, naming
-    the two pin recipes: the user's own `home.nix`, or fleet-wide via a
-    shared `homeModules` entry.
+    `home.username` (the user) and `home.homeDirectory` (`/home/<user>`).
+    `home.stateVersion` gets a similar convenience default, but at a
+    WEAKER priority than `mkDefault` -- so a consumer's own `mkDefault`
+    pin in `home.nix` wins outright instead of colliding with the
+    builder's default at equal priority -- and it tracks the CURRENT
+    nixpkgs release, with a WARNING for any home actually relying on
+    that moving default, naming the two pin recipes: the user's own
+    `home.nix`, or fleet-wide via a shared `homeModules` entry.
 
     nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions
     : Shared options (see `mkNixosSystem`).

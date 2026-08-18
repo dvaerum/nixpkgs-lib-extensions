@@ -8,6 +8,14 @@
     that function for the full semantics; use it directly to provide your
     own fallback value.
 
+    Because the fallback is always the plain attrset `{ }`, this function
+    is for module-shaped or plain-attrset content only -- fine for
+    `imports = [ (extLib.importIfNix pkgs ./private.nix) ]`, where the
+    module system applies whatever comes back either way. If `path` is
+    expected to be a FUNCTION you call yourself, `{ }` is not callable and
+    that call throws on the fallback branch; use `importIfNixOr` instead,
+    with a `default` shaped to match.
+
     # Example
 
     ```nix

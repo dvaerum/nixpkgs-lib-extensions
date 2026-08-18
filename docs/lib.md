@@ -75,8 +75,8 @@ holder does not also hold the board. It is near-zero protection
 against whole-machine theft: the UUID is readable from the BIOS
 setup screen, chassis stickers and service tags, IPMI, or any
 live-USB boot of the very machine holding the disk. This is a
-deliberate TPM-less auto-unlock trade-off, not
-full-disk-encryption-grade secrecy.
+deliberate trade-off: auto-unlock with no TPM (Trusted Platform
+Module) involved, not full-disk-encryption-grade secrecy.
 
 RECOVERY: record the UUID (`dmidecode --string system-uuid`)
 somewhere off-machine at install time. After a board swap the pool
@@ -164,6 +164,14 @@ reason. Exactly `importIfNixOr` with the default fixed to `{ }` -- see
 that function for the full semantics; use it directly to provide your
 own fallback value.
 
+Because the fallback is always the plain attrset `{ }`, this function
+is for module-shaped or plain-attrset content only -- fine for
+`imports = [ (extLib.importIfNix pkgs ./private.nix) ]`, where the
+module system applies whatever comes back either way. If `path` is
+expected to be a FUNCTION you call yourself, `{ }` is not callable and
+that call throws on the fallback branch; use `importIfNixOr` instead,
+with a `default` shaped to match.
+
 ### Example
 
 ```nix
@@ -208,8 +216,21 @@ Import a path only when it contains valid, importable Nix; otherwise
 return `default` instead of aborting evaluation. `importIfNix` is the
 same function with the default fixed to `{ }`.
 
+The import is BARE -- `import path`, nothing applied. Dropped into a
+NixOS/home-manager module's `imports` list, that is exactly what you
+want: if `path`'s content is a module FUNCTION
+(`{ config, pkgs, lib, ... }: { ... }`), the module system applies it
+itself and already supplies `config`/`pkgs`/`lib` plus any specialArgs
+the builders wire in (`inputs`, `extLib`, `rootPath`, ...) -- no extra
+plumbing needed here. Calling the RESULT yourself instead (outside a
+module context) needs `default` to match the shape `path` is expected
+to have -- see `default` below.
+
 Made for setups where secret files are encrypted in the remote repo
-(e.g. git-crypt): locally `private.nix` is plain Nix and gets imported;
+(e.g. via git-crypt, which encrypts individual files in a git repo
+transparently -- a checkout without the decryption key sees raw
+ciphertext instead of the file's real content): locally `private.nix`
+is plain Nix and gets imported;
 on a CI checkout the same path is an encrypted blob, which fails the
 validity probe and becomes the (non-secret) default -- so the same
 configuration evaluates in both places.
@@ -273,6 +294,13 @@ importIfNixOr :: pkgs -> Path -> Any -> Any
 
 - **default**
   The value returned (with a warning) when `path` is not importable.
+  If you plan to CALL the resolved value yourself (rather than let a
+  module system apply it), give `default` the SAME shape as what a
+  valid `path` would produce -- e.g. a function of the same arity --
+  so applying arguments works the same way whether the valid or the
+  fallback branch fired. Mismatched shapes only fail on the fallback
+  path, so this can look fine locally and break only on CI, where the
+  encrypted file actually takes that branch.
 
 
 # nixos
@@ -357,8 +385,11 @@ merges everything into one `{ "<user>@<hostname>" = ...; }` set —
 assignable to a flake's `homeConfigurations` output directly.
 
 Only users listed in `loginHomes` (and shipping a `home.nix` for the
-host) get an output: system-managed homes are part of the systems
-built by `buildNixosConfigurations` and need no flake output. The
+host) get an output: SYSTEM-managed homes -- the default for anyone
+not in `loginHomes`, built into the NixOS system itself rather than
+activated at login; see `mkNixosSystem` for the full contrast -- are
+part of the systems built by `buildNixosConfigurations` and need no
+flake output. The
 produced set is exactly what the login bootstrap activates
 (`home-manager switch --flake <loginFlakeRef>#<user>@<host>`):
 
@@ -707,11 +738,14 @@ mkHomeConfiguration :: Attribute -> HomeManagerConfiguration
   auto-collected from `inputs`. Default `[ ]`.
 
 The home configuration gets overridable (`mkDefault`) values for
-`home.username` (the user), `home.homeDirectory` (`/home/<user>`) and
-`home.stateVersion` -- the latter tracks the CURRENT nixpkgs release,
-and a home actually relying on that moving default is WARNED, naming
-the two pin recipes: the user's own `home.nix`, or fleet-wide via a
-shared `homeModules` entry.
+`home.username` (the user) and `home.homeDirectory` (`/home/<user>`).
+`home.stateVersion` gets a similar convenience default, but at a
+WEAKER priority than `mkDefault` -- so a consumer's own `mkDefault`
+pin in `home.nix` wins outright instead of colliding with the
+builder's default at equal priority -- and it tracks the CURRENT
+nixpkgs release, with a WARNING for any home actually relying on
+that moving default, naming the two pin recipes: the user's own
+`home.nix`, or fleet-wide via a shared `homeModules` entry.
 
 - **nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions**
   Shared options (see `mkNixosSystem`).
@@ -734,8 +768,11 @@ automatically when the matching input exists:
   style), while a multi-entry set with no `default` is ambiguous
   (nixos-hardware style catalogs) and the builder THROWS rather than
   guess, naming the selections that resolve it -- see
-  `inputContributions`, which also narrows a channel to named entries or
-  switches it off.
+  `inputContributions`, which also narrows a channel (this doc's term
+  for an export KIND: `nixosModules`/`homeModules`/`overlays`/
+  `libOverlays`/`lib` -- unrelated to the `nixpkgsLibExtensions.channels`
+  package-set option further below, which reuses the same word for a
+  different thing) to named entries or switches it off.
 - overlays from any input exposing `overlays.default` (same
   default/sole-entry rule, but no exclusions -- overlays are collected
   from every input, nixpkgs trees included).
@@ -758,7 +795,9 @@ automatically when the matching input exists:
   -- export your helper functions there and every module gets them as
   `lib.flake.<helper>` with zero wiring.
 - every `nixpkgs-*` input as a package set under the
-  `nixpkgsLibExtensions.channels.<variant>` option (e.g.
+  `nixpkgsLibExtensions.channels.<variant>` option (an unrelated reuse
+  of the word "channel" from the export-KIND sense above -- this one
+  names a package-set variant, not a kind of export) (e.g.
   `inputs.nixpkgs-unstable` becomes
   `config.nixpkgsLibExtensions.channels.unstable`), built with the same
   overlays and config as the primary `pkgs`.
@@ -768,9 +807,9 @@ The whole `inputs` set is also passed through as the `inputs` specialArg
 covered by those conventions (e.g. `inputs.fenix`) themselves — the
 builders carry no policy for specific inputs. The only per-input hook
 is a normalization table for flakes with nonstandard export names,
-applied strictly by input name -- currently empty (NUR, its one
-former entry, contributes via `overlays.default` like any other
-input).
+applied strictly by input name -- currently empty (NUR, the Nix User
+Repository, was its one former entry; it now contributes via
+`overlays.default` like any other input).
 As a convenience, `nixpkgsLibExtensions.inputPkgs` holds every input's
 packages pre-selected for the host's system
 (`config.nixpkgsLibExtensions.inputPkgs.disko.disko-install`); they are
@@ -1058,10 +1097,12 @@ mkNixosSystem :: Attribute -> NixosSystem
   channel key, an unknown entry name, or a case keyed by an input that is
   not in `inputs` all throw, listing the valid options. An explicit
   selection also overrides the built-in skips (the home-manager input,
-  nixpkgs trees), which only exist to prevent guessing. CHANNELS ONLY:
-  the `nixpkgsLibExtensions.channels` variants, `inputPkgs` and the
-  home-manager capability detection are computed from `inputs` directly
-  and no case affects them --
+  nixpkgs trees), which only exist to prevent guessing. UNAFFECTED BY
+  ANY OF THIS: the `nixpkgsLibExtensions.channels` package-set variants
+  (an unrelated use of "channel" from the export-kind sense above),
+  `inputPkgs`, and the home-manager capability detection are all
+  computed from `inputs` directly, so no `inputContributions` case
+  touches them --
   `inputContributions."nixpkgs-unstable" = null;` still yields a
   `channels.unstable` entry. An input reached by hand via the `inputs`
   specialArg or the `inputPkgs` option likewise always works.

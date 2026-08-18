@@ -7,8 +7,21 @@
     return `default` instead of aborting evaluation. `importIfNix` is the
     same function with the default fixed to `{ }`.
 
+    The import is BARE -- `import path`, nothing applied. Dropped into a
+    NixOS/home-manager module's `imports` list, that is exactly what you
+    want: if `path`'s content is a module FUNCTION
+    (`{ config, pkgs, lib, ... }: { ... }`), the module system applies it
+    itself and already supplies `config`/`pkgs`/`lib` plus any specialArgs
+    the builders wire in (`inputs`, `extLib`, `rootPath`, ...) -- no extra
+    plumbing needed here. Calling the RESULT yourself instead (outside a
+    module context) needs `default` to match the shape `path` is expected
+    to have -- see `default` below.
+
     Made for setups where secret files are encrypted in the remote repo
-    (e.g. git-crypt): locally `private.nix` is plain Nix and gets imported;
+    (e.g. via git-crypt, which encrypts individual files in a git repo
+    transparently -- a checkout without the decryption key sees raw
+    ciphertext instead of the file's real content): locally `private.nix`
+    is plain Nix and gets imported;
     on a CI checkout the same path is an encrypted blob, which fails the
     validity probe and becomes the (non-secret) default -- so the same
     configuration evaluates in both places.
@@ -72,6 +85,13 @@
 
     default
     : The value returned (with a warning) when `path` is not importable.
+    : If you plan to CALL the resolved value yourself (rather than let a
+    : module system apply it), give `default` the SAME shape as what a
+    : valid `path` would produce -- e.g. a function of the same arity --
+    : so applying arguments works the same way whether the valid or the
+    : fallback branch fired. Mismatched shapes only fail on the fallback
+    : path, so this can look fine locally and break only on CI, where the
+    : encrypted file actually takes that branch.
   */
   importIfNixOr =
     pkgs: path: default:

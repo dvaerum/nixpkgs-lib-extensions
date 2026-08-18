@@ -14,8 +14,11 @@ in
     assignable to a flake's `homeConfigurations` output directly.
 
     Only users listed in `loginHomes` (and shipping a `home.nix` for the
-    host) get an output: system-managed homes are part of the systems
-    built by `buildNixosConfigurations` and need no flake output. The
+    host) get an output: SYSTEM-managed homes -- the default for anyone
+    not in `loginHomes`, built into the NixOS system itself rather than
+    activated at login; see `mkNixosSystem` for the full contrast -- are
+    part of the systems built by `buildNixosConfigurations` and need no
+    flake output. The
     produced set is exactly what the login bootstrap activates
     (`home-manager switch --flake <loginFlakeRef>#<user>@<host>`):
 

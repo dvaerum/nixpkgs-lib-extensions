@@ -20,8 +20,8 @@
     against whole-machine theft: the UUID is readable from the BIOS
     setup screen, chassis stickers and service tags, IPMI, or any
     live-USB boot of the very machine holding the disk. This is a
-    deliberate TPM-less auto-unlock trade-off, not
-    full-disk-encryption-grade secrecy.
+    deliberate trade-off: auto-unlock with no TPM (Trusted Platform
+    Module) involved, not full-disk-encryption-grade secrecy.
 
     RECOVERY: record the UUID (`dmidecode --string system-uuid`)
     somewhere off-machine at install time. After a board swap the pool

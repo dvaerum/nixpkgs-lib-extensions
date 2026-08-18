@@ -20,8 +20,11 @@ in
       style), while a multi-entry set with no `default` is ambiguous
       (nixos-hardware style catalogs) and the builder THROWS rather than
       guess, naming the selections that resolve it -- see
-      `inputContributions`, which also narrows a channel to named entries or
-      switches it off.
+      `inputContributions`, which also narrows a channel (this doc's term
+      for an export KIND: `nixosModules`/`homeModules`/`overlays`/
+      `libOverlays`/`lib` -- unrelated to the `nixpkgsLibExtensions.channels`
+      package-set option further below, which reuses the same word for a
+      different thing) to named entries or switches it off.
     - overlays from any input exposing `overlays.default` (same
       default/sole-entry rule, but no exclusions -- overlays are collected
       from every input, nixpkgs trees included).
@@ -44,7 +47,9 @@ in
       -- export your helper functions there and every module gets them as
       `lib.flake.<helper>` with zero wiring.
     - every `nixpkgs-*` input as a package set under the
-      `nixpkgsLibExtensions.channels.<variant>` option (e.g.
+      `nixpkgsLibExtensions.channels.<variant>` option (an unrelated reuse
+      of the word "channel" from the export-KIND sense above -- this one
+      names a package-set variant, not a kind of export) (e.g.
       `inputs.nixpkgs-unstable` becomes
       `config.nixpkgsLibExtensions.channels.unstable`), built with the same
       overlays and config as the primary `pkgs`.
@@ -54,9 +59,9 @@ in
     covered by those conventions (e.g. `inputs.fenix`) themselves — the
     builders carry no policy for specific inputs. The only per-input hook
     is a normalization table for flakes with nonstandard export names,
-    applied strictly by input name -- currently empty (NUR, its one
-    former entry, contributes via `overlays.default` like any other
-    input).
+    applied strictly by input name -- currently empty (NUR, the Nix User
+    Repository, was its one former entry; it now contributes via
+    `overlays.default` like any other input).
     As a convenience, `nixpkgsLibExtensions.inputPkgs` holds every input's
     packages pre-selected for the host's system
     (`config.nixpkgsLibExtensions.inputPkgs.disko.disko-install`); they are
@@ -344,10 +349,12 @@ in
     : channel key, an unknown entry name, or a case keyed by an input that is
     : not in `inputs` all throw, listing the valid options. An explicit
     : selection also overrides the built-in skips (the home-manager input,
-    : nixpkgs trees), which only exist to prevent guessing. CHANNELS ONLY:
-    : the `nixpkgsLibExtensions.channels` variants, `inputPkgs` and the
-    : home-manager capability detection are computed from `inputs` directly
-    : and no case affects them --
+    : nixpkgs trees), which only exist to prevent guessing. UNAFFECTED BY
+    : ANY OF THIS: the `nixpkgsLibExtensions.channels` package-set variants
+    : (an unrelated use of "channel" from the export-kind sense above),
+    : `inputPkgs`, and the home-manager capability detection are all
+    : computed from `inputs` directly, so no `inputContributions` case
+    : touches them --
     : `inputContributions."nixpkgs-unstable" = null;` still yields a
     : `channels.unstable` entry. An input reached by hand via the `inputs`
     : specialArg or the `inputPkgs` option likewise always works.
