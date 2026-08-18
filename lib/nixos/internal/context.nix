@@ -101,7 +101,22 @@ let
             ""
           else
             "\nThese input(s) look like nixpkgs (by what they export, not their name): ${lib.concatStringsSep ", " candidates}.";
-        example = if candidates == [ ] then "inputs.nixpkgs" else "inputs.${lib.head candidates}";
+        # The SUGGESTED example prefers a conventionally-named nixpkgs-*
+        # candidate over other capability matches: isNixpkgsTree checks
+        # EXPORTS only, so a hardware-vendor fork (nixos-raspberrypi, built
+        # to double as a full nixpkgs tree for its kernel/firmware patches)
+        # qualifies too -- and alphabetical order would put it AHEAD of
+        # nixpkgs-* (`n` < `p`), nudging someone toward a narrower, patched
+        # tree by accident. All matches still appear in candidatesLine
+        # above; this only orders which one gets pasted as the one-liner.
+        nixpkgsNamed = lib.filter (n: n == "nixpkgs" || lib.hasPrefix "nixpkgs-" n) candidates;
+        example =
+          if nixpkgsNamed != [ ] then
+            "inputs.${lib.head nixpkgsNamed}"
+          else if candidates != [ ] then
+            "inputs.${lib.head candidates}"
+          else
+            "inputs.nixpkgs";
       in
       throw ''
         nixpkgs-lib-extensions: no usable nixpkgs. There is no plain `nixpkgs` input, and no `nixpkgs` argument was passed to the builder.${candidatesLine}
