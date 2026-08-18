@@ -196,6 +196,13 @@ in
     :                      directory explicitly from an @-entry to reuse it)
     : Example: with `"alice@*"` and `"alice@laptop"` both defined, both
     : apply on laptop; a plain `"alice"` would then never be used anywhere.
+    : A `"<user>@*"` entry's directory is ALSO scanned for a
+    : `hosts/<hostname>` subdirectory -- the SAME convention
+    : `hosts/<hostname>.nix` uses at the flake root, one level down -- and
+    : merges it in exactly like an explicit `"<user>@<hostname>"` entry
+    : would. An explicit `"<user>@<hostname>"` key and an auto-detected
+    : `hosts/<hostname>` folder both existing for the same user+host is
+    : ambiguous and THROWS, naming both paths.
     : The keys define the host's users (exposed as the
     : `nixpkgsLibExtensions.users` option).
     : `null` or `{ }` disables it. Default `{ }`.

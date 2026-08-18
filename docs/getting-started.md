@@ -133,6 +133,24 @@ Every value must be a **directory** containing one or both of:
 A directory with only `configuration.nix` is a **system-only user**:
 account and groups, but no home configuration and no bootstrap.
 
+A `"user@*"` entry's directory is also scanned for a `hosts/<hostname>`
+subdirectory -- the same convention `hosts/<hostname>.nix` uses at the
+flake root ([Hosts](#hosts) below), one level down -- and merges it in
+automatically, exactly like an explicit `"user@<hostname>"` entry would:
+
+```
+users/frank-base/
+  home.nix           # "frank@*": every host
+  hosts/
+    laptop/
+      home.nix       # auto-detected: merges in ONLY on `laptop`,
+                      # as if "frank@laptop" pointed here
+```
+
+An explicit `"user@<hostname>"` key and an auto-detected `hosts/<hostname>`
+folder both existing for the same user and host is ambiguous and
+**throws**, naming both paths -- delete one to resolve it.
+
 The registry keys define the host's users -- there is no separate
 `users` argument anywhere.
 

@@ -21,12 +21,41 @@ let
   # entry is a standalone default, used ONLY when no @-entry matched -- it is
   # never merged with @-entries (import it explicitly from another entry to
   # reuse it). A plain entry shadowed by @-entries triggers a warning.
+  #
+  # A "<user>@*" entry ALSO auto-detects a `hosts/<hostname>` subdirectory
+  # inside its own directory -- the SAME convention `hosts/<hostname>.nix`
+  # uses at the flake root, one level down -- and merges it in exactly like
+  # an explicit "<user>@<hostname>" entry would. Scoped to "@*" only: a plain
+  # "<user>" entry's directory is never auto-scanned, consistent with plain
+  # entries never merging with anything else. An explicit "<user>@<hostname>"
+  # key and an auto-detected folder both existing for the same user+host is
+  # ambiguous and THROWS, naming both paths -- this codebase throws rather
+  # than silently picks a winner whenever two independent sources claim the
+  # same slot (unlike the plain-vs-@ shadowing above, which has one simple,
+  # predictable winner).
   matchedEntries =
     userRegistry: hostname: username:
     let
+      wildcardEntry = userRegistry."${username}@*" or null;
+      explicitHostEntry = userRegistry."${username}@${hostname}" or null;
+      autoHostDir =
+        if wildcardEntry != null && isDirEntry wildcardEntry then
+          wildcardEntry + "/hosts/${hostname}"
+        else
+          null;
+      autoHostEntry = if autoHostDir != null && isDirEntry autoHostDir then autoHostDir else null;
+      hostEntry =
+        if explicitHostEntry != null && autoHostEntry != null then
+          throw ''
+            userRegistry: `${username}@${hostname}` is ambiguous -- both an explicit registry entry (${toString explicitHostEntry}) and an auto-detected `hosts/${hostname}` folder under the `${username}@*` entry (${toString autoHostEntry}) claim it. Remove one: delete the explicit `"${username}@${hostname}"` key to use the auto-detected folder, or delete/rename the `hosts/${hostname}` folder to use the explicit entry.
+          ''
+        else if explicitHostEntry != null then
+          explicitHostEntry
+        else
+          autoHostEntry;
       atTier = lib.filter (e: e != null) [
-        (userRegistry."${username}@*" or null)
-        (userRegistry."${username}@${hostname}" or null)
+        wildcardEntry
+        hostEntry
       ];
       fallback = userRegistry.${username} or null;
     in

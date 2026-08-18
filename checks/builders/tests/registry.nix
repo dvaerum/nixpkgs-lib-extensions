@@ -30,6 +30,46 @@
   wildcard-config-applied = laptop.config.users.groups ? vpn;
   wildcard-merges-with-host-entry = laptop.config.users.groups ? scanner;
 
+  # An auto-detected `hosts/<hostname>` subdirectory under a "<user>@*"
+  # entry merges in exactly like an explicit "<user>@<hostname>" entry
+  # would -- on the matching host, both configuration.nix apply; on any
+  # OTHER host, only the "@*" one does.
+  autohost-folder-merges-on-matching-host =
+    let
+      sys = myLib.mkNixosSystem {
+        inherit inputs system;
+        hostname = "autohostprobe";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        userRegistry."probe@*" = fixturesDir + "/autohost-user";
+      };
+    in
+    sys.config.users.groups ? autohost-base && sys.config.users.groups ? autohost-override;
+  autohost-folder-absent-on-other-host =
+    let
+      sys = myLib.mkNixosSystem {
+        inherit inputs system;
+        hostname = "someotherhost";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        userRegistry."probe@*" = fixturesDir + "/autohost-user";
+      };
+    in
+    sys.config.users.groups ? autohost-base && !(sys.config.users.groups ? autohost-override);
+  # An explicit "<user>@<hostname>" key AND an auto-detected `hosts/<hostname>`
+  # folder both existing for the same user+host is ambiguous and throws,
+  # rather than silently picking a winner.
+  autohost-folder-conflicts-with-explicit-entry =
+    !(builtins.tryEval (
+      (myLib.mkNixosSystem {
+        inherit inputs system;
+        hostname = "autohostprobe";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        userRegistry = {
+          "probe@*" = fixturesDir + "/autohost-user";
+          "probe@autohostprobe" = exampleDir + "/users/bob";
+        };
+      }).config.users.groups
+    )).success;
+
   # a plain entry shadowed by "<user>@*" must NOT apply (and warns). Built
   # here rather than in the example: the warning fires on every evaluation
   # of whatever registry contains it, and the example doubles as the
