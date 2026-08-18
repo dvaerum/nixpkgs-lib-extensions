@@ -67,7 +67,14 @@ let
     {
       inputs,
       system,
-      nixpkgs ? inputs.nixpkgs,
+      # `or null`, not a bare `inputs.nixpkgs`: a MISSING `nixpkgs` input
+      # becomes the same `null` the throw below handles, instead of Nix's
+      # own bare "attribute 'nixpkgs' missing" -- which names neither this
+      # argument nor how to fix it. planHosts (hosts-args.nix) computes the
+      # SAME `... or null` for its core-sharing tuples, so a host whose
+      # `nixpkgs` is missing hits this exact check either way, whether
+      # built directly or through the hosts-attrset builders.
+      nixpkgs ? (inputs.nixpkgs or null),
       patches ? coreDefaults.patches,
       overlays ? coreDefaults.overlays,
       allowedUnfreePackages ? coreDefaults.allowedUnfreePackages,
@@ -77,250 +84,274 @@ let
       inputContributions ? coreDefaults.inputContributions,
       ...
     }:
-    let
-      baseLib = nixpkgs.lib;
-
-      # Everything about what the INPUTS contribute lives in ./inputs.nix:
-      # the case classification, the per-channel selection, the eager
-      # validation and the collectors themselves. context.nix keeps the two
-      # things that are genuinely its own -- constructing `lib` and
-      # constructing `pkgs` -- and asks for the rest.
-      fromInputs = collectFromInputs {
-        inherit inputs inputContributions baseLib;
-        skipFor.nixosModules = skipNixosModule;
-      };
-      inherit (fromInputs)
-        conventionInputs
-        caseOf
-        collected
-        selectionsChecked
-        ;
-
-      # Extend the system lib with this repo's own extensions (`self`, always
-      # available since the builders are part of nixpkgs-lib-extensions) plus
-      # every input's lib contribution: an OVERLAY (final: prev: delta),
-      # exported as `libOverlays.default` -- the shape `lib.extend`
-      # composes, so one addition can reference another through `final`.
-      # Governed by the `libOverlays` channel of inputContributions.
-      # `channelEnabled` FIRST, like the `lib` channel below: behind the
-      # export guard a malformed selection on an input exporting no overlay
-      # would be silently dropped instead of throwing.
-      libOverlaysFromInputs = baseLib.concatLists (
-        baseLib.mapAttrsToList (
-          name: v:
-          if !(channelEnabled name "libOverlays" (caseOf name)) || !(baseLib.isAttrs v) then
-            [ ]
-          else if baseLib.isAttrs (v.libOverlays or null) && v.libOverlays ? default then
-            [ v.libOverlays.default ]
+    # Checked FIRST, before `baseLib = nixpkgs.lib` below would itself
+    # throw on a `null`: without this, a missing `nixpkgs` surfaced three
+    # files away, in mk-system.nix, as "cannot coerce null to a string" --
+    # nixpkgs.lib being unreachable silently misrouted evaluation onto the
+    # `eval-config.nix` fallback route meant for patched trees, which then
+    # tried to build a store path out of `null`.
+    if nixpkgs == null then
+      let
+        # SAME capability check the `nixpkgs-*` channel auto-collection
+        # uses (inputs.nix: isNixpkgsTree) -- by what an input EXPORTS, not
+        # by its name, so a differently-named nixpkgs fork is found too.
+        candidates = lib.filter (n: isNixpkgsTree (inputs.${n} or null)) (lib.attrNames inputs);
+        candidatesLine =
+          if candidates == [ ] then
+            ""
           else
-            [ ]
-        ) conventionInputs
-      );
+            "\nThese input(s) look like nixpkgs (by what they export, not their name): ${lib.concatStringsSep ", " candidates}.";
+        example = if candidates == [ ] then "inputs.nixpkgs" else "inputs.${lib.head candidates}";
+      in
+      throw ''
+        nixpkgs-lib-extensions: no usable nixpkgs. There is no plain `nixpkgs` input, and no `nixpkgs` argument was passed to the builder.${candidatesLine}
+        Pass one explicitly: add `nixpkgs = ${example};` as a sibling of `inherit inputs;` -- `nixpkgs` is a builder argument like `system` or `patches`, so it goes wherever those do: a direct `mkNixosSystem`/`mkHomeConfiguration` call, or in a hosts attrset's `_defaults` (every host), a `_groups` entry, or one host.
+      ''
+    else
+      let
+        baseLib = nixpkgs.lib;
 
-      # Only the MODULE-LEVEL half of this repo's lib goes into the system
-      # lib, merged under the "existing side wins" rule. Both the split and
-      # the rule live in ./module-level.nix, because the flake's own
-      # `libOverlays.default` and `overlays.default` must apply the
-      # identical one.
-      ownAdditions = addOwnLib baseLib self;
+        # Everything about what the INPUTS contribute lives in ./inputs.nix:
+        # the case classification, the per-channel selection, the eager
+        # validation and the collectors themselves. context.nix keeps the two
+        # things that are genuinely its own -- constructing `lib` and
+        # constructing `pkgs` -- and asks for the rest.
+        fromInputs = collectFromInputs {
+          inherit inputs inputContributions baseLib;
+          skipFor.nixosModules = skipNixosModule;
+        };
+        inherit (fromInputs)
+          conventionInputs
+          caseOf
+          collected
+          selectionsChecked
+          ;
 
-      extendedLib = baseLib.foldl' (acc: overlay: acc.extend overlay) (baseLib.extend (
-        final: prev: ownAdditions
-      )) libOverlaysFromInputs;
+        # Extend the system lib with this repo's own extensions (`self`, always
+        # available since the builders are part of nixpkgs-lib-extensions) plus
+        # every input's lib contribution: an OVERLAY (final: prev: delta),
+        # exported as `libOverlays.default` -- the shape `lib.extend`
+        # composes, so one addition can reference another through `final`.
+        # Governed by the `libOverlays` channel of inputContributions.
+        # `channelEnabled` FIRST, like the `lib` channel below: behind the
+        # export guard a malformed selection on an input exporting no overlay
+        # would be silently dropped instead of throwing.
+        libOverlaysFromInputs = baseLib.concatLists (
+          baseLib.mapAttrsToList (
+            name: v:
+            if !(channelEnabled name "libOverlays" (caseOf name)) || !(baseLib.isAttrs v) then
+              [ ]
+            else if baseLib.isAttrs (v.libOverlays or null) && v.libOverlays ? default then
+              [ v.libOverlays.default ]
+            else
+              [ ]
+          ) conventionInputs
+        );
 
-      # Each input's standalone `lib` export, namespaced by input name:
-      # exposed as `lib.<name>` in modules and as `pkgs.lib.<name>` (e.g.
-      # `lib.NixVirt.domain`). A plain `lib` export is a foreign namespace
-      # and is never merged flat -- a lib overlay is the composable way
-      # into the flat lib. Skipped: nixpkgs trees (their lib IS the base).
-      libsFromInputs =
-        let
-          raw = baseLib.mapAttrs (_: libOf) (
-            baseLib.filterAttrs (
-              name: v:
-              # `libOf` absorbs an input whose `lib` THROWS -- it is simply
-              # not namespaced rather than breaking every host. The
-              # selection check stays OUTSIDE it, so a malformed selection
-              # still throws instead of being swallowed as "not namespaced".
-              channelEnabled name "lib" (caseOf name) && baseLib.isAttrs v && libOf v != { } && !(isNixpkgsTree v)
-            ) conventionInputs
-          );
-        in
-        # The consuming flake's own lib output (inputs.self) is renamed to
-        # `flake`: `lib.flake.<helper>` reads as "from this flake", where
-        # `lib.self` would read oddly. An explicit input actually named
-        # `flake` keeps the name; self's lib is then dropped with a warning.
-        if raw ? self && !(raw ? flake) then
-          baseLib.removeAttrs raw [ "self" ] // { flake = raw.self; }
-        else if raw ? self then
-          baseLib.warn
-            "nixpkgs-lib-extensions: not exposing the consuming flake's `lib` as `lib.flake`: an input named `flake` already claims the name. Rename that input, or free the name with `inputContributions.\"flake\".lib = null;`."
-            (baseLib.removeAttrs raw [ "self" ])
-        else
-          raw;
+        # Only the MODULE-LEVEL half of this repo's lib goes into the system
+        # lib, merged under the "existing side wins" rule. Both the split and
+        # the rule live in ./module-level.nix, because the flake's own
+        # `libOverlays.default` and `overlays.default` must apply the
+        # identical one.
+        ownAdditions = addOwnLib baseLib self;
 
-      # Namespaces this repo OWNS: this lib's own namespaces that nixpkgs'
-      # lib does not also define (e.g. `disko`, `nixos`, `imports` -- but
-      # not `strings` or `attrsets`, which exist in nixpkgs too). These are
-      # the only legitimate merge targets for an input's lib export.
-      ownedNamespaces = baseLib.filter (n: baseLib.isAttrs self.${n} && !(baseLib ? ${n})) (
-        baseLib.attrNames self
-      );
+        extendedLib = baseLib.foldl' (acc: overlay: acc.extend overlay) (baseLib.extend (
+          final: prev: ownAdditions
+        )) libOverlaysFromInputs;
 
-      # Overwrite detection, per collision class:
-      # - name unused              -> input lib added as `lib.<name>`
-      # - name is an OWNED namespace -> recursive merge, the existing side
-      #   wins every conflict: an input can only ADD, never change (so a
-      #   `disko` input's helpers join declareZfsRootDisk under lib.disko)
-      # - any other existing name (nixpkgs's `strings`, ...) -> skipped
-      #   with a warning; such an input name is almost always an accident
-      # Computed ONCE per context and shared by the module lib, pkgs.lib
-      # and every channels variant, so a warning fires once per context,
-      # not once per lib construction.
-      inputLibAdditions =
-        let
-          existing = baseLib.intersectAttrs extendedLib libsFromInputs;
-          owned = baseLib.intersectAttrs (baseLib.genAttrs ownedNamespaces (_: null)) existing;
-          skipped = baseLib.attrNames (baseLib.removeAttrs existing (baseLib.attrNames owned));
-        in
-        (
-          if skipped == [ ] then
-            x: x
+        # Each input's standalone `lib` export, namespaced by input name:
+        # exposed as `lib.<name>` in modules and as `pkgs.lib.<name>` (e.g.
+        # `lib.NixVirt.domain`). A plain `lib` export is a foreign namespace
+        # and is never merged flat -- a lib overlay is the composable way
+        # into the flat lib. Skipped: nixpkgs trees (their lib IS the base).
+        libsFromInputs =
+          let
+            raw = baseLib.mapAttrs (_: libOf) (
+              baseLib.filterAttrs (
+                name: v:
+                # `libOf` absorbs an input whose `lib` THROWS -- it is simply
+                # not namespaced rather than breaking every host. The
+                # selection check stays OUTSIDE it, so a malformed selection
+                # still throws instead of being swallowed as "not namespaced".
+                channelEnabled name "lib" (caseOf name) && baseLib.isAttrs v && libOf v != { } && !(isNixpkgsTree v)
+              ) conventionInputs
+            );
+          in
+          # The consuming flake's own lib output (inputs.self) is renamed to
+          # `flake`: `lib.flake.<helper>` reads as "from this flake", where
+          # `lib.self` would read oddly. An explicit input actually named
+          # `flake` keeps the name; self's lib is then dropped with a warning.
+          if raw ? self && !(raw ? flake) then
+            baseLib.removeAttrs raw [ "self" ] // { flake = raw.self; }
+          else if raw ? self then
+            baseLib.warn
+              "nixpkgs-lib-extensions: not exposing the consuming flake's `lib` as `lib.flake`: an input named `flake` already claims the name. Rename that input, or free the name with `inputContributions.\"flake\".lib = null;`."
+              (baseLib.removeAttrs raw [ "self" ])
           else
-            baseLib.warn "nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${baseLib.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`, or silence this with `inputContributions.\"<name>\".lib = null;` if you never wanted it namespaced."
-        )
+            raw;
+
+        # Namespaces this repo OWNS: this lib's own namespaces that nixpkgs'
+        # lib does not also define (e.g. `disko`, `nixos`, `imports` -- but
+        # not `strings` or `attrsets`, which exist in nixpkgs too). These are
+        # the only legitimate merge targets for an input's lib export.
+        ownedNamespaces = baseLib.filter (n: baseLib.isAttrs self.${n} && !(baseLib ? ${n})) (
+          baseLib.attrNames self
+        );
+
+        # Overwrite detection, per collision class:
+        # - name unused              -> input lib added as `lib.<name>`
+        # - name is an OWNED namespace -> recursive merge, the existing side
+        #   wins every conflict: an input can only ADD, never change (so a
+        #   `disko` input's helpers join declareZfsRootDisk under lib.disko)
+        # - any other existing name (nixpkgs's `strings`, ...) -> skipped
+        #   with a warning; such an input name is almost always an accident
+        # Computed ONCE per context and shared by the module lib, pkgs.lib
+        # and every channels variant, so a warning fires once per context,
+        # not once per lib construction.
+        inputLibAdditions =
+          let
+            existing = baseLib.intersectAttrs extendedLib libsFromInputs;
+            owned = baseLib.intersectAttrs (baseLib.genAttrs ownedNamespaces (_: null)) existing;
+            skipped = baseLib.attrNames (baseLib.removeAttrs existing (baseLib.attrNames owned));
+          in
           (
-            baseLib.removeAttrs libsFromInputs (baseLib.attrNames existing)
-            // baseLib.mapAttrs (n: inputLib: baseLib.recursiveUpdate inputLib extendedLib.${n}) owned
-          );
+            if skipped == [ ] then
+              x: x
+            else
+              baseLib.warn "nixpkgs-lib-extensions: not namespacing the `lib` export of input(s) ${baseLib.concatStringsSep ", " skipped}: the name collides with a `lib` attribute this repo does not own. Rename the input to expose its lib as `lib.<name>`, or silence this with `inputContributions.\"<name>\".lib = null;` if you never wanted it namespaced."
+          )
+            (
+              baseLib.removeAttrs libsFromInputs (baseLib.attrNames existing)
+              // baseLib.mapAttrs (n: inputLib: baseLib.recursiveUpdate inputLib extendedLib.${n}) owned
+            );
 
-      # Through the fixed point (`extend`), NOT a plain `//`: evalModules
-      # hands modules the lib from its own fixed point, so additions merged
-      # outside it would be invisible as the module-arg `lib`.
-      lib = extendedLib.extend (final: prev: inputLibAdditions);
+        # Through the fixed point (`extend`), NOT a plain `//`: evalModules
+        # hands modules the lib from its own fixed point, so additions merged
+        # outside it would be invisible as the module-arg `lib`.
+        lib = extendedLib.extend (final: prev: inputLibAdditions);
 
-      # allowedUnfreePackages / permittedInsecurePackages are the ergonomic
-      # shorthands; nixpkgsConfig is the general escape hatch into
-      # `nixpkgs.config` (cudaSupport = true; ...) and is merged last, so
-      # it can also override what the shorthands produced.
-      pkgsConfig = {
-        allowUnfreePredicate = pkg: baseLib.elem (baseLib.getName pkg) allowedUnfreePackages;
-        inherit permittedInsecurePackages;
-      }
-      // nixpkgsConfig;
+        # allowedUnfreePackages / permittedInsecurePackages are the ergonomic
+        # shorthands; nixpkgsConfig is the general escape hatch into
+        # `nixpkgs.config` (cudaSupport = true; ...) and is merged last, so
+        # it can also override what the shorthands produced.
+        pkgsConfig = {
+          allowUnfreePredicate = pkg: baseLib.elem (baseLib.getName pkg) allowedUnfreePackages;
+          inherit permittedInsecurePackages;
+        }
+        // nixpkgsConfig;
 
-      # Optionally apply patches to a nixpkgs source tree. Used for the
-      # PRIMARY nixpkgs only -- see mkPkgs. The copy is named `source`, not
-      # something descriptive: the patched tree becomes
-      # `nixpkgs.flake.source` (mk-system.nix), and a NIX_PATH `<nixpkgs>`
-      # lookup only works when the store path is named "source"
-      # (https://github.com/NixOS/nix/issues/7075, quoted by the option).
-      patchSrc =
-        npkgs:
-        if patches == [ ] then
-          npkgs
-        else
-          npkgs.legacyPackages.${system}.applyPatches {
-            name = "source";
-            src = npkgs;
-            inherit patches;
+        # Optionally apply patches to a nixpkgs source tree. Used for the
+        # PRIMARY nixpkgs only -- see mkPkgs. The copy is named `source`, not
+        # something descriptive: the patched tree becomes
+        # `nixpkgs.flake.source` (mk-system.nix), and a NIX_PATH `<nixpkgs>`
+        # lookup only works when the store path is named "source"
+        # (https://github.com/NixOS/nix/issues/7075, quoted by the option).
+        patchSrc =
+          npkgs:
+          if patches == [ ] then
+            npkgs
+          else
+            npkgs.legacyPackages.${system}.applyPatches {
+              name = "source";
+              src = npkgs;
+              inherit patches;
+            };
+
+        # `skipFor` is the only per-channel special-casing, and the asymmetry
+        # in it is intentional: nixpkgs trees are skipped for modules (their
+        # nixosModules are system-breaking helpers, and nixpkgs itself would
+        # hit the ambiguity throw on every host) and for the lib namespacing
+        # (a tree's lib IS the base lib), but NOT for overlays -- nixpkgs
+        # exports none, and a fork exporting `overlays.default` means it to be
+        # applied. Pinned by the tree-input assertions in
+        # checks/builders/tests/auto-loading.nix; do not "fix" for symmetry.
+        autoOverlays = collected.overlays;
+
+        # `src` is the tree to import, ALREADY patched (or not) by the caller:
+        # `patches` are a fix for THIS host's nixpkgs, and a nixpkgs PR diff
+        # essentially never applies to a different tree. Applying them to the
+        # `nixpkgs-*` variants too broke `channels.unstable` lazily, far from
+        # the `patches = [ ... ]` line and only for hosts that touched it.
+        mkPkgs =
+          src:
+          import src {
+            inherit system;
+            # the input-lib namespacing overlay sits between the collected
+            # input overlays and the caller's `overlays` argument, so the
+            # caller can still override pkgs.lib entirely
+            overlays = autoOverlays ++ [ (final: prev: { lib = prev.lib // inputLibAdditions; }) ] ++ overlays;
+            config = pkgsConfig;
           };
 
-      # `skipFor` is the only per-channel special-casing, and the asymmetry
-      # in it is intentional: nixpkgs trees are skipped for modules (their
-      # nixosModules are system-breaking helpers, and nixpkgs itself would
-      # hit the ambiguity throw on every host) and for the lib namespacing
-      # (a tree's lib IS the base lib), but NOT for overlays -- nixpkgs
-      # exports none, and a fork exporting `overlays.default` means it to be
-      # applied. Pinned by the tree-input assertions in
-      # checks/builders/tests/auto-loading.nix; do not "fix" for symmetry.
-      autoOverlays = collected.overlays;
+        selectedSrc = patchSrc nixpkgs;
+        # seq: `pkgs` is forced by every consumer, so hanging the eager
+        # selection validation off it makes a typo fail on any use of the
+        # context rather than only where its channel happens to be collected.
+        pkgs = baseLib.seq selectionsChecked (mkPkgs selectedSrc);
 
-      # `src` is the tree to import, ALREADY patched (or not) by the caller:
-      # `patches` are a fix for THIS host's nixpkgs, and a nixpkgs PR diff
-      # essentially never applies to a different tree. Applying them to the
-      # `nixpkgs-*` variants too broke `channels.unstable` lazily, far from
-      # the `patches = [ ... ]` line and only for hosts that touched it.
-      mkPkgs =
-        src:
-        import src {
-          inherit system;
-          # the input-lib namespacing overlay sits between the collected
-          # input overlays and the caller's `overlays` argument, so the
-          # caller can still override pkgs.lib entirely
-          overlays = autoOverlays ++ [ (final: prev: { lib = prev.lib // inputLibAdditions; }) ] ++ overlays;
-          config = pkgsConfig;
-        };
+        home-manager = if homeManager != null then homeManager else detectHomeManager inputs;
 
-      selectedSrc = patchSrc nixpkgs;
-      # seq: `pkgs` is forced by every consumer, so hanging the eager
-      # selection validation off it makes a typo fail on any use of the
-      # context rather than only where its channel happens to be collected.
-      pkgs = baseLib.seq selectionsChecked (mkPkgs selectedSrc);
+        # Identity (store path) of the home-manager input, so its NixOS module is
+        # kept out of the auto-collected set no matter how the input is named.
+        homeManagerId = if home-manager == null then null else home-manager.outPath or null;
 
-      home-manager = if homeManager != null then homeManager else detectHomeManager inputs;
+        # Skip when auto-collecting NixOS modules (absent a selection):
+        # - the home-manager input (used standalone; matched by identity, not name)
+        # - nixpkgs trees (isNixpkgsTree): they export helper modules like
+        #   `readOnlyPkgs` that would break the system when imported blindly.
+        #   `legacyPackages` alone is not enough to skip -- flakes like
+        #   sops-nix export it (docs/packages) while also shipping a real
+        #   `nixosModules.default` that must be imported.
+        # To opt an input out by hand, select nothing for the channel:
+        # `inputContributions."<name>".nixosModules = null;`
+        skipNixosModule =
+          name: v: (homeManagerId != null && (v.outPath or null) == homeManagerId) || isNixpkgsTree v;
 
-      # Identity (store path) of the home-manager input, so its NixOS module is
-      # kept out of the auto-collected set no matter how the input is named.
-      homeManagerId = if home-manager == null then null else home-manager.outPath or null;
+        autoNixosModules = collected.nixosModules;
+        autoHomeModules = collected.homeModules;
 
-      # Skip when auto-collecting NixOS modules (absent a selection):
-      # - the home-manager input (used standalone; matched by identity, not name)
-      # - nixpkgs trees (isNixpkgsTree): they export helper modules like
-      #   `readOnlyPkgs` that would break the system when imported blindly.
-      #   `legacyPackages` alone is not enough to skip -- flakes like
-      #   sops-nix export it (docs/packages) while also shipping a real
-      #   `nixosModules.default` that must be imported.
-      # To opt an input out by hand, select nothing for the channel:
-      # `inputContributions."<name>".nixosModules = null;`
-      skipNixosModule =
-        name: v: (homeManagerId != null && (v.outPath or null) == homeManagerId) || isNixpkgsTree v;
+        # Every other `nixpkgs-*` input, keyed by variant (nixpkgs-unstable ->
+        # unstable), with the same overlays and config as the primary but
+        # WITHOUT `patches`: those target this host's own nixpkgs revision and
+        # would fail to apply to a different tree. Exposed as the
+        # `nixpkgsLibExtensions.channels.<variant>` option.
+        channels =
+          lib.mapAttrs' (name: np: lib.nameValuePair (lib.removePrefix "nixpkgs-" name) (mkPkgs np))
+            (
+              lib.filterAttrs (
+                name: v: lib.hasPrefix "nixpkgs-" name && lib.isAttrs v && v ? legacyPackages
+              ) inputs
+            );
 
-      autoNixosModules = collected.nixosModules;
-      autoHomeModules = collected.homeModules;
-
-      # Every other `nixpkgs-*` input, keyed by variant (nixpkgs-unstable ->
-      # unstable), with the same overlays and config as the primary but
-      # WITHOUT `patches`: those target this host's own nixpkgs revision and
-      # would fail to apply to a different tree. Exposed as the
-      # `nixpkgsLibExtensions.channels.<variant>` option.
-      channels =
-        lib.mapAttrs' (name: np: lib.nameValuePair (lib.removePrefix "nixpkgs-" name) (mkPkgs np))
-          (
-            lib.filterAttrs (
-              name: v: lib.hasPrefix "nixpkgs-" name && lib.isAttrs v && v ? legacyPackages
-            ) inputs
-          );
-
-      # Every input's packages, pre-selected for this system: e.g.
-      # `inputPkgs.disko.disko-install`. Deliberately NOT merged into `pkgs`
-      # (input names would silently shadow nixpkgs attributes); an input's own
-      # `overlays.default` -- which IS auto-applied -- is the flake author's
-      # sanctioned way into `pkgs`.
-      inputPkgs = lib.mapAttrs (_: v: v.packages.${system}) (
-        lib.filterAttrs (_: v: lib.isAttrs v && (v.packages or { }) ? ${system}) inputs
-      );
-    in
-    {
-      inherit
-        lib
-        pkgs
-        selectedSrc
-        home-manager
-        autoOverlays
-        autoNixosModules
-        autoHomeModules
-        channels
-        inputPkgs
-        inputLibAdditions
-        ;
-      # For mk-system.nix's choice of evaluation route: the nixpkgs INPUT
-      # (unpatched -- when it is a flake, its lib.nixosSystem is the entry
-      # point of choice) and whether `patches` forced a rebuilt tree
-      # (selectedSrc is then a derivation, not the input).
-      nixpkgsInput = nixpkgs;
-      nixpkgsPatched = patches != [ ];
-    };
+        # Every input's packages, pre-selected for this system: e.g.
+        # `inputPkgs.disko.disko-install`. Deliberately NOT merged into `pkgs`
+        # (input names would silently shadow nixpkgs attributes); an input's own
+        # `overlays.default` -- which IS auto-applied -- is the flake author's
+        # sanctioned way into `pkgs`.
+        inputPkgs = lib.mapAttrs (_: v: v.packages.${system}) (
+          lib.filterAttrs (_: v: lib.isAttrs v && (v.packages or { }) ? ${system}) inputs
+        );
+      in
+      {
+        inherit
+          lib
+          pkgs
+          selectedSrc
+          home-manager
+          autoOverlays
+          autoNixosModules
+          autoHomeModules
+          channels
+          inputPkgs
+          inputLibAdditions
+          ;
+        # For mk-system.nix's choice of evaluation route: the nixpkgs INPUT
+        # (unpatched -- when it is a flake, its lib.nixosSystem is the entry
+        # point of choice) and whether `patches` forced a rebuilt tree
+        # (selectedSrc is then a derivation, not the input).
+        nixpkgsInput = nixpkgs;
+        nixpkgsPatched = patches != [ ];
+      };
 
   # Shared context: everything the builders need (lib, pkgs, specialArgs and the
   # auto-collected module/overlay sets). Builder-specific arguments are ignored
