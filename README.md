@@ -66,12 +66,17 @@ namespaced duplicates exist for discoverability.
   GPT partitions, pool, standard datasets plus one per user, optional
   encryption and extra datasets.
   [lib/disko/README.md](lib/disko/README.md) collects the operational
-  notes that go with it, such as the hybrid-MBR step a Raspberry Pi 3
-  bootrom needs after disko has formatted the disk.
-- `importIfNix` / `importIfNixOr`: git-crypt-friendly imports. A
-  `private.nix` that is an encrypted blob in the checkout (CI without
-  the git-crypt key) evaluates to a default value with a warning
-  instead of breaking evaluation.
+  notes that go with it, such as the hybrid-MBR step some bootroms
+  need after disko has formatted the disk: the Raspberry Pi 3's
+  bootrom only understands MBR partition tables, not the GPT this
+  library uses, so a hybrid MBR overlays an MBR-compatible view of the
+  boot partition on top of the GPT disk.
+- `importIfNix` / `importIfNixOr`: friendly to git-crypt (which
+  encrypts individual files in a git repo transparently -- a checkout
+  without the decryption key sees raw ciphertext instead of the file's
+  real content). A `private.nix` that is an encrypted blob in the
+  checkout (CI without the git-crypt key) evaluates to a default value
+  with a warning instead of breaking evaluation.
 - Small string/attrset helpers (`stringToTitle`, `recursiveMerge`, ...).
 
 ## Working on this repo
@@ -110,7 +115,9 @@ without the builders.
     system = "x86_64-linux";
 
   in {
-    # Directly import into `lib` via the canonical lib overlay
+    # Directly import into `lib` via the overlay -- the standard
+    # `final: prev: delta` shape `lib.extend` composes, the same
+    # form any other flake's overlay takes
     nixosConfigurations.host_1 = nixpkgs.lib.nixosSystem {
       inherit system;
 

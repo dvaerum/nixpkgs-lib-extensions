@@ -31,7 +31,8 @@ lib/
                       only by direct import
       shared.nix      thin aggregator the builder files import
       hosts-args.nix  argument allowlists, hosts-attrset validation,
-                      planHosts and the plan projections
+                      planHosts, and the plan's two projections into
+                      builder output (systemsFromPlan / homesFromPlan)
       context.nix     mkContextCore / mkContext -- the expensive
                       `import nixpkgs` lives here
       inputs.nix      input conventions and inputContributions
@@ -99,16 +100,20 @@ prebuilt core, which is how a fleet shares one nixpkgs evaluation.
 package set, the extended lib, and everything auto-collected from the
 inputs (inputs.nix decides what each input contributes and how
 `inputContributions` narrows it). `mkContext` adds the thin per-host
-layer (specialArgs and their reservation guard). The builder-derived
-per-host values reach modules as the `nixpkgsLibExtensions.*` options
-(ext-options.nix), imported into every system and every home.
+layer: specialArgs, plus the guard that throws if a host's own
+`specialArgs` redefines a name the builder already owns (`hostname`,
+`tags`, `pkgs`, ...). The builder-derived per-host values reach
+modules as the `nixpkgsLibExtensions.*` options (ext-options.nix),
+imported into every system and every home.
 
 ## Things that are enforced, not remembered
 
 - `nix fmt` / `nix run .#gen-docs` -- the formatting and
   docs-up-to-date checks run the exact same scripts.
-- The loader's path list, the core-argument list, the coreDefaults
-  table, the argument allowlist and its documentation bullets, and the
-  guide's options table are all pinned by eval-time assertions in
+- The loader's path list, the core-argument list, the `coreDefaults`
+  table (context.nix's default value for each CORE argument --
+  `patches`, `overlays`, `nixpkgsConfig`, ...), the argument allowlist
+  and its documentation bullets, and the guide's options table are all
+  pinned by eval-time assertions in
   checks/builders/tests/ -- each one is a pair of things that used to
   be able to drift apart.

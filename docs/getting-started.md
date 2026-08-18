@@ -103,7 +103,9 @@ never run `home-manager` by hand.
 
 The heart of the setup -- one attrset shared by all hosts, passed to
 the builders as `userRegistry` (NOT to be confused with the flake's
-`homeConfigurations` OUTPUT, which the builders produce from it):
+`homeConfigurations` OUTPUT -- the per-`user@host` home-manager
+configs the builders assemble FROM this registry, covered in
+[Hosts](#hosts) below):
 
 ```nix
 userRegistry = {
@@ -158,10 +160,11 @@ Each host is one entry in the hosts attrset you hand to
   };
 
   outputs =
-    { nixpkgs-lib-extensions, ... }@inputs:
+    { nixpkgs, nixpkgs-lib-extensions, ... }@inputs:
     let
       extLib = nixpkgs-lib-extensions.lib;
       system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
       userRegistry = {
         # the registry from the previous section
         "alice" = ./users/alice;
@@ -190,8 +193,19 @@ Each host is one entry in the hosts attrset you hand to
     # nixosConfigurations for the hosts,
     # and the "user@host"
     # homeConfigurations the login
-    # bootstrap activates
-    extLib.buildConfigurations hosts;
+    # bootstrap activates. It's a PLAIN
+    # attrset, so it merges with `//`
+    # like any other outputs -- it does
+    # not have to be the whole flake.
+    extLib.buildConfigurations hosts
+    // {
+      devShells.${system}.default =
+        pkgs.mkShell {
+          packages = [ pkgs.nixfmt ];
+        };
+      packages.${system}.default =
+        pkgs.hello;
+    };
 }
 ```
 
@@ -205,6 +219,12 @@ It is also cheaper: each build function plans its hosts independently, so
 calling both by hand evaluates the shared host-independent context twice
 -- for a fleet, two full nixpkgs evaluations. `buildConfigurations` plans
 once and takes both outputs from that one plan.
+
+Its return value is an ordinary attrset -- `{ nixosConfigurations =
+...; homeConfigurations = ...; }`, nothing more -- so it composes with
+`//` exactly like hand-written outputs, as in the `devShells`/`packages`
+merge above. Nothing about using the builders confines your flake to
+only the two outputs they produce.
 
 Later snippets in this guide assume these bindings (`extLib`,
 `inputs`, `system`, the registry) from this skeleton.
@@ -276,11 +296,13 @@ Every registry-derived user gets a login account automatically:
 `isNormalUser` and gives the user a **private primary group** named
 after them (instead of the shared `users` group).
 
-System accounts are recognized by uid and left untouched: when a
-user's merged uid is below 1000 -- root, or a registry user whose
-`configuration.nix` pins a reserved uid -- the module contributes
-nothing (NixOS forbids `isNormalUser` on such accounts, and they
-define their own group and shell). So `"root"` is a valid registry
+System accounts are recognized by uid and left untouched: NixOS
+reserves uid 0-999 for system and service accounts (root is 0) and
+its module system forbids setting `isNormalUser = true;` on any of
+them. So when a user's merged uid falls in that range -- root, or a
+registry user whose `configuration.nix` pins a reserved uid -- this
+module contributes nothing: the account keeps whatever group and
+shell its own config already gives it. So `"root"` is a valid registry
 entry: it gets its `home.nix`/`configuration.nix`, never account
 changes.
 
@@ -318,13 +340,17 @@ mechanisms; `loginHomes` selects which:
                                 by the bootstrap service
 ```
 
-System-managed (the default) means the home is part of the system
-closure: `useGlobalPkgs`/`useUserPackages` are enabled (both
-`mkDefault`), a broken home config fails the system build, and no
-flake outputs are involved. Each home receives `username` as a
-module argument and gets `home.stateVersion` defaulted to the
-CURRENT nixpkgs release -- but a home actually relying on that
-moving default is warned (both mechanisms): pin it in the user's
+System-managed (the default) means the home is built together with
+the system, as one derivation: home-manager's own
+`useGlobalPkgs`/`useUserPackages` options are enabled, so home-manager
+reuses the system's package evaluation and installed packages instead
+of fetching its own -- set with low priority (`mkDefault`), so a host
+module can still override them. A broken home config then fails the
+whole system build, and no flake outputs are involved. Each home
+receives `username` as a module argument and gets `home.stateVersion`
+defaulted to the CURRENT nixpkgs release -- but a home actually
+relying on that moving default is warned (both mechanisms): pin it
+in the user's
 `home.nix` (`home.stateVersion = "26.11";`) or fleet-wide via an
 entry in the shared `homeModules` argument.
 
@@ -467,9 +493,15 @@ one that does not exist and *that* error lists them.)
 ### Selecting what an input contributes
 
 `inputContributions` is keyed by input name, and each entry names the
-entries to take per channel -- `nixosModules`, `homeModules` or
-`overlays`. It is an ordinary builder argument, so it goes in
-`_defaults` (applying to every host) or on a single host entry:
+entries to take per **channel** -- this doc's term for one of
+`nixosModules`, `homeModules`, `overlays`, `libOverlays` or `lib`,
+i.e. one KIND of export an input can contribute. (Unrelated to a
+NixOS release channel like `nixos-unstable`, and to the separate
+`nixpkgsLibExtensions.channels` option covered in
+[What your modules receive](#what-your-modules-receive) -- that one
+names alternate nixpkgs package sets, not export kinds.) It is an
+ordinary builder argument, so it goes in `_defaults` (applying to
+every host) or on a single host entry:
 
 ```nix
 hosts = {
@@ -580,15 +612,19 @@ and a fork that exports one means it to be used. A tree shipping a
 whole CATALOG of overlays is caught by the ambiguity throw like any
 other catalog, and opted out per channel the same way.
 
-The home-manager input itself is detected by capability, whatever
-you named it, and its NixOS module is never auto-imported absent an
-explicit selection (the builder wires it in deliberately where
-system-managed homes need it).
+The home-manager input itself is detected by capability -- by what it
+EXPORTS (the shape only the real home-manager flake has), not by what
+you NAMED it in your `inputs` -- and its NixOS module is never
+auto-imported absent an explicit selection (the builder wires it in
+deliberately where system-managed homes need it).
 
 ## What your modules receive
 
 Both NixOS modules and home-manager modules get a small set of
-specialArgs -- the true import-time values, usable even in `imports`:
+**specialArgs**: values passed at IMPORT time, before the rest of a
+module's config is evaluated -- unlike ordinary module arguments,
+these are usable inside a module's `imports` list itself, not just its
+body. This table is the complete list the builders add:
 
 | Arg | Content |
 |-----|---------|
@@ -610,6 +646,13 @@ so it cannot silently miss one:
 | `nixpkgsLibExtensions.inputPkgs.<name>` | every input's packages, pre-selected for the host's system (read-only) |
 | `nixpkgsLibExtensions.channels.<variant>` | package set per `nixpkgs-*` input (read-only) |
 | `nixpkgsLibExtensions.hostname` | homes only: the host the home is built for -- NixOS modules read `config.networking.hostName` |
+
+`channels` here is this option's own name for "which `nixpkgs-*` input
+this package set came from" -- e.g. `channels.stable` for a
+`nixpkgs-stable` input. It is unrelated to a NixOS release channel
+(`nixos-unstable`, `25.05`, ...) and to the `inputContributions`
+"channel" from the previous section (a KIND of export); the three
+just happen to share a name.
 
 Home-manager modules additionally receive `username` (whose home) as a
 module argument.
@@ -698,9 +741,11 @@ laptop = {
 
 ## Patching nixpkgs itself
 
-For a nixpkgs fix that has not reached your channel yet (typically
-an open pull request), a host can build from a patched COPY of the
-nixpkgs source. Save the PR's diff into your repo:
+For a nixpkgs fix that has not reached your channel yet -- a NixOS
+release channel like `nixos-unstable`, unrelated to this doc's other
+uses of "channel" above -- typically an open pull request, a host can
+build from a patched COPY of the nixpkgs source. Save the PR's diff
+into your repo:
 
 ```
 curl -L -o patches/pr-12345.diff \
@@ -760,16 +805,23 @@ merged option value, also labeling the boot menu via
 - **Untracked files are invisible to flakes.** `git add` new user
   directories and host files, or they are silently skipped.
 - Registry values should be **path values** (`./users/alice`), not
-  absolute path strings (`"/home/me/users/alice"`): a string escapes
-  the flake -- it is never copied to the store and fails under pure
-  evaluation -- so it still works but warns.
+  absolute path strings (`"/home/me/users/alice"`): a string is never
+  copied into the flake's Nix store copy the way a path value is, so
+  it escapes the flake and depends on whatever sits at that
+  filesystem location instead. This library only WARNS when it sees
+  one; Nix's own pure evaluation (`nix flake check`, CI, any real
+  build) can still refuse to read it outright elsewhere in the
+  chain -- treat the warning as something to fix, not ignore.
 - A plain `"user"` entry is IGNORED (with a warning) as soon as a
   `"user@*"` or `"user@<thishost>"` entry exists -- an @-entry naming
   some OTHER host does not shadow it -- import its directory explicitly from
   an @-entry if you want to reuse it.
-- "Every login" means every systemd user-manager instance: the
-  bootstrap re-runs when the user's first session starts, not on
-  each additional terminal login.
+- "Every login" means every systemd user-manager instance, not every
+  terminal window: systemd starts ONE `--user` instance per user at
+  their first session of the day and reuses it for every session
+  after (extra terminals, additional SSH logins) until the user is
+  fully logged out everywhere. The bootstrap re-runs at that
+  first-session boundary, not on each additional terminal login.
 - If the bootstrap seems to do nothing: at least one `loginHomes`
   name must match a registry user shipping a `home.nix` on this host,
   a home-manager input must exist, and `inputs.self` (or
