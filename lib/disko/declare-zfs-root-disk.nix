@@ -24,10 +24,14 @@
     Module) involved, not full-disk-encryption-grade secrecy.
 
     RECOVERY: record the UUID (`dmidecode --string system-uuid`)
-    somewhere off-machine at install time. After a board swap the pool
-    no longer auto-unlocks; boot then PROMPTS for a passphrase -- the
-    OLD board's UUID is that passphrase -- after which the datasets can
-    be re-keyed to the new board.
+    somewhere off-machine at install time. After a board swap the pool no
+    longer auto-unlocks -- and boot does NOT interactively prompt for a
+    passphrase either (`requestEncryptionCredentials` is deliberately not
+    left at its blanket-prompt default; see below). Recovery is manual:
+    boot from a rescue/live medium, import the pool, and
+    `zfs load-key -L prompt <dataset>` with the OLD board's UUID as the
+    passphrase, for every affected dataset, then re-key them to the new
+    board's UUID.
 
     # Example
 
@@ -196,8 +200,9 @@
             # unlocked must not abort the loop and leave the REST locked
             # too. But say which one -- silently swallowing this is what
             # turned a wrong key into an unexplained sysroot.mount
-            # timeout. boot.zfs.requestEncryptionCredentials then prompts
-            # for whatever is still locked.
+            # timeout. Nothing prompts for it afterward (see
+            # requestEncryptionCredentials below): this is the ONLY
+            # attempt a `file://`-keyed dataset gets.
             * ) zfs load-key "$dataset" \
                   || echo "zfs-load-encryption-keys: could not load the key for $dataset (keylocation=$keylocation); it stays locked" >&2 ;;
           esac
@@ -379,17 +384,26 @@
           devNodes = lib.mkDefault "/dev/disk/by-partuuid";
           forceImportRoot = lib.mkDefault true;
 
-          # Left at NixOS's default (true) when encrypting: the key file is
-          # derived from the motherboard's UUID, so a board swap, a machine
-          # reporting "Not Settable", or a restored-elsewhere pool leaves a
-          # dataset locked. With this false there is no fallback at all --
-          # the visible symptom is a sysroot.mount timeout, with the real
-          # cause several screens earlier. Leaving it true means stage 1
-          # ASKS for the passphrase for anything the key file did not
-          # unlock, which is the difference between a recoverable boot and
-          # a rescue USB. Datasets the key file did unlock are never
-          # prompted for.
-          requestEncryptionCredentials = lib.mkIf (!enableEncryption) (lib.mkDefault false);
+          # NOT left at NixOS's own default (true): that scans the WHOLE
+          # pool and interactively prompts for anything still locked,
+          # regardless of WHY it's locked -- verified (both initrd flavors'
+          # `zfs.nix` source, and reproduced live in a VM) that this buys
+          # NOTHING for the datasets this function itself creates. Every one
+          # of them is `keylocation=file://...`, and that branch of NixOS's
+          # own import logic is a bare, non-interactive `zfs load-key` --
+          # identical to what loadKeysScript above already attempts
+          # independently of this option -- with no interactive fallback if
+          # the file's key is wrong (a board swap: see the RECOVERY section
+          # above). The ONLY thing `true` actually adds is an interactive
+          # prompt for datasets whose `keylocation` is literally `prompt` --
+          # which this function never creates, but a consumer might, e.g. a
+          # per-user home meant to unlock at LOGIN via `security.pam.zfs`,
+          # not at boot. Leaving the default at `true` means every such host
+          # gets an unwanted boot-time prompt for a dataset deliberately not
+          # meant to be handled at boot. `mkDefault`: a host that has its
+          # own `prompt`-keyed dataset and DOES want the boot-time fallback
+          # for it can still opt back in.
+          requestEncryptionCredentials = lib.mkDefault [ ];
         };
 
         tmp = {
@@ -450,13 +464,15 @@
       # encryption keys via the legacy initrd hooks. The writer runs in a
       # SUBSHELL: on junk dmidecode output it exits nonzero, and this code
       # is part of the stage-1 init script -- a bare exit would kill PID 1.
-      # The failure stays loud (stderr), and the boot falls through to
-      # boot.zfs.requestEncryptionCredentials prompting for the passphrase.
+      # The failure stays loud (stderr) instead: nothing downstream prompts
+      # for a passphrase (requestEncryptionCredentials is [] -- see above),
+      # so this message is the ONLY signal a human gets before whatever
+      # dataset needed the key times out several screens later.
       boot.initrd.postDeviceCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) ''
         (
           KEY="$(${pkgs.dmidecode}/bin/dmidecode --string system-uuid | tr -d '\n')"
           ${writeKeyFile}
-        ) || echo "declareZfsRootDisk: no usable ZFS key file was written; stage 1 will prompt for the passphrase instead" >&2
+        ) || echo "declareZfsRootDisk: no usable ZFS key file was written; the affected dataset(s) will remain locked (see RECOVERY above)" >&2
       '';
 
       boot.initrd.postResumeCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) (

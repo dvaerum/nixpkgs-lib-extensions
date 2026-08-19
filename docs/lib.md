@@ -79,10 +79,14 @@ deliberate trade-off: auto-unlock with no TPM (Trusted Platform
 Module) involved, not full-disk-encryption-grade secrecy.
 
 RECOVERY: record the UUID (`dmidecode --string system-uuid`)
-somewhere off-machine at install time. After a board swap the pool
-no longer auto-unlocks; boot then PROMPTS for a passphrase -- the
-OLD board's UUID is that passphrase -- after which the datasets can
-be re-keyed to the new board.
+somewhere off-machine at install time. After a board swap the pool no
+longer auto-unlocks -- and boot does NOT interactively prompt for a
+passphrase either (`requestEncryptionCredentials` is deliberately not
+left at its blanket-prompt default; see below). Recovery is manual:
+boot from a rescue/live medium, import the pool, and
+`zfs load-key -L prompt <dataset>` with the OLD board's UUID as the
+passphrase, for every affected dataset, then re-key them to the new
+board's UUID.
 
 ### Example
 

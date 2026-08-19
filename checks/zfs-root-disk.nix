@@ -274,11 +274,19 @@ let
       ];
     } (r: r.disko.devices.zpool."zroot-testhost".datasets);
 
-    # encryption keeps a recovery path: the key file comes from the
-    # motherboard UUID, so a board swap or a restored pool must still be
-    # able to ASK for the passphrase rather than hang on sysroot.mount
-    encryption-keeps-passphrase-fallback =
-      !((build { }).boot.zfs.requestEncryptionCredentials.condition or false);
+    # NixOS's own requestEncryptionCredentials default (true, blanket-scan
+    # + interactive prompt) must NOT leak through: declareZfsRootDisk's own
+    # loadKeysScript already makes the one attempt a file://-keyed dataset
+    # gets, and an unwanted boot-time prompt would actively fight a
+    # consumer's PAM-managed (login-unlocked) dataset. mkDefault, not
+    # mkForce, so a host can still opt back into a prompt if it wants one.
+    request-encryption-credentials-defaults-to-empty-list =
+      let
+        value = (build { }).boot.zfs.requestEncryptionCredentials;
+      in
+      (value.content or null) == [ ]
+      && (value._type or null) == "override"
+      && (value.priority or null) == 1000;
 
     # argument validation throws
     invalid-encryption-throws = buildThrows { enableEncryption = "yes"; } (
