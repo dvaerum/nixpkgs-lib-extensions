@@ -3,22 +3,32 @@
 { ... }:
 {
   /**
-    Declare a complete ZFS root disk as a NixOS module: GPT partitions
-    (boot/ESP, optional swap, zfs), the `zroot-<hostname>` pool, the
-    standard datasets (root, /var, /var/log, /nix/store, /home, optional
-    /tmp) plus one HOME dataset per user, with optional encryption keyed
-    to the motherboard's UUID.
+    Declare a complete ZFS root disk as a NixOS module: a GPT (GUID
+    Partition Table) partition layout -- a boot partition (ESP on
+    x86_64-linux, FIRMWARE + ESP on aarch64-linux), an optional swap
+    partition, and one partition holding the ZFS pool -- the
+    `zroot-<hostname>` pool itself, and the standard ZFS datasets inside
+    it (root, /var, /var/log, /nix/store, /home, optional /tmp) plus one
+    HOME dataset per user, with optional encryption keyed to the
+    motherboard's UUID. (A ZFS "pool" is the whole allocated block of
+    storage; a "dataset" is a mountable sub-filesystem inside it --
+    roughly ZFS's equivalent of a partition, but resizable and
+    nestable.)
 
     Prerequisites: the disko NixOS module must be imported (it provides
     the `disko.devices` options -- automatic when disko is a flake input
-    of a `mkNixosSystem` setup), and ZFS requires
-    `networking.hostId` to be set.
+    of a `mkNixosSystem` setup), and ZFS requires `networking.hostId` to
+    be set (an 8-hex-digit ID ZFS uses to tell "my own pool, imported
+    normally" apart from "a pool still marked in-use by some OTHER,
+    possibly still-running machine").
 
     THREAT MODEL: keying the pool to the motherboard's UUID protects a
-    SEPARATED disk -- pulled for RMA, resold, or discarded -- whose new
-    holder does not also hold the board. It is near-zero protection
-    against whole-machine theft: the UUID is readable from the BIOS
-    setup screen, chassis stickers and service tags, IPMI, or any
+    SEPARATED disk -- pulled for RMA (a warranty return/replacement),
+    resold, or discarded -- whose new holder does not also hold the
+    board. It is near-zero protection against whole-machine theft: the
+    UUID is readable from the BIOS setup screen, chassis stickers and
+    service tags, IPMI (a server's built-in remote-management
+    interface, readable independently of the running OS), or any
     live-USB boot of the very machine holding the disk. This is a
     deliberate trade-off: auto-unlock with no TPM (Trusted Platform
     Module) involved, not full-disk-encryption-grade secrecy.
@@ -28,7 +38,9 @@
     longer auto-unlocks -- and boot does NOT interactively prompt for a
     passphrase either (`requestEncryptionCredentials` is deliberately not
     left at its blanket-prompt default; see below). Recovery is manual:
-    boot from a rescue/live medium, import the pool, and
+    boot from a rescue/live medium (a bootable USB/CD running a live
+    Linux, independent of the installed system), import the pool (ZFS's
+    term for attaching a pool it doesn't yet know about), and
     `zfs load-key -L prompt <dataset>` with the OLD board's UUID as the
     passphrase, for every affected dataset, then re-key them to the new
     board's UUID.
@@ -67,14 +79,15 @@
 
     enableEncryption
     : Whether the pool should be encrypted. Default `true`.
-    : Currently the encryption is using the motherboards UUID as the key.
+    : Currently the encryption is using the motherboard's UUID as the key.
     : You can find it with the command: `dmidecode --string system-uuid`
     : -- record it off-machine; see the THREAT MODEL and RECOVERY
     : paragraphs above for what this protects against and what a board
     : swap costs.
 
     swapSize
-    : Set the size (in GiB) of the SWAP partition. Default is `32`.
+    : Set the size (in GiB, gibibytes -- 1024^3 bytes) of the SWAP
+    : partition. Default is `32`.
     : Set it to `0` to disable having a SWAP partition.
 
     useZfsForTmp
@@ -113,8 +126,11 @@
       extraDatasets ? { },
     }:
     # Returns a module function (valid in `imports`) so the actual initrd
-    # type can be read from `config`, `pkgs` & `lib` instead
-    # of having to pass them as arguments.
+    # (initial ramdisk -- the small environment that runs before the real
+    # root filesystem, here `/`, is mounted; NixOS builds it as either a
+    # systemd service tree or a legacy shell-script chain, the "flavor"
+    # referenced throughout this file) type can be read from `config`,
+    # `pkgs` & `lib` instead of having to pass them as arguments.
     {
       config,
       pkgs,
@@ -152,7 +168,9 @@
       # the caller.
       #
       # POSIX sh only (no `[[`, no `$'...'`): the script-initrd hooks run
-      # under busybox ash, and one snippet serves every context.
+      # under busybox ash (BusyBox's minimal Almquist-shell clone -- the
+      # only shell present in that stripped-down environment, and it
+      # rejects bash-only syntax), and one snippet serves every context.
       writeKeyFile = ''
         SECRET_FOLDER_PATH="${builtins.dirOf keyFilePath}"
         KEY_FILE_PATH="${keyFilePath}"
@@ -353,8 +371,11 @@
         };
       };
 
-      # systemd stage 1 does not support boot.initrd.postDeviceCommands or
-      # boot.initrd.postResumeCommands.
+      # "stage 1" is NixOS's name for the initrd's own boot phase (as
+      # opposed to "stage 2", the real system after switch-root). The
+      # systemd-initrd flavor of stage 1 does not support
+      # boot.initrd.postDeviceCommands or boot.initrd.postResumeCommands
+      # (both are script-initrd-only hook points).
       useSystemdInitrd = config.boot.initrd.systemd.enable;
 
       tmpDataset = lib.optionalAttrs useZfsForTmp {
@@ -551,7 +572,7 @@
                     ESP = {
                       label = "ESP";
                       priority = 1;
-                      type = "EF00";
+                      type = "EF00"; # GPT partition-type code for an EFI System Partition
                       start = "2MiB";
                       size = "2G";
                       content = {
@@ -591,7 +612,7 @@
                     ESP = {
                       label = "ESP";
                       priority = 2;
-                      type = "EF00";
+                      type = "EF00"; # GPT partition-type code for an EFI System Partition
                       # attributes = [
                       #   2 # Legacy BIOS Bootable, for U-Boot to find extlinux config
                       # ];

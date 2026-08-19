@@ -58,22 +58,32 @@ recursiveMerge [
 
 ## `lib.disko.declareZfsRootDisk`
 
-Declare a complete ZFS root disk as a NixOS module: GPT partitions
-(boot/ESP, optional swap, zfs), the `zroot-<hostname>` pool, the
-standard datasets (root, /var, /var/log, /nix/store, /home, optional
-/tmp) plus one HOME dataset per user, with optional encryption keyed
-to the motherboard's UUID.
+Declare a complete ZFS root disk as a NixOS module: a GPT (GUID
+Partition Table) partition layout -- a boot partition (ESP on
+x86_64-linux, FIRMWARE + ESP on aarch64-linux), an optional swap
+partition, and one partition holding the ZFS pool -- the
+`zroot-<hostname>` pool itself, and the standard ZFS datasets inside
+it (root, /var, /var/log, /nix/store, /home, optional /tmp) plus one
+HOME dataset per user, with optional encryption keyed to the
+motherboard's UUID. (A ZFS "pool" is the whole allocated block of
+storage; a "dataset" is a mountable sub-filesystem inside it --
+roughly ZFS's equivalent of a partition, but resizable and
+nestable.)
 
 Prerequisites: the disko NixOS module must be imported (it provides
 the `disko.devices` options -- automatic when disko is a flake input
-of a `mkNixosSystem` setup), and ZFS requires
-`networking.hostId` to be set.
+of a `mkNixosSystem` setup), and ZFS requires `networking.hostId` to
+be set (an 8-hex-digit ID ZFS uses to tell "my own pool, imported
+normally" apart from "a pool still marked in-use by some OTHER,
+possibly still-running machine").
 
 THREAT MODEL: keying the pool to the motherboard's UUID protects a
-SEPARATED disk -- pulled for RMA, resold, or discarded -- whose new
-holder does not also hold the board. It is near-zero protection
-against whole-machine theft: the UUID is readable from the BIOS
-setup screen, chassis stickers and service tags, IPMI, or any
+SEPARATED disk -- pulled for RMA (a warranty return/replacement),
+resold, or discarded -- whose new holder does not also hold the
+board. It is near-zero protection against whole-machine theft: the
+UUID is readable from the BIOS setup screen, chassis stickers and
+service tags, IPMI (a server's built-in remote-management
+interface, readable independently of the running OS), or any
 live-USB boot of the very machine holding the disk. This is a
 deliberate trade-off: auto-unlock with no TPM (Trusted Platform
 Module) involved, not full-disk-encryption-grade secrecy.
@@ -83,7 +93,9 @@ somewhere off-machine at install time. After a board swap the pool no
 longer auto-unlocks -- and boot does NOT interactively prompt for a
 passphrase either (`requestEncryptionCredentials` is deliberately not
 left at its blanket-prompt default; see below). Recovery is manual:
-boot from a rescue/live medium, import the pool, and
+boot from a rescue/live medium (a bootable USB/CD running a live
+Linux, independent of the installed system), import the pool (ZFS's
+term for attaching a pool it doesn't yet know about), and
 `zfs load-key -L prompt <dataset>` with the OLD board's UUID as the
 passphrase, for every affected dataset, then re-key them to the new
 board's UUID.
@@ -122,14 +134,15 @@ declareZfsRootDisk :: Attribute -> Module
 
 - **enableEncryption**
   Whether the pool should be encrypted. Default `true`.
-  Currently the encryption is using the motherboards UUID as the key.
+  Currently the encryption is using the motherboard's UUID as the key.
   You can find it with the command: `dmidecode --string system-uuid`
   -- record it off-machine; see the THREAT MODEL and RECOVERY
   paragraphs above for what this protects against and what a board
   swap costs.
 
 - **swapSize**
-  Set the size (in GiB) of the SWAP partition. Default is `32`.
+  Set the size (in GiB, gibibytes -- 1024^3 bytes) of the SWAP
+  partition. Default is `32`.
   Set it to `0` to disable having a SWAP partition.
 
 - **useZfsForTmp**
