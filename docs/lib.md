@@ -90,14 +90,15 @@ Module) involved, not full-disk-encryption-grade secrecy.
 
 RECOVERY: record the UUID (`dmidecode --string system-uuid`)
 somewhere off-machine at install time. After a board swap the pool no
-longer auto-unlocks -- and boot does NOT interactively prompt for a
-passphrase either (`requestEncryptionCredentials` is deliberately not
-left at its blanket-prompt default; see below). Recovery is manual:
-boot from a rescue/live medium (a bootable USB/CD running a live
-Linux, independent of the installed system), import the pool (ZFS's
-term for attaching a pool it doesn't yet know about), and
-`zfs load-key -L prompt <dataset>` with the OLD board's UUID as the
-passphrase, for every affected dataset, then re-key them to the new
+longer auto-unlocks, and boot does NOT prompt for a passphrase
+either: this function sets `boot.zfs.requestEncryptionCredentials =
+[ ]`, opting out of NixOS's own "prompt for anything still locked"
+default. Recovery is manual: boot from a rescue/live medium (a
+bootable USB/CD running a live Linux, independent of the installed
+system), import the pool (ZFS's term for attaching a pool it doesn't
+yet know about), and `zfs load-key -L prompt <dataset>` with the OLD
+board's UUID as the passphrase, for every affected dataset, then
+re-key them to the new
 board's UUID.
 
 ### Example
