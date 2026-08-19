@@ -405,39 +405,19 @@
           devNodes = lib.mkDefault "/dev/disk/by-partuuid";
           forceImportRoot = lib.mkDefault true;
 
-          # NOT left at NixOS's own default (true): that scans the WHOLE
-          # pool and interactively prompts for anything still locked,
-          # regardless of WHY it's locked -- verified (both initrd flavors'
-          # `zfs.nix` source, and reproduced live in a VM) that this buys
-          # NOTHING for the datasets this function itself creates. Every one
-          # of them is `keylocation=file://...`, and that branch of NixOS's
-          # own import logic is a bare, non-interactive `zfs load-key` --
-          # identical to what loadKeysScript above already attempts
-          # independently of this option -- with no interactive fallback if
-          # the file's key is wrong (a board swap: see the RECOVERY section
-          # above). The ONLY thing `true` actually adds is an interactive
-          # prompt for datasets whose `keylocation` is literally `prompt` --
-          # which this function never creates, but a consumer might, e.g. a
-          # per-user home meant to unlock at LOGIN via `security.pam.zfs`,
-          # not at boot. Leaving the default at `true` means every such host
-          # gets an unwanted boot-time prompt for a dataset deliberately not
-          # meant to be handled at boot.
+          # NOT NixOS's own default (true): that's a blanket boot-time
+          # prompt for anything locked, which is redundant here --
+          # loadKeysScript above already makes the one non-interactive
+          # attempt any `file://`-keyed dataset gets -- and actively wrong
+          # for a consumer's PAM-unlocked (login-time) dataset, which
+          # shouldn't also get a boot prompt.
           #
-          # Plain `[ ]`, deliberately NOT `lib.mkDefault [ ]`: this option's
-          # type (`either bool (listOf str)`) merges same-priority list
-          # definitions by CONCATENATION, so a consumer adding their own
-          # plain `requestEncryptionCredentials = [ "pool/dataset" ]`
-          # combines with ours for free (`[ ] ++ [ "pool/dataset" ]`) with
-          # no override ceremony needed. The trade-off: this only holds for
-          # a PLAIN consumer definition. A consumer who instead reaches for
-          # `lib.mkDefault [ ... ]` on their own side does NOT merge with a
-          # plain `[ ]` here -- NixOS's module system only concatenates
-          # same-priority list defs, and our plain (priority 100) list
-          # would win outright over their `mkDefault` (priority 1000) one,
-          # silently discarding it. If you need to add datasets here,
-          # use a plain list (or `lib.mkForce`/`lib.mkAfter` if you
-          # specifically need override/ordering control) -- not
-          # `lib.mkDefault`.
+          # Plain `[ ]`, not `lib.mkDefault [ ]`: a consumer's own plain
+          # `requestEncryptionCredentials = [ "pool/ds" ]` concatenates
+          # with ours for free; `lib.mkDefault` on THEIR side would not
+          # (NixOS only concatenates same-priority list defs, and plain
+          # always outranks mkDefault) -- add datasets here as a plain
+          # list, not via mkDefault.
           requestEncryptionCredentials = [ ];
         };
 
