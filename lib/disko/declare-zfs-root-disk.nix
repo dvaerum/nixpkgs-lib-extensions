@@ -400,10 +400,24 @@
           # per-user home meant to unlock at LOGIN via `security.pam.zfs`,
           # not at boot. Leaving the default at `true` means every such host
           # gets an unwanted boot-time prompt for a dataset deliberately not
-          # meant to be handled at boot. `mkDefault`: a host that has its
-          # own `prompt`-keyed dataset and DOES want the boot-time fallback
-          # for it can still opt back in.
-          requestEncryptionCredentials = lib.mkDefault [ ];
+          # meant to be handled at boot.
+          #
+          # Plain `[ ]`, deliberately NOT `lib.mkDefault [ ]`: this option's
+          # type (`either bool (listOf str)`) merges same-priority list
+          # definitions by CONCATENATION, so a consumer adding their own
+          # plain `requestEncryptionCredentials = [ "pool/dataset" ]`
+          # combines with ours for free (`[ ] ++ [ "pool/dataset" ]`) with
+          # no override ceremony needed. The trade-off: this only holds for
+          # a PLAIN consumer definition. A consumer who instead reaches for
+          # `lib.mkDefault [ ... ]` on their own side does NOT merge with a
+          # plain `[ ]` here -- NixOS's module system only concatenates
+          # same-priority list defs, and our plain (priority 100) list
+          # would win outright over their `mkDefault` (priority 1000) one,
+          # silently discarding it. If you need to add datasets here,
+          # use a plain list (or `lib.mkForce`/`lib.mkAfter` if you
+          # specifically need override/ordering control) -- not
+          # `lib.mkDefault`.
+          requestEncryptionCredentials = [ ];
         };
 
         tmp = {

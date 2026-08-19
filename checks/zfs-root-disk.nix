@@ -278,15 +278,14 @@ let
     # + interactive prompt) must NOT leak through: declareZfsRootDisk's own
     # loadKeysScript already makes the one attempt a file://-keyed dataset
     # gets, and an unwanted boot-time prompt would actively fight a
-    # consumer's PAM-managed (login-unlocked) dataset. mkDefault, not
-    # mkForce, so a host can still opt back into a prompt if it wants one.
+    # consumer's PAM-managed (login-unlocked) dataset. Plain `[ ]`, NOT
+    # `lib.mkDefault [ ]`: this option's listOf-backed type concatenates
+    # same-priority list definitions, so a plain `[ ]` here combines for
+    # free with a consumer's own plain list -- an `override`-wrapped value
+    # would not (see the doc comment on this option for the merge
+    # footgun that ruled out mkDefault).
     request-encryption-credentials-defaults-to-empty-list =
-      let
-        value = (build { }).boot.zfs.requestEncryptionCredentials;
-      in
-      (value.content or null) == [ ]
-      && (value._type or null) == "override"
-      && (value.priority or null) == 1000;
+      (build { }).boot.zfs.requestEncryptionCredentials == [ ];
 
     # argument validation throws
     invalid-encryption-throws = buildThrows { enableEncryption = "yes"; } (

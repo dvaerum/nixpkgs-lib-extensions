@@ -30,24 +30,36 @@ while preserving GPT for Linux to read all partitions correctly.
 ## declareZfsRootDisk + a login-unlocked (PAM) home dataset
 
 `declareZfsRootDisk` sets `boot.zfs.requestEncryptionCredentials =
-lib.mkDefault [ ]`. NixOS's own default (`true`) recursively scans the
-whole pool at boot and interactively prompts for anything still
-locked -- which is redundant for every dataset this function creates
-(they're all `keylocation=file://...`, already handled once by this
-function's own key-loading script) and actively wrong for a dataset
-you want unlocked at LOGIN instead of at boot, e.g. a per-user home
-managed by
+[ ]` (a plain empty list, not wrapped in `lib.mkDefault`). NixOS's own
+default (`true`) recursively scans the whole pool at boot and
+interactively prompts for anything still locked -- which is redundant
+for every dataset this function creates (they're all
+`keylocation=file://...`, already handled once by this function's own
+key-loading script) and actively wrong for a dataset you want unlocked
+at LOGIN instead of at boot, e.g. a per-user home managed by
 [`security.pam.zfs`](https://search.nixos.org/options?query=security.pam.zfs):
 left at `true`, that dataset would ALSO get an unwanted boot-time
 password prompt on every boot, on top of the login-time unlock.
 
 If you add your own `keylocation=prompt` dataset and DO want NixOS's
-boot-time passphrase fallback for it, override the default on that
-host:
+boot-time passphrase fallback for it, add it as a **plain list**:
 
 ```nix
 boot.zfs.requestEncryptionCredentials = [ "mypool/mydataset" ];
 ```
+
+This works because `requestEncryptionCredentials`'s type
+(`either bool (listOf str)`) merges same-priority list definitions by
+CONCATENATION -- your plain list and this function's plain `[ ]`
+combine automatically, no override ceremony needed.
+
+**Do not use `lib.mkDefault [ ... ]` for your own addition here.**
+NixOS's module system only concatenates definitions at the SAME
+priority; a plain list (priority 100, what this function uses) beats
+an `mkDefault` one (priority 1000) outright, so your `mkDefault` list
+would be discarded entirely rather than merged -- silently, with no
+error. Use a plain list, or `lib.mkForce`/`lib.mkAfter` if you
+specifically need override/ordering control instead of concatenation.
 
 See `declareZfsRootDisk`'s own doc comment (`docs/lib.md`) for the
 full reasoning and the manual RECOVERY procedure after a motherboard
