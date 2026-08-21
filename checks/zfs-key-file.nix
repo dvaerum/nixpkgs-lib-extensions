@@ -130,7 +130,7 @@ let
         ${pkgs.writeText "junk-script-writer-${slug}.sh" writers.script-initrd} > "$work/run.sh"
     # rc MUST be 0: in the real script initrd this code is part of init
     ( cd "$work" && ${pkgs.busybox}/bin/ash ./run.sh ) 2> "$work/err"
-    grep -q "prompt for the passphrase" "$work/err"
+    grep -q "will remain locked" "$work/err"
     [ ! -e "$work/secrets/zpool.key" ]
   '';
 
