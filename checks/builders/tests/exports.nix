@@ -17,6 +17,8 @@
     "normalUserModule"
     "importIfNix"
     "importIfNixOr"
+    "readIfPlain"
+    "readIfPlainOr"
   ];
   internal-helpers-hidden = !(myLib ? mkContext) && !(myLib ? resolveUser);
   fixed-point-assembles = myLib ? stringToTitle;

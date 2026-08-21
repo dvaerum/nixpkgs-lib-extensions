@@ -77,6 +77,10 @@ namespaced duplicates exist for discoverability.
   real content). A `private.nix` that is an encrypted blob in the
   checkout (CI without the git-crypt key) evaluates to a default value
   with a warning instead of breaking evaluation.
+- `readIfPlain` / `readIfPlainOr`: the same idea for a file that isn't
+  Nix -- a plain secret or token. Reads it as a string when it's real
+  plaintext, or returns a default (empty string, or your own) when
+  it's still git-crypt ciphertext.
 - Small string/attrset helpers (`stringToTitle`, `recursiveMerge`, ...).
 
 ## Working on this repo

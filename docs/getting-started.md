@@ -787,8 +787,8 @@ one-time cost, and eval-only workflows such as
 `nix flake check --no-build` stop working for that host. For the
 same reason a host with `patches` fails to evaluate at all under
 `--no-allow-import-from-derivation` (as does this library's
-`importIfNix`/`importIfNixOr`, whose parse probe is also a
-during-evaluation build).
+`importIfNix`/`importIfNixOr` and `readIfPlain`/`readIfPlainOr`, whose
+validity probes are also a during-evaluation build).
 
 When NOT to use it: to change or fix a single package, an overlay
 (`overlays`) is lighter and needs no source copy. Patches are

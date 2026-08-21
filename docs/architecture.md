@@ -16,7 +16,8 @@ lib/
                     against the on-disk tree by the exports test).
   attrsets/         small helpers (recursiveMerge, ...)
   strings/          small helpers (stringToTitle, ...)
-  imports/          importIfNix / importIfNixOr (git-crypt-friendly)
+  imports/          importIfNix / importIfNixOr, readIfPlain /
+                    readIfPlainOr (git-crypt-friendly)
   disko/            declareZfsRootDisk (+ operational README.md)
   nixos/            the builders -- what this repo is about
     build-configurations.nix        buildConfigurations
