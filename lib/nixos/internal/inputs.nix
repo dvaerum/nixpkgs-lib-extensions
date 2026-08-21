@@ -45,7 +45,7 @@ let
       null
     else if lib.length matches > 1 then
       lib.warn
-        "nixpkgs-lib-extensions: several inputs look like home-manager (${lib.concatStringsSep ", " matches}); using `${lib.head matches}`. Pass `homeManager = inputs.<name>;` to the builder to choose explicitly."
+        "nixpkgs-lib-extensions: several inputs look like home-manager (${lib.concatStringsSep ", " matches}); using `${lib.head matches}`. Pass `homeManager = inputs.<name>;` to choose explicitly -- `homeManager` is a builder argument like `system` or `patches`, so it goes wherever those do: a direct `mkNixosSystem`/`mkHomeConfiguration` call, or in a hosts attrset's `_defaults` (every host), a `_groups` entry, or one host."
         inputs.${lib.head matches}
     else
       inputs.${lib.head matches};

@@ -135,7 +135,7 @@ in
         }:
         let
           relies = options.home.stateVersion.highestPrio >= builderDefaultPriority;
-          msg = "nixpkgs-lib-extensions: host `${hostname}`: the home of `${username}` does not pin `home.stateVersion` (no definition beats the builder's default priority -- a `lib.mkOptionDefault` definition is still unpinned), so it follows the CURRENT nixpkgs release (now ${lib.trivial.release}) and changes meaning on every nixpkgs bump. Pin it in that user's home.nix (`home.stateVersion = \"${lib.trivial.release}\";`), or fleet-wide via an entry in the shared `homeModules` builder argument.";
+          msg = "nixpkgs-lib-extensions: host `${hostname}`: the home of `${username}` does not pin `home.stateVersion` (no definition beats the builder's default priority -- a `lib.mkOptionDefault` definition is still unpinned), so it follows the CURRENT nixpkgs release (now ${lib.trivial.release}) and changes meaning on every nixpkgs bump. Pin it in that user's home.nix (`home.stateVersion = \"${lib.trivial.release}\";`), or fleet-wide via a `homeModules = [ { home.stateVersion = \"${lib.trivial.release}\"; } ];` entry in `_defaults` (every host) or a `_groups` entry.";
         in
         {
           home.stateVersion = mkBuilderDefault (lib.warn msg lib.trivial.release);
