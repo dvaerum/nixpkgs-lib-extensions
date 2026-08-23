@@ -343,10 +343,10 @@ let
     inherit lib;
     self = myLib;
   };
-  # exported via ctx so the negative test can pin the ambiguous-export
-  # throw's text -- tryEval discards throw messages, like the other
-  # harness-error assertions
-  inherit (sharedInternal) ambiguousExportMessage;
+  # exported via ctx so the negative tests can pin the ambiguous-export /
+  # selection-missing throws' text -- tryEval discards throw messages,
+  # like the other harness-error assertions
+  inherit (sharedInternal) ambiguousExportMessage describeAvailable;
   probeCore = sharedInternal.mkContextCore { inherit inputs system; };
   # exported via ctx so the negative test can pin the text -- tryEval
   # discards throw messages, like the other harness-error assertions
@@ -425,6 +425,7 @@ let
       mkProbeSystem
       probeCoreOverrideMessage
       ambiguousExportMessage
+      describeAvailable
       exampleUsers
       fake-strings-collision
       fake-multi-module-input

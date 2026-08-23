@@ -10,12 +10,30 @@
 let
   shownList = names: lib.concatStringsSep ", " names;
 
-  # Above this many entries, the ambiguity throw below stops listing names --
-  # nixos-hardware ships hundreds of mutually exclusive profiles, and a wall
-  # of them helps nobody who has not asked for a specific one. Below it (a
-  # nixos-raspberrypi, a sops-nix), printing the names is exactly what
-  # resolves the ambiguity, so withholding them helps no one either.
+  # Above this many entries, an exported-name listing switches to a count
+  # instead -- nixos-hardware ships hundreds of mutually exclusive
+  # profiles, and a wall of them helps nobody who has not asked for a
+  # specific one. Below it (a nixos-raspberrypi, a sops-nix), printing the
+  # names is exactly what resolves the ambiguity, so withholding them helps
+  # no one either. Shared by EVERY throw site that lists an input's
+  # exported names -- ambiguousExportMessage below, and resolveEntrySet's
+  # "you named an entry that does not exist" throw -- so a huge catalog
+  # cannot dump a wall of names through one path just because the other was
+  # capped.
   ambiguousListThreshold = 20;
+
+  # One policy, used everywhere an input's exported names get listed in a
+  # message: the names themselves if there are few enough to be useful,
+  # else just a count and a pointer at the input's own flake.nix. Callers
+  # wrap the result as "Exported ${channel}: ${describeAvailable names}.".
+  describeAvailable =
+    names:
+    if names == [ ] then
+      "(none)"
+    else if lib.length names <= ambiguousListThreshold then
+      shownList names
+    else
+      "${toString (lib.length names)} entries -- too many to list, inspect the input's own flake.nix instead";
 
   # An input's `lib`, or `{ }` if it has none OR if reading it throws.
   # `v.lib or { }` only covers a MISSING attribute: `?` and `or` force the
@@ -88,31 +106,21 @@ let
   # discards throw messages, like the other harness-error assertions (see
   # probeCoreOverrideMessage in checks/builders/default.nix for the same
   # pattern). `names` is `lib.attrNames` of the exported set; the exported
-  # names themselves are listed IF there are few enough to be useful (at or
-  # below `ambiguousListThreshold`): nixos-raspberrypi's 8 overlays are
-  # exactly what you need to pick one, but nixos-hardware's hundreds of
-  # mutually exclusive profiles (some of them `throw` tombstones) would be a
-  # wall of text that helps nobody who has not asked for a specific one --
-  # over the threshold, the message points at the input's own flake.nix
-  # instead. Below the threshold this doubles as the "what's available"
-  # answer resolveEntrySet gives when you DO name an entry and it does not
-  # exist.
-  ambiguousExportMessage =
-    name: channel: names:
-    let
-      count = lib.length names;
-    in
-    ''
-      nixpkgs-lib-extensions: input `${name}` exports ${toString count} ${channel} entries and no `default` -- auto-import will not guess. Select what you want via the builder's inputContributions argument:
-        inputContributions."${name}".${channel} = [ "<entry>" ]; # these entries, in this order
-        inputContributions."${name}".${channel} = "*";           # all of them
-        inputContributions."${name}".${channel} = null;          # none -- select per host instead
-      ${
-        if count <= ambiguousListThreshold then
-          "Exported ${channel}: ${shownList names}."
-        else
-          "Too many to list (${toString count}) -- inspect the input's own flake.nix instead."
-      }'';
+  # names themselves are listed via describeAvailable IF there are few
+  # enough to be useful: nixos-raspberrypi's 8 overlays are exactly what
+  # you need to pick one, but nixos-hardware's hundreds of mutually
+  # exclusive profiles (some of them `throw` tombstones) would be a wall of
+  # text that helps nobody who has not asked for a specific one. This
+  # doubles as the "what's available" answer resolveEntrySet gives when
+  # you DO name an entry and it does not exist -- same policy, same
+  # helper, so neither throw site can dump a wall of names the other one
+  # was carefully capping.
+  ambiguousExportMessage = name: channel: names: ''
+    nixpkgs-lib-extensions: input `${name}` exports ${toString (lib.length names)} ${channel} entries and no `default` -- auto-import will not guess. Select what you want via the builder's inputContributions argument:
+      inputContributions."${name}".${channel} = [ "<entry>" ]; # these entries, in this order
+      inputContributions."${name}".${channel} = "*";           # all of them
+      inputContributions."${name}".${channel} = null;          # none -- select per host instead
+    Exported ${channel}: ${describeAvailable names}.'';
 
   # From a flake's exported set for one channel, with NO selection given:
   # the `default` export is auto-loaded; without one, a set with exactly ONE
@@ -228,9 +236,7 @@ let
         if missing == [ ] then
           map (n: exported.${n}) selection
         else
-          throw ''nixpkgs-lib-extensions: inputContributions."${name}".${channel} selects ${shownList missing}, which input `${name}` does not export. Exported ${channel}: ${
-            if available == [ ] then "(none)" else shownList available
-          }.''
+          throw "nixpkgs-lib-extensions: inputContributions.\"${name}\".${channel} selects ${shownList missing}, which input `${name}` does not export. Exported ${channel}: ${describeAvailable available}."
       else
         # also the landing place for a list holding something other than
         # entry NAMES -- without the isString guard above, `[ 1 ]` would die
@@ -435,10 +441,10 @@ in
   # shared.nix). The channel tables, the case machinery (classifyCase,
   # resolveEntrySet, ...) and pickExported stay private: implementation
   # detail of the functions below, and re-exporting them would read as
-  # public surface. ambiguousExportMessage is the one exception: it is
-  # exposed ONLY so a test can pin the ambiguity throw's text (tryEval
-  # discards throw messages) -- shared.nix, its sole consumer, is itself
-  # private, so this never reaches the published lib.
+  # public surface. ambiguousExportMessage and describeAvailable are the
+  # exception: exposed ONLY so a test can pin the throw text they produce
+  # (tryEval discards throw messages) -- shared.nix, their sole consumer,
+  # is itself private, so this never reaches the published lib.
   inherit
     detectHomeManager
     libOf
@@ -446,5 +452,6 @@ in
     collectFromInputs
     isNixpkgsTree
     ambiguousExportMessage
+    describeAvailable
     ;
 }

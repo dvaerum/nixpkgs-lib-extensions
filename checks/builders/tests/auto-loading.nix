@@ -14,6 +14,7 @@
   custom,
   mkProbeSystem,
   ambiguousExportMessage,
+  describeAvailable,
   fake-strings-collision,
   fake-multi-module-input,
   fake-catalog-input,
@@ -121,7 +122,38 @@ in
       manyNames = map (n: "profile-${toString n}") (lib.range 1 50);
       message = ambiguousExportMessage "fake-huge-catalog" "nixosModules" manyNames;
     in
-    lib.hasInfix "Too many to list (50)" message && !(lib.hasInfix "Exported nixosModules:" message);
+    lib.hasInfix "50 entries -- too many to list" message
+    && !(lib.hasInfix "Exported nixosModules: profile-" message);
+  # the OTHER place an input's exported names get listed: naming an entry
+  # that does not exist (a typo). It shares describeAvailable with the
+  # ambiguity throw above -- this used to have NO cap at all, so a typo
+  # against a huge catalog dumped exactly the wall of names the ambiguity
+  # throw was carefully avoiding. Tested directly (tryEval discards throw
+  # messages, so the shared helper is what a test can actually pin) --
+  # small catalog: names listed; large catalog: stays terse.
+  selection-missing-lists-small-catalog =
+    lib.hasInfix "one, two, removed-tombstone"
+      (describeAvailable [
+        "one"
+        "two"
+        "removed-tombstone"
+      ]);
+  selection-missing-elides-large-catalog =
+    let
+      manyNames = map (n: "profile-${toString n}") (lib.range 1 50);
+      described = describeAvailable manyNames;
+    in
+    lib.hasInfix "50 entries -- too many to list" described && !(lib.hasInfix "profile-" described);
+  # ... and the real throw site still actually fires (behavioral
+  # regression: the message-content tests above cannot catch "the throw
+  # stopped happening entirely")
+  selection-missing-still-throws =
+    !(builtins.tryEval (
+      builtins.attrNames
+        (probeHost "selectmissing" { inherit fake-multi-module-input; } {
+          "fake-multi-module-input".nixosModules = [ "typo-d-entry" ];
+        }).config.users.groups
+    )).success;
   # ... and the escape hatch works: opting the channel out via
   # inputContributions makes evaluation succeed with NONE of the entries
   # imported. (It says nothing about laziness -- the function form REPLACES

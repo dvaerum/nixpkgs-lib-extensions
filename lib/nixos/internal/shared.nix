@@ -27,7 +27,11 @@
 # like public surface.
 { lib, self, ... }:
 {
-  inherit (import ./inputs.nix { inherit lib self; }) detectHomeManager ambiguousExportMessage;
+  inherit (import ./inputs.nix { inherit lib self; })
+    detectHomeManager
+    ambiguousExportMessage
+    describeAvailable
+    ;
   inherit (import ./registry.nix { inherit lib self; })
     resolveUser
     usersFromRegistry
