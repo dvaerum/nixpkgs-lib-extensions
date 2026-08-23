@@ -10,6 +10,13 @@
 let
   shownList = names: lib.concatStringsSep ", " names;
 
+  # Above this many entries, the ambiguity throw below stops listing names --
+  # nixos-hardware ships hundreds of mutually exclusive profiles, and a wall
+  # of them helps nobody who has not asked for a specific one. Below it (a
+  # nixos-raspberrypi, a sops-nix), printing the names is exactly what
+  # resolves the ambiguity, so withholding them helps no one either.
+  ambiguousListThreshold = 20;
+
   # An input's `lib`, or `{ }` if it has none OR if reading it throws.
   # `v.lib or { }` only covers a MISSING attribute: `?` and `or` force the
   # value to WHNF, so an input whose `lib` is a `throw` (a deprecation
@@ -76,21 +83,48 @@ let
   ];
   channelNames = lib.attrNames entrySetChannels ++ singleValueChannels;
 
+  # The ambiguity throw's message, factored out to a plain (non-throwing)
+  # function so a test can call it directly and pin the text -- tryEval
+  # discards throw messages, like the other harness-error assertions (see
+  # probeCoreOverrideMessage in checks/builders/default.nix for the same
+  # pattern). `names` is `lib.attrNames` of the exported set; the exported
+  # names themselves are listed IF there are few enough to be useful (at or
+  # below `ambiguousListThreshold`): nixos-raspberrypi's 8 overlays are
+  # exactly what you need to pick one, but nixos-hardware's hundreds of
+  # mutually exclusive profiles (some of them `throw` tombstones) would be a
+  # wall of text that helps nobody who has not asked for a specific one --
+  # over the threshold, the message points at the input's own flake.nix
+  # instead. Below the threshold this doubles as the "what's available"
+  # answer resolveEntrySet gives when you DO name an entry and it does not
+  # exist.
+  ambiguousExportMessage =
+    name: channel: names:
+    let
+      count = lib.length names;
+    in
+    ''
+      nixpkgs-lib-extensions: input `${name}` exports ${toString count} ${channel} entries and no `default` -- auto-import will not guess. Select what you want via the builder's inputContributions argument:
+        inputContributions."${name}".${channel} = [ "<entry>" ]; # these entries, in this order
+        inputContributions."${name}".${channel} = "*";           # all of them
+        inputContributions."${name}".${channel} = null;          # none -- select per host instead
+      ${
+        if count <= ambiguousListThreshold then
+          "Exported ${channel}: ${shownList names}."
+        else
+          "Too many to list (${toString count}) -- inspect the input's own flake.nix instead."
+      }'';
+
   # From a flake's exported set for one channel, with NO selection given:
   # the `default` export is auto-loaded; without one, a set with exactly ONE
   # entry is unambiguous (sops-nix / plasma-manager style) and that entry is
-  # used. A set with SEVERAL entries and no `default` is ambiguous
-  # (nixos-hardware ships hundreds of mutually exclusive profiles, some of
-  # them `throw` tombstones) -- importing them all is never right and
-  # silently skipping would hide functionality, so it THROWS with the three
-  # selections that resolve it. It does NOT list the exported names: a real
-  # catalog has hundreds, and a wall of them helps nobody who has not asked
-  # for a specific one. That listing belongs to the error you get when you
-  # DO name an entry and it does not exist (see resolveEntrySet). `name` is
-  # the input's key in `inputs`, `channel` the convention attribute; both
-  # only render the message. LAZINESS: the decision looks at
-  # lib.attrNames / length ONLY -- export VALUES are never forced here,
-  # because real catalogs contain `throw` tombstones for removed entries.
+  # used. A set with SEVERAL entries and no `default` is ambiguous --
+  # importing them all is never right and silently skipping would hide
+  # functionality, so it THROWS (see ambiguousExportMessage above for what
+  # the message says and why). `name` is the input's key in `inputs`,
+  # `channel` the convention attribute; both only render the message.
+  # LAZINESS: the decision looks at lib.attrNames / length ONLY -- export
+  # VALUES are never forced here, because real catalogs contain `throw`
+  # tombstones for removed entries.
   pickExported =
     name: channel: s:
     let
@@ -103,11 +137,7 @@ let
     else if names == [ ] then
       [ ]
     else
-      throw ''
-        nixpkgs-lib-extensions: input `${name}` exports ${toString (lib.length names)} ${channel} entries and no `default` -- auto-import will not guess. Select what you want via the builder's inputContributions argument:
-          inputContributions."${name}".${channel} = [ "<entry>" ]; # these entries, in this order
-          inputContributions."${name}".${channel} = "*";           # all of them
-          inputContributions."${name}".${channel} = null;          # none -- select per host instead'';
+      throw (ambiguousExportMessage name channel names);
 
   # A consumer's `inputContributions.<input>` entry comes in three forms:
   #
@@ -405,12 +435,16 @@ in
   # shared.nix). The channel tables, the case machinery (classifyCase,
   # resolveEntrySet, ...) and pickExported stay private: implementation
   # detail of the functions below, and re-exporting them would read as
-  # public surface.
+  # public surface. ambiguousExportMessage is the one exception: it is
+  # exposed ONLY so a test can pin the ambiguity throw's text (tryEval
+  # discards throw messages) -- shared.nix, its sole consumer, is itself
+  # private, so this never reaches the published lib.
   inherit
     detectHomeManager
     libOf
     channelEnabled
     collectFromInputs
     isNixpkgsTree
+    ambiguousExportMessage
     ;
 }

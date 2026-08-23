@@ -3,6 +3,7 @@
 # inputContributions forms (per-channel selections, input-level null, the
 # function escape hatch) and the inputs/inputPkgs exposure.
 {
+  lib,
   myLib,
   inputs,
   system,
@@ -12,6 +13,7 @@
   aliceHome,
   custom,
   mkProbeSystem,
+  ambiguousExportMessage,
   fake-strings-collision,
   fake-multi-module-input,
   fake-catalog-input,
@@ -96,6 +98,30 @@ in
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
       }).config.users.groups ? multi-one
     )).success;
+  # the complaint itself, not merely "something threw" -- tryEval discards
+  # the message, so the assertion above is equally satisfied by an
+  # unrelated failure. A small catalog (fake-multi-module-input's 3
+  # entries, well under the list threshold) gets its entries NAMED: this is
+  # exactly the case (nixos-raspberrypi's handful of overlays) where the
+  # names are short enough to be the answer, not a wall of text.
+  ambiguous-export-lists-small-catalog =
+    lib.hasInfix "Exported nixosModules: one, two, removed-tombstone."
+      (
+        ambiguousExportMessage "fake-multi-module-input" "nixosModules" [
+          "one"
+          "two"
+          "removed-tombstone"
+        ]
+      );
+  # ... but a catalog past the threshold (nixos-hardware style: hundreds of
+  # mutually exclusive profiles) stays terse -- no wall of names, and no
+  # accidental truncation that LOOKS like the full list
+  ambiguous-export-elides-large-catalog =
+    let
+      manyNames = map (n: "profile-${toString n}") (lib.range 1 50);
+      message = ambiguousExportMessage "fake-huge-catalog" "nixosModules" manyNames;
+    in
+    lib.hasInfix "Too many to list (50)" message && !(lib.hasInfix "Exported nixosModules:" message);
   # ... and the escape hatch works: opting the channel out via
   # inputContributions makes evaluation succeed with NONE of the entries
   # imported. (It says nothing about laziness -- the function form REPLACES
