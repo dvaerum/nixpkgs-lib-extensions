@@ -5,6 +5,28 @@ run `nix run .#gen-docs` after changing a doc comment. New to the
 builders? Start with the
 [getting-started guide](getting-started.md).
 
+## Contents
+
+- [attrsets](#attrsets)
+  - [`lib.attrsets.recursiveMerge`](#libattrsetsrecursivemerge)
+- [disko](#disko)
+  - [`lib.disko.declareZfsRootDisk`](#libdiskodeclarezfsrootdisk)
+- [imports](#imports)
+  - [`lib.imports.importIfNix`](#libimportsimportifnix)
+  - [`lib.imports.importIfNixOr`](#libimportsimportifnixor)
+  - [`lib.imports.readIfPlain`](#libimportsreadifplain)
+  - [`lib.imports.readIfPlainOr`](#libimportsreadifplainor)
+- [nixos](#nixos)
+  - [`lib.nixos.buildConfigurations`](#libnixosbuildconfigurations)
+  - [`lib.nixos.buildHomeConfigurations`](#libnixosbuildhomeconfigurations)
+  - [`lib.nixos.buildNixosConfigurations`](#libnixosbuildnixosconfigurations)
+  - [`lib.nixos.homeManagerBootstrapModule`](#libnixoshomemanagerbootstrapmodule)
+  - [`lib.nixos.mkHomeConfiguration`](#libnixosmkhomeconfiguration)
+  - [`lib.nixos.mkNixosSystem`](#libnixosmknixossystem)
+  - [`lib.nixos.normalUserModule`](#libnixosnormalusermodule)
+- [strings](#strings)
+  - [`lib.strings.stringToTitle`](#libstringsstringtotitle)
+
 # attrsets
 
 
@@ -52,6 +74,8 @@ recursiveMerge [
 => { tags = [ "web" "prod" "critical" ]; }
 ```
 
+
+---
 
 # disko
 
@@ -213,6 +237,8 @@ declareZfsRootDisk :: Attribute -> Module
   Example: { "DATA" = { type = "zfs_fs"; options.mountpoint = "none"; };
              "DATA/media" = { type = "zfs_fs"; mountpoint = "/srv/media"; options.mountpoint = "legacy"; }; }
 
+
+---
 
 # imports
 
@@ -463,6 +489,8 @@ readIfPlainOr :: pkgs -> Path -> String -> String
   The value returned (with a warning) when `path` is still
   git-crypt ciphertext, missing, or not a regular file.
 
+
+---
 
 # nixos
 
@@ -1337,6 +1365,8 @@ normalUserModule :: String -> Module
   The name of the user account (and its private group) to create.
 
 
+---
+
 # strings
 
 
@@ -1371,5 +1401,3 @@ stringToTitle "fooBar"
 stringToTitle ""
 => ""
 ```
-
-
