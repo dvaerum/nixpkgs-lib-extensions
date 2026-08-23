@@ -101,6 +101,49 @@ board's UUID as the passphrase, for every affected dataset, then
 re-key them to the new
 board's UUID.
 
+PARTITIONS: one GPT disk, holding (in on-disk order) the boot
+partition(s), the ZFS pool partition, then SWAP last if `swapSize` is
+nonzero. That order comes from disko's own `priority` field, where a
+SMALLER number is created earlier on the disk -- boot gets `1` (`2`
+for the second aarch64-linux partition below), the ZFS partition
+`10`, SWAP `100`. The ZFS partition's own SIZE is what actually
+reserves SWAP's space, despite coming first on disk: with a nonzero
+`swapSize` it ends `swapSize` GiB before the end of the disk
+(`end = "-${swapSize}G"`), leaving exactly that much free for SWAP to
+occupy afterward; with `swapSize = 0` it simply takes the rest of the
+disk (`size = "100%"`) and no SWAP partition exists at all. SWAP
+itself uses `randomEncryption` -- a fresh random key generated at
+every boot, so its content is unrecoverable across reboots by design;
+this also means hibernation (suspend-to-disk) is not supported.
+
+The boot partition(s) (skipped entirely by `defineBootPartitions`,
+see below) differ by platform, because the firmware that has to find
+them differs:
+
+- `x86_64-linux`: one 2 GiB `ESP` partition (GPT type code `EF00`,
+  the standard EFI System Partition marker), formatted `vfat`,
+  mounted at `/boot` -- what a normal UEFI firmware boots from.
+- `aarch64-linux`: TWO 2 GiB `vfat` partitions, both mounted
+  ON DEMAND (`noauto` + `x-systemd.automount`, not kept mounted at
+  all times): a `FIRMWARE` partition (GPT type code `0700`,
+  "Microsoft basic data" -- used here because that is the generic
+  FAT marker a Raspberry-Pi-style bootrom scans for, not because it
+  is Windows-specific), mounted at `/boot/firmware`, plus a second,
+  ordinary `ESP` partition (type `EF00`) mounted at `/boot` for a
+  UEFI-capable bootloader (U-Boot, systemd-boot) to chain into once
+  the bootrom itself has run. This two-partition layout is shaped
+  for Raspberry-Pi-class boards specifically -- a generic aarch64
+  UEFI server or VM has no bootrom expecting a `FIRMWARE` partition
+  at all, and should pass its own `defineBootPartitions` (typically
+  just a single `ESP`, as on `x86_64-linux`) instead of the default.
+- any other platform has no predefined layout at all and THROWS
+  unless `defineBootPartitions` is given.
+
+`defineBootPartitions` (see Arguments below) replaces this whole
+dispatch with an attrset of partition definitions of your own, valid
+on any platform -- use it to change the predefined layout above, or
+to support a platform this function does not predefine one for.
+
 ### Example
 
 ```nix
