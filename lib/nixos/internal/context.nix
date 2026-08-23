@@ -124,7 +124,49 @@ let
       ''
     else
       let
-        baseLib = nixpkgs.lib;
+        # `nixpkgs.lib` must be the REAL nixpkgs library -- this file (and
+        # NixOS's own eval-config.nix) calls fundamental functions on it
+        # throughout (foldl', extend, mapAttrsToList, ...). A genuine fork
+        # of nixpkgs always has these; a DIFFERENT flake that merely LOOKS
+        # like a nixpkgs tree by isNixpkgsTree's capability check
+        # (legacyPackages + lib.nixosSystem) -- a hardware-vendor flake
+        # like nixos-raspberrypi, built to double as a package set for its
+        # kernel/firmware patches -- can still expose a small,
+        # purpose-built `lib` with none of this. Left unchecked, that
+        # silently reaches some deep, unrelated nixpkgs internal
+        # (eval-config.nix's own `withWarnings`, three files and dozens of
+        # lines from here) and crashes there with an opaque
+        # "attribute 'foldl'' missing" that names neither `nixpkgs` nor
+        # this argument. Caught here instead, at the one place every path
+        # (the default `inputs.nixpkgs` and an explicit `nixpkgs = ...`
+        # argument alike) computes `baseLib`.
+        baseLib =
+          let
+            candidate = nixpkgs.lib or null;
+            # builtins.isAttrs, not lib.isAttrs: this let-block later binds
+            # its OWN `lib` (line ~281, extendedLib.extend ...), which is
+            # itself derived from `baseLib` -- referencing the module-level
+            # `lib` argument by that same name here would resolve to that
+            # LOCAL, not-yet-computed binding instead (Nix `let` is
+            # mutually recursive across all its own bindings), an infinite
+            # recursion caught the hard way once already.
+            looksReal =
+              builtins.isAttrs candidate
+              && candidate ? foldl'
+              && candidate ? extend
+              && candidate ? mapAttrsToList;
+          in
+          if looksReal then
+            candidate
+          else
+            throw ''
+              nixpkgs-lib-extensions: the `nixpkgs` argument's `lib` ${
+                if candidate == null then
+                  "is missing entirely"
+                else
+                  "does not look like nixpkgs' own library (missing `foldl'`/`extend`/`mapAttrsToList`)"
+              } -- it is not usable as nixpkgs' lib. `nixpkgs.legacyPackages.<system>` being a real package set is not enough; this library (and NixOS's own eval-config.nix) needs `nixpkgs.lib` itself to BE nixpkgs' lib. This usually means `nixpkgs` was pointed at a vendor/hardware-fork flake (e.g. nixos-raspberrypi) that exposes its own small, purpose-built `lib` instead of re-exporting nixpkgs'. Such a fork still DEPENDS on a real nixpkgs itself -- reach through to that with `nixpkgs = inputs.<fork>.inputs.nixpkgs;` (standard flake input-following: this gives you the exact nixpkgs revision the fork itself was built against, so anything it ships that is version-sensitive -- a vendor kernel's bundled `boot.zfs.package`, say -- stays in sync for free). If the fork does not expose its own `inputs` this way, pass the real nixpkgs tree as `nixpkgs` directly and reach the fork's packages some other way instead -- an overlay, or a single option override like `boot.zfs.package = <fork>.legacyPackages.''${system}.zfs;`.
+            '';
 
         # Everything about what the INPUTS contribute lives in ./inputs.nix:
         # the case classification, the per-channel selection, the eager

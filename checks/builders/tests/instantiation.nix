@@ -1,5 +1,6 @@
 # Full instantiation: force the derivations, not just option reads.
 {
+  lib,
   myLib,
   inputs,
   system,
@@ -40,4 +41,46 @@
       };
     in
     mkRoute inputs.nixpkgs == mkRoute noNixosSystem;
+
+  # `nixpkgs.lib` must be nixpkgs' OWN library, not merely something that
+  # LOOKS like a nixpkgs tree by isNixpkgsTree's capability check
+  # (legacyPackages + lib.nixosSystem). A hardware-vendor fork
+  # (nixos-raspberrypi is the real example that surfaced this) can export
+  # a full legacyPackages package set alongside a small, purpose-built
+  # `lib` of its own -- passing THAT as the builder's `nixpkgs` argument
+  # used to reach some unrelated, deep nixpkgs internal three files from
+  # here (nixos/lib/eval-config.nix's own `withWarnings`) and crash there
+  # with an opaque "attribute 'foldl'' missing", naming neither `nixpkgs`
+  # nor this argument. Caught immediately now, in mkContextCore.
+  nixpkgs-lib-not-real-throws =
+    let
+      narrowLibNixpkgs = inputs.nixpkgs // {
+        # mimics nixos-raspberrypi's own lib shape: makeExtensible gives it
+        # `.extend`, but none of the actual standard-library functions
+        lib = lib.makeExtensible (_: {
+          someVendorHelper = 1;
+        });
+      };
+    in
+    !(builtins.tryEval (
+      (myLib.mkNixosSystem {
+        inherit inputs system;
+        nixpkgs = narrowLibNixpkgs;
+        hostname = "narrowlibthrow";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+      }).config.system.build.toplevel.drvPath
+    )).success;
+  # ... and the same for a `nixpkgs` with no `lib` at all
+  nixpkgs-lib-missing-throws =
+    let
+      noLibNixpkgs = builtins.removeAttrs inputs.nixpkgs [ "lib" ];
+    in
+    !(builtins.tryEval (
+      (myLib.mkNixosSystem {
+        inherit inputs system;
+        nixpkgs = noLibNixpkgs;
+        hostname = "nolibthrow";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+      }).config.system.build.toplevel.drvPath
+    )).success;
 }
