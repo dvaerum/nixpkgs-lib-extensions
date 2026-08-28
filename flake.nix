@@ -151,7 +151,7 @@
           };
           zfs-root-disk = import ./checks/zfs-root-disk.nix {
             pkgs = nixpkgs.legacyPackages.${system};
-            inherit myLib;
+            inherit nixpkgs myLib;
           };
           zfs-key-file = import ./checks/zfs-key-file.nix {
             pkgs = nixpkgs.legacyPackages.${system};
