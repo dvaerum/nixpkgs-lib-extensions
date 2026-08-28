@@ -33,10 +33,10 @@ let
       };
   build = buildWith true;
 
-  # hybridMbr/enableLegacyBiosBoot are validated against a specific
-  # platform (aarch64-linux/x86_64-linux respectively), regardless of which
-  # platform this check itself is running under -- so, unlike `build`
-  # above, these pin their OWN `pkgs` explicitly rather than using the
+  # legacyBoot's platform-specific behavior needs a SPECIFIC platform to
+  # test each side of, regardless of which platform this check itself is
+  # running under -- so, unlike `build` above, these pin their OWN `pkgs`
+  # explicitly rather than using the
   # host system's.
   buildFor =
     system: args:
@@ -213,17 +213,19 @@ let
       defineBootPartitions = "esp";
     } (r: r.disko.devices.disk.main.content.partitions);
 
-    # ── hybridMbr (aarch64-linux only): disko's native hybrid-MBR
-    # mechanism on the FIRMWARE partition, for a Raspberry-Pi-style
-    # bootrom that cannot read GPT at all ──
-    hybrid-mbr-off-by-default =
+    # ── legacyBoot: ONE argument, valid on both platforms, but NOT one
+    # mechanism -- disko's native hybrid-MBR treatment on the FIRMWARE
+    # partition (aarch64-linux, for a Raspberry-Pi-style bootrom that
+    # cannot read GPT at all) vs. a raw EF02 partition for GRUB's
+    # BIOS+GPT boot embedding (x86_64-linux) ──
+    legacy-boot-off-by-default-aarch64 =
       let
         content = (buildFor "aarch64-linux" { }).disko.devices.disk.main.content;
       in
       !(content ? efiGptPartitionFirst) && !(content.partitions.FIRMWARE ? hybrid);
-    hybrid-mbr-sets-firmware-hybrid-and-efi-order =
+    legacy-boot-sets-firmware-hybrid-and-efi-order =
       let
-        content = (buildFor "aarch64-linux" { hybridMbr = true; }).disko.devices.disk.main.content;
+        content = (buildFor "aarch64-linux" { legacyBoot = true; }).disko.devices.disk.main.content;
       in
       content.efiGptPartitionFirst == false
       &&
@@ -231,37 +233,15 @@ let
           mbrPartitionType = "0x0c";
           mbrBootableFlag = true;
         };
-    # meaningless outside the one layout it targets -- both throw rather
-    # than silently doing nothing
-    hybrid-mbr-on-x86_64-throws = buildForThrows "x86_64-linux" {
-      hybridMbr = true;
-    } (r: r.disko.devices.disk.main.content);
-    hybrid-mbr-with-define-boot-partitions-throws = buildForThrows "aarch64-linux" {
-      hybridMbr = true;
-      defineBootPartitions = {
-        X = {
-          size = "100%";
-          type = "8300";
-        };
-      };
-    } (r: r.disko.devices.disk.main.content);
-    hybrid-mbr-non-bool-throws = buildForThrows "aarch64-linux" {
-      hybridMbr = "yes";
-    } (r: r.disko.devices.disk.main.content);
-
-    # ── enableLegacyBiosBoot (x86_64-linux only): a raw EF02 partition for
-    # GRUB's BIOS+GPT boot embedding -- unrelated to hybridMbr above,
-    # despite both existing to support "legacy" boot paths ──
-    legacy-bios-boot-off-by-default =
+    legacy-boot-off-by-default-x86 =
       let
         partitions = (buildFor "x86_64-linux" { }).disko.devices.disk.main.content.partitions;
       in
       !(partitions ? EF02) && partitions.ESP.priority == 2;
-    legacy-bios-boot-adds-ef02 =
+    legacy-boot-adds-ef02 =
       let
         partitions =
-          (buildFor "x86_64-linux" { enableLegacyBiosBoot = true; })
-          .disko.devices.disk.main.content.partitions;
+          (buildFor "x86_64-linux" { legacyBoot = true; }).disko.devices.disk.main.content.partitions;
       in
       partitions.EF02.priority == 1
       && partitions.EF02.type == "EF02"
@@ -271,15 +251,17 @@ let
     # ESP.priority is 2 unconditionally (see the code comment on ESP for
     # why) -- pin that it is the SAME value on and off, not just "some
     # value both times"
-    legacy-bios-boot-esp-priority-matches-default =
-      (buildFor "x86_64-linux" { enableLegacyBiosBoot = true; })
+    legacy-boot-esp-priority-matches-default =
+      (buildFor "x86_64-linux" { legacyBoot = true; })
       .disko.devices.disk.main.content.partitions.ESP.priority == (buildFor "x86_64-linux" { })
       .disko.devices.disk.main.content.partitions.ESP.priority;
-    legacy-bios-boot-on-aarch64-throws = buildForThrows "aarch64-linux" {
-      enableLegacyBiosBoot = true;
+    # meaningless outside the two layouts it targets -- throws rather than
+    # silently doing nothing
+    legacy-boot-on-unsupported-platform-throws = buildForThrows "riscv64-linux" {
+      legacyBoot = true;
     } (r: r.disko.devices.disk.main.content);
-    legacy-bios-boot-with-define-boot-partitions-throws = buildForThrows "x86_64-linux" {
-      enableLegacyBiosBoot = true;
+    legacy-boot-with-define-boot-partitions-throws = buildForThrows "aarch64-linux" {
+      legacyBoot = true;
       defineBootPartitions = {
         X = {
           size = "100%";
@@ -287,8 +269,8 @@ let
         };
       };
     } (r: r.disko.devices.disk.main.content);
-    legacy-bios-boot-non-bool-throws = buildForThrows "x86_64-linux" {
-      enableLegacyBiosBoot = "yes";
+    legacy-boot-non-bool-throws = buildForThrows "aarch64-linux" {
+      legacyBoot = "yes";
     } (r: r.disko.devices.disk.main.content);
     # an unsupported system without defineBootPartitions throws (the module
     # reads the platform from pkgs, so a probe pkgs with a foreign system

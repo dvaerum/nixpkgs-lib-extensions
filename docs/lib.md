@@ -166,25 +166,26 @@ them differs:
 `defineBootPartitions` (see Arguments below) replaces this whole
 dispatch with an attrset of partition definitions of your own, valid
 on any platform -- use it to change the predefined layout above, or
-to support a platform this function does not predefine one for. Two
-further opt-in arguments splice ADDITIONS into (not replacements of)
-the predefined layout above, so they throw if combined with
-`defineBootPartitions` -- there is nothing predefined left for them to
-splice into. Despite both existing to support a "legacy" boot path,
-they are two unrelated mechanisms for two unrelated firmwares:
+to support a platform this function does not predefine one for. A
+further opt-in argument, `legacyBoot`, splices an ADDITION into (not a
+replacement of) the predefined layout above, so it throws if combined
+with `defineBootPartitions` -- there is nothing predefined left to
+splice into. It is ONE argument, valid on both predefined platforms,
+but NOT one mechanism: despite both existing to support a "legacy"
+boot path, `legacyBoot` does two unrelated things for two unrelated
+firmwares, chosen by platform:
 
-- `hybridMbr` (`aarch64-linux` only): registers the `FIRMWARE`
-  partition as ALSO an entry in a hybrid MBR table (disko's own
-  native mechanism, `sgdisk -h` under the hood) -- for a
-  Raspberry-Pi-style bootrom, which cannot read GPT at all and
-  instead reads the MBR partition table directly to find its FAT boot
-  partition.
-- `enableLegacyBiosBoot` (`x86_64-linux` only): adds a third, raw
-  1 MiB `EF02` partition (no filesystem, never mounted) before `ESP`
-  -- GRUB's own BIOS+GPT boot mechanism, which finds this partition
-  by its type code and embeds its boot code directly into it. Unlike
-  `hybridMbr`, this never touches the MBR partition table at all;
-  GRUB reads GPT normally once its embedded code has run.
+- `aarch64-linux`: registers the `FIRMWARE` partition as ALSO an
+  entry in a hybrid MBR table (disko's own native mechanism,
+  `sgdisk -h` under the hood) -- for a Raspberry-Pi-style bootrom,
+  which cannot read GPT at all and instead reads the MBR partition
+  table directly to find its FAT boot partition.
+- `x86_64-linux`: adds a third, raw 1 MiB `EF02` partition (no
+  filesystem, never mounted) before `ESP` -- GRUB's own BIOS+GPT boot
+  mechanism, which finds this partition by its type code and embeds
+  its boot code directly into it. Unlike the aarch64-linux behavior,
+  this never touches the MBR partition table at all; GRUB reads GPT
+  normally once its embedded code has run.
 
 ### Example
 
@@ -246,18 +247,16 @@ declareZfsRootDisk :: Attribute -> Module
   or when boot partitions must be overwritten. Default `null` (use the
   predefined layout for the two supported platforms).
 
-- **hybridMbr**
-  `aarch64-linux` only: also register the `FIRMWARE` partition in a
-  hybrid MBR table, for a Raspberry-Pi-style bootrom that cannot read
-  GPT at all. Throws if combined with `defineBootPartitions`, or on
-  any other platform. See the PARTITIONS section above. Default
-  `false`.
-
-- **enableLegacyBiosBoot**
-  `x86_64-linux` only: add a raw `EF02` partition for GRUB's BIOS+GPT
-  boot embedding. Throws if combined with `defineBootPartitions`, or
-  on any other platform. See the PARTITIONS section above. Default
-  `false`.
+- **legacyBoot**
+  One argument, valid on both `aarch64-linux` and `x86_64-linux`, but
+  NOT one mechanism: on `aarch64-linux` it registers the `FIRMWARE`
+  partition in a hybrid MBR table, for a Raspberry-Pi-style bootrom
+  that cannot read GPT at all; on `x86_64-linux` it adds a raw `EF02`
+  partition for GRUB's BIOS+GPT boot embedding instead -- see the
+  PARTITIONS section above for why these are unrelated mechanisms
+  sharing one flag rather than one shared implementation. Throws if
+  combined with `defineBootPartitions`, or on any other platform.
+  Default `false`.
 
 - **extraDatasets**
   An attribute set of additional zfs datasets, merged into the generated ones.

@@ -87,25 +87,26 @@
     `defineBootPartitions` (see Arguments below) replaces this whole
     dispatch with an attrset of partition definitions of your own, valid
     on any platform -- use it to change the predefined layout above, or
-    to support a platform this function does not predefine one for. Two
-    further opt-in arguments splice ADDITIONS into (not replacements of)
-    the predefined layout above, so they throw if combined with
-    `defineBootPartitions` -- there is nothing predefined left for them to
-    splice into. Despite both existing to support a "legacy" boot path,
-    they are two unrelated mechanisms for two unrelated firmwares:
+    to support a platform this function does not predefine one for. A
+    further opt-in argument, `legacyBoot`, splices an ADDITION into (not a
+    replacement of) the predefined layout above, so it throws if combined
+    with `defineBootPartitions` -- there is nothing predefined left to
+    splice into. It is ONE argument, valid on both predefined platforms,
+    but NOT one mechanism: despite both existing to support a "legacy"
+    boot path, `legacyBoot` does two unrelated things for two unrelated
+    firmwares, chosen by platform:
 
-    - `hybridMbr` (`aarch64-linux` only): registers the `FIRMWARE`
-      partition as ALSO an entry in a hybrid MBR table (disko's own
-      native mechanism, `sgdisk -h` under the hood) -- for a
-      Raspberry-Pi-style bootrom, which cannot read GPT at all and
-      instead reads the MBR partition table directly to find its FAT boot
-      partition.
-    - `enableLegacyBiosBoot` (`x86_64-linux` only): adds a third, raw
-      1 MiB `EF02` partition (no filesystem, never mounted) before `ESP`
-      -- GRUB's own BIOS+GPT boot mechanism, which finds this partition
-      by its type code and embeds its boot code directly into it. Unlike
-      `hybridMbr`, this never touches the MBR partition table at all;
-      GRUB reads GPT normally once its embedded code has run.
+    - `aarch64-linux`: registers the `FIRMWARE` partition as ALSO an
+      entry in a hybrid MBR table (disko's own native mechanism,
+      `sgdisk -h` under the hood) -- for a Raspberry-Pi-style bootrom,
+      which cannot read GPT at all and instead reads the MBR partition
+      table directly to find its FAT boot partition.
+    - `x86_64-linux`: adds a third, raw 1 MiB `EF02` partition (no
+      filesystem, never mounted) before `ESP` -- GRUB's own BIOS+GPT boot
+      mechanism, which finds this partition by its type code and embeds
+      its boot code directly into it. Unlike the aarch64-linux behavior,
+      this never touches the MBR partition table at all; GRUB reads GPT
+      normally once its embedded code has run.
 
     # Example
 
@@ -167,18 +168,16 @@
     : or when boot partitions must be overwritten. Default `null` (use the
     : predefined layout for the two supported platforms).
 
-    hybridMbr
-    : `aarch64-linux` only: also register the `FIRMWARE` partition in a
-    : hybrid MBR table, for a Raspberry-Pi-style bootrom that cannot read
-    : GPT at all. Throws if combined with `defineBootPartitions`, or on
-    : any other platform. See the PARTITIONS section above. Default
-    : `false`.
-
-    enableLegacyBiosBoot
-    : `x86_64-linux` only: add a raw `EF02` partition for GRUB's BIOS+GPT
-    : boot embedding. Throws if combined with `defineBootPartitions`, or
-    : on any other platform. See the PARTITIONS section above. Default
-    : `false`.
+    legacyBoot
+    : One argument, valid on both `aarch64-linux` and `x86_64-linux`, but
+    : NOT one mechanism: on `aarch64-linux` it registers the `FIRMWARE`
+    : partition in a hybrid MBR table, for a Raspberry-Pi-style bootrom
+    : that cannot read GPT at all; on `x86_64-linux` it adds a raw `EF02`
+    : partition for GRUB's BIOS+GPT boot embedding instead -- see the
+    : PARTITIONS section above for why these are unrelated mechanisms
+    : sharing one flag rather than one shared implementation. Throws if
+    : combined with `defineBootPartitions`, or on any other platform.
+    : Default `false`.
 
     extraDatasets
     : An attribute set of additional zfs datasets, merged into the generated ones.
@@ -198,8 +197,7 @@
       useZfsForTmp ? true,
       listOfUsernames,
       defineBootPartitions ? null,
-      hybridMbr ? false,
-      enableLegacyBiosBoot ? false,
+      legacyBoot ? false,
       extraDatasets ? { },
     }:
     # Returns a module function (valid in `imports`) so the actual initrd
@@ -310,32 +308,32 @@
         else
           throw "The argument `swapSize` must be an integer >= 0 (GiB); 0 disables the SWAP partition";
 
-      # Both `hybridMbr` and `enableLegacyBiosBoot` only mean anything against
-      # the predefined per-platform layout below (a `FIRMWARE`/`EF02`
-      # partition, respectively, spliced into it) -- a `defineBootPartitions`
-      # override replaces that layout wholesale, so there is nothing for
-      # either flag to attach to. Checked against the ARGUMENTS, not the
-      # final partitions attrset: this is about which layout is in effect,
-      # not about probing what ended up in it.
-      checkedHybridMbr =
-        if !(lib.isBool hybridMbr) then
-          throw "The argument `hybridMbr` must be a `boolean`, but is a value of type `${builtins.typeOf hybridMbr}`"
-        else if hybridMbr && defineBootPartitions != null then
-          throw "declareZfsRootDisk: `hybridMbr = true` has no effect once `defineBootPartitions` replaces the predefined layout -- add a `hybrid` block to your own `FIRMWARE`-equivalent partition instead (see the PARTITIONS section of this function's doc comment)."
-        else if hybridMbr && pkgs.stdenv.hostPlatform.system != "aarch64-linux" then
-          throw "declareZfsRootDisk: `hybridMbr = true` is only meaningful for the aarch64-linux default layout (its `FIRMWARE` partition) -- `${pkgs.stdenv.hostPlatform.system}` has no such partition to hybridize."
+      # `legacyBoot` only means anything against the predefined per-platform
+      # layout below -- a `defineBootPartitions` override replaces that
+      # layout wholesale, so there is nothing for it to attach to. Checked
+      # against the ARGUMENTS, not the final partitions attrset: this is
+      # about which layout is in effect, not about probing what ended up
+      # in it. ONE shared argument, valid on both predefined platforms, but
+      # NOT one shared mechanism: the platform dispatch below reads it
+      # twice, independently, for two unrelated purposes -- see the
+      # PARTITIONS section of this function's doc comment for why a
+      # Raspberry-Pi bootrom and a legacy BIOS need genuinely different
+      # treatment despite both being "legacy boot".
+      checkedLegacyBoot =
+        if !(lib.isBool legacyBoot) then
+          throw "The argument `legacyBoot` must be a `boolean`, but is a value of type `${builtins.typeOf legacyBoot}`"
+        else if legacyBoot && defineBootPartitions != null then
+          throw "declareZfsRootDisk: `legacyBoot = true` has no effect once `defineBootPartitions` replaces the predefined layout -- add the equivalent partition(s) to your own layout instead (see the PARTITIONS section of this function's doc comment)."
+        else if
+          legacyBoot
+          && !(lib.elem pkgs.stdenv.hostPlatform.system [
+            "aarch64-linux"
+            "x86_64-linux"
+          ])
+        then
+          throw "declareZfsRootDisk: `legacyBoot = true` is only meaningful for the aarch64-linux and x86_64-linux default layouts -- `${pkgs.stdenv.hostPlatform.system}` has no predefined boot partition(s) for it to extend."
         else
-          hybridMbr;
-
-      checkedEnableLegacyBiosBoot =
-        if !(lib.isBool enableLegacyBiosBoot) then
-          throw "The argument `enableLegacyBiosBoot` must be a `boolean`, but is a value of type `${builtins.typeOf enableLegacyBiosBoot}`"
-        else if enableLegacyBiosBoot && defineBootPartitions != null then
-          throw "declareZfsRootDisk: `enableLegacyBiosBoot = true` has no effect once `defineBootPartitions` replaces the predefined layout -- add your own `EF02` partition instead (see the PARTITIONS section of this function's doc comment)."
-        else if enableLegacyBiosBoot && pkgs.stdenv.hostPlatform.system != "x86_64-linux" then
-          throw "declareZfsRootDisk: `enableLegacyBiosBoot = true` is only meaningful for the x86_64-linux default layout -- GRUB's BIOS+GPT boot partition is an x86_64 concept, `${pkgs.stdenv.hostPlatform.system}` does not need it."
-        else
-          enableLegacyBiosBoot;
+          legacyBoot;
 
       # Additional zfs datasets requested by the caller. Keys are dataset paths
       # relative to the pool root (e.g. "DATA/media" becomes
@@ -617,181 +615,185 @@
             device = devicePath;
             type = "disk";
 
-            # Both checks force-evaluate here, UNCONDITIONALLY of platform:
-            # each is only otherwise referenced inside ONE branch of the
-            # platform dispatch below (checkedHybridMbr in the aarch64
-            # branch, checkedEnableLegacyBiosBoot in the x86_64 one), so
-            # e.g. `enableLegacyBiosBoot = true` on aarch64-linux would
-            # never reach its own validation at all -- the x86_64 branch
-            # that reads it is simply never chosen -- and silently produce
-            # a config that looks fine but never had the argument checked.
-            # Caught by actually testing this combination, not just
-            # assuming forcing one branch's argument was enough.
+            # Force-evaluates here, UNCONDITIONALLY of platform: the
+            # `defineBootPartitions` branch below never itself references
+            # `checkedLegacyBoot` (it replaces the layout wholesale,
+            # ignoring the platform dispatch entirely), so
+            # `legacyBoot = true` combined with `defineBootPartitions`
+            # would otherwise never reach its own validation at all --
+            # silently producing a config that looks fine but never had
+            # the argument checked. Caught by actually testing that
+            # combination, not just assuming a branch reading its own
+            # argument was enough.
             content =
-              builtins.seq checkedHybridMbr (
-                builtins.seq checkedEnableLegacyBiosBoot {
-                  type = "gpt";
+              builtins.seq checkedLegacyBoot {
+                type = "gpt";
 
-                  partitions = {
-                    zfs = {
-                      priority = 10;
-                      content = {
-                        type = "zfs";
-                        pool = "${zrootName}";
-                      };
-                    }
-                    // (
-                      if checkedSwapSize == 0 then { size = "100%"; } else { end = "-${toString checkedSwapSize}G"; }
-                    );
-                  }
-                  // (lib.optionalAttrs (checkedSwapSize > 0) {
-                    SWAP = {
-                      label = "SWAP";
-                      priority = 100;
-                      size = "${toString checkedSwapSize}G";
-                      content = {
-                        type = "swap";
-                        randomEncryption = true;
-                      };
+                partitions = {
+                  zfs = {
+                    priority = 10;
+                    content = {
+                      type = "zfs";
+                      pool = "${zrootName}";
                     };
-                  })
+                  }
                   // (
-                    # null -> platform dispatch below; attrset -> used as-is;
-                    # anything else used to be SILENTLY ignored (the platform
-                    # layout ran as if nothing had been passed)
-                    if defineBootPartitions != null && !(lib.isAttrs defineBootPartitions) then
-                      throw "The argument `defineBootPartitions` must be `null` (use the predefined layout) or an attrset of partition definitions, but is a value of type `${builtins.typeOf defineBootPartitions}`"
-                    else if (lib.isAttrs defineBootPartitions) then
-                      defineBootPartitions
-                    else if (pkgs.stdenv.hostPlatform.system == "x86_64-linux") then
-                      {
-                        # priority 2 unconditionally, whether or not EF02 below
-                        # exists: a gap in the priority SEQUENCE (nothing at 1)
-                        # is harmless -- disko only reads it as a sort key -- and
-                        # this way ESP's own definition never has to change
-                        # depending on `enableLegacyBiosBoot`. Verified this is
-                        # not just inert in theory: the generated `_create`
-                        # script (the actual sgdisk commands disko runs) is
-                        # byte-for-byte identical whether ESP is priority 1 or 2,
-                        # since its `start = "2MiB"` already pins its real
-                        # position regardless of the priority number.
-                        ESP = {
-                          label = "ESP";
-                          priority = 2;
-                          type = "EF00"; # GPT partition-type code for an EFI System Partition
-                          start = "2MiB";
-                          size = "2G";
-                          content = {
-                            type = "filesystem";
-                            format = "vfat";
-                            mountpoint = "/boot";
-                            mountOptions = [ "umask=0077" ];
-                          };
-                        };
-                      }
-                      # A raw, unformatted `EF02` partition for GRUB's own
-                      # BIOS+GPT boot mechanism: `grub-install` finds it by type
-                      # code and embeds its `core.img` directly into it (no
-                      # filesystem, never mounted) -- distinct from, and
-                      # unrelated to, the `hybrid`/`efiGptPartitionFirst`
-                      # mechanism below (that one is for firmware that reads a
-                      # FAT partition via a raw MBR table entry, like a
-                      # Raspberry Pi's bootrom; GRUB just needs embedding space).
-                      # 1M matches disko's own `example/hybrid.nix`. Lands in the
-                      # gap ESP's `start = "2MiB"` already leaves before it --
-                      # verified via disko's actual generated sgdisk commands,
-                      # not just size arithmetic.
-                      // (lib.optionalAttrs checkedEnableLegacyBiosBoot {
-                        EF02 = {
-                          label = "EF02";
-                          priority = 1;
-                          type = "EF02";
-                          size = "1M";
-                        };
-                      })
-                    else if (pkgs.stdenv.hostPlatform.system == "aarch64-linux") then
-                      {
-                        FIRMWARE = {
-                          priority = 1;
-                          label = "FIRMWARE";
-
-                          type = "0700"; # Microsoft basic data
-                          # attributes = [
-                          #   0 # Required Partition
-                          # ];
-
-                          start = "2MiB";
-                          size = "2G";
-                          content = {
-                            type = "filesystem";
-                            format = "vfat";
-                            mountpoint = "/boot/firmware";
-                            mountOptions = [
-                              "noatime"
-                              "noauto"
-                              "x-systemd.automount"
-                              "x-systemd.idle-timeout=1min"
-                            ];
-                          };
-                        }
-                        # disko's own native hybrid-MBR mechanism (sgdisk's `-h`
-                        # flag under the hood): registers this GPT partition as
-                        # ALSO an MBR table entry, type `0x0c` (FAT32 LBA) with
-                        # the bootable/active flag set -- a Raspberry-Pi-style
-                        # bootrom cannot read GPT at all and needs exactly this
-                        # to find `config.txt`/`kernel.img`. `mbrBootableFlag =
-                        # true` is deliberately hard-coded, NOT disko's own
-                        # `example/hybrid-mbr.nix` (which uses `false`, for a
-                        # Tow-Boot/UEFI chainloading setup, a different boot
-                        # path): verified on real Raspberry Pi 3 hardware with
-                        # the RPi's own plain firmware boot (no UEFI layer) that
-                        # the flag must be SET for this exact scenario.
-                        // (lib.optionalAttrs checkedHybridMbr {
-                          hybrid = {
-                            mbrPartitionType = "0x0c";
-                            mbrBootableFlag = true;
-                          };
-                        });
-
-                        ESP = {
-                          label = "ESP";
-                          priority = 2;
-                          type = "EF00"; # GPT partition-type code for an EFI System Partition
-                          # attributes = [
-                          #   2 # Legacy BIOS Bootable, for U-Boot to find extlinux config
-                          # ];
-                          size = "2G";
-                          content = {
-                            type = "filesystem";
-                            format = "vfat";
-                            mountpoint = "/boot";
-                            mountOptions = [
-                              "noatime"
-                              "noauto"
-                              "x-systemd.automount"
-                              "x-systemd.idle-timeout=1min"
-                              "umask=0077"
-                            ];
-                          };
-                        };
-                      }
-                    else
-                      throw ''
-                        Boot partitions are not defined.
-                        Boot partitions are only pre-defined for `x86_64-linux` and `aarch64-linux`
-                        systems, not for `${pkgs.stdenv.hostPlatform.system}`.
-                        Use the argument `defineBootPartitions` to define boot partitions.
-                      ''
+                    if checkedSwapSize == 0 then { size = "100%"; } else { end = "-${toString checkedSwapSize}G"; }
                   );
                 }
-              )
+                // (lib.optionalAttrs (checkedSwapSize > 0) {
+                  SWAP = {
+                    label = "SWAP";
+                    priority = 100;
+                    size = "${toString checkedSwapSize}G";
+                    content = {
+                      type = "swap";
+                      randomEncryption = true;
+                    };
+                  };
+                })
+                // (
+                  # null -> platform dispatch below; attrset -> used as-is;
+                  # anything else used to be SILENTLY ignored (the platform
+                  # layout ran as if nothing had been passed)
+                  if defineBootPartitions != null && !(lib.isAttrs defineBootPartitions) then
+                    throw "The argument `defineBootPartitions` must be `null` (use the predefined layout) or an attrset of partition definitions, but is a value of type `${builtins.typeOf defineBootPartitions}`"
+                  else if (lib.isAttrs defineBootPartitions) then
+                    defineBootPartitions
+                  else if (pkgs.stdenv.hostPlatform.system == "x86_64-linux") then
+                    {
+                      # priority 2 unconditionally, whether or not EF02 below
+                      # exists: a gap in the priority SEQUENCE (nothing at 1)
+                      # is harmless -- disko only reads it as a sort key -- and
+                      # this way ESP's own definition never has to change
+                      # depending on `legacyBoot`. Verified this is
+                      # not just inert in theory: the generated `_create`
+                      # script (the actual sgdisk commands disko runs) is
+                      # byte-for-byte identical whether ESP is priority 1 or 2,
+                      # since its `start = "2MiB"` already pins its real
+                      # position regardless of the priority number.
+                      ESP = {
+                        label = "ESP";
+                        priority = 2;
+                        type = "EF00"; # GPT partition-type code for an EFI System Partition
+                        start = "2MiB";
+                        size = "2G";
+                        content = {
+                          type = "filesystem";
+                          format = "vfat";
+                          mountpoint = "/boot";
+                          mountOptions = [ "umask=0077" ];
+                        };
+                      };
+                    }
+                    # A raw, unformatted `EF02` partition for GRUB's own
+                    # BIOS+GPT boot mechanism: `grub-install` finds it by type
+                    # code and embeds its `core.img` directly into it (no
+                    # filesystem, never mounted) -- distinct from, and
+                    # unrelated to, the `hybrid`/`efiGptPartitionFirst`
+                    # mechanism below (that one is for firmware that reads a
+                    # FAT partition via a raw MBR table entry, like a
+                    # Raspberry Pi's bootrom; GRUB just needs embedding space).
+                    # 1M matches disko's own `example/hybrid.nix`. Lands in the
+                    # gap ESP's `start = "2MiB"` already leaves before it --
+                    # verified via disko's actual generated sgdisk commands,
+                    # not just size arithmetic.
+                    // (lib.optionalAttrs checkedLegacyBoot {
+                      EF02 = {
+                        label = "EF02";
+                        priority = 1;
+                        type = "EF02";
+                        size = "1M";
+                      };
+                    })
+                  else if (pkgs.stdenv.hostPlatform.system == "aarch64-linux") then
+                    {
+                      FIRMWARE = {
+                        priority = 1;
+                        label = "FIRMWARE";
+
+                        type = "0700"; # Microsoft basic data
+                        # attributes = [
+                        #   0 # Required Partition
+                        # ];
+
+                        start = "2MiB";
+                        size = "2G";
+                        content = {
+                          type = "filesystem";
+                          format = "vfat";
+                          mountpoint = "/boot/firmware";
+                          mountOptions = [
+                            "noatime"
+                            "noauto"
+                            "x-systemd.automount"
+                            "x-systemd.idle-timeout=1min"
+                          ];
+                        };
+                      }
+                      # disko's own native hybrid-MBR mechanism (sgdisk's `-h`
+                      # flag under the hood): registers this GPT partition as
+                      # ALSO an MBR table entry, type `0x0c` (FAT32 LBA) with
+                      # the bootable/active flag set -- a Raspberry-Pi-style
+                      # bootrom cannot read GPT at all and needs exactly this
+                      # to find `config.txt`/`kernel.img`. `mbrBootableFlag =
+                      # true` is deliberately hard-coded, NOT disko's own
+                      # `example/hybrid-mbr.nix` (which uses `false`, for a
+                      # Tow-Boot/UEFI chainloading setup, a different boot
+                      # path): verified on real Raspberry Pi 3 hardware with
+                      # the RPi's own plain firmware boot (no UEFI layer) that
+                      # the flag must be SET for this exact scenario.
+                      // (lib.optionalAttrs checkedLegacyBoot {
+                        hybrid = {
+                          mbrPartitionType = "0x0c";
+                          mbrBootableFlag = true;
+                        };
+                      });
+
+                      ESP = {
+                        label = "ESP";
+                        priority = 2;
+                        type = "EF00"; # GPT partition-type code for an EFI System Partition
+                        # attributes = [
+                        #   2 # Legacy BIOS Bootable, for U-Boot to find extlinux config
+                        # ];
+                        size = "2G";
+                        content = {
+                          type = "filesystem";
+                          format = "vfat";
+                          mountpoint = "/boot";
+                          mountOptions = [
+                            "noatime"
+                            "noauto"
+                            "x-systemd.automount"
+                            "x-systemd.idle-timeout=1min"
+                            "umask=0077"
+                          ];
+                        };
+                      };
+                    }
+                  else
+                    throw ''
+                      Boot partitions are not defined.
+                      Boot partitions are only pre-defined for `x86_64-linux` and `aarch64-linux`
+                      systems, not for `${pkgs.stdenv.hostPlatform.system}`.
+                      Use the argument `defineBootPartitions` to define boot partitions.
+                    ''
+                );
+              }
               # `efiGptPartitionFirst = false` puts the 0xEE protective entry
               # AFTER the hybridized partition(s) in the MBR table instead of
               # disko's own default (before them) -- required for a
               # Raspberry-Pi-style bootrom, which only finds its boot
-              # partition if it is the FIRST MBR entry. See the `hybrid` block
-              # on FIRMWARE below for the rest of this mechanism.
-              // (lib.optionalAttrs checkedHybridMbr { efiGptPartitionFirst = false; });
+              # partition if it is the FIRST MBR entry. See the `hybrid`
+              # block on FIRMWARE below for the rest of this mechanism. Only
+              # meaningful on aarch64-linux: `legacyBoot` on x86_64-linux
+              # never sets any partition's `.hybrid`, so this would be inert
+              # there anyway, but gating on the platform too keeps this
+              # option scoped to the mechanism it actually belongs to.
+              // (lib.optionalAttrs (checkedLegacyBoot && pkgs.stdenv.hostPlatform.system == "aarch64-linux") {
+                efiGptPartitionFirst = false;
+              });
           };
         };
 
