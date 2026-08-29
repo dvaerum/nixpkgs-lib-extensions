@@ -89,9 +89,9 @@ partition, and one partition holding the ZFS pool -- the
 `zroot-<hostname>` pool itself, and the standard ZFS datasets inside
 it (root, /var, /var/log, /nix/store, /home, optional /tmp) plus one
 HOME dataset per user, with optional encryption keyed to the
-motherboard's UUID. (A ZFS "pool" is the whole allocated block of
-storage; a "dataset" is a mountable sub-filesystem inside it --
-roughly ZFS's equivalent of a partition, but resizable and
+machine's hardware identity. (A ZFS "pool" is the whole allocated
+block of storage; a "dataset" is a mountable sub-filesystem inside
+it -- roughly ZFS's equivalent of a partition, but resizable and
 nestable.)
 
 Prerequisites: the disko NixOS module must be imported (it provides
@@ -101,29 +101,32 @@ be set (an 8-hex-digit ID ZFS uses to tell "my own pool, imported
 normally" apart from "a pool still marked in-use by some OTHER,
 possibly still-running machine").
 
-THREAT MODEL: keying the pool to the motherboard's UUID protects a
-SEPARATED disk -- pulled for RMA (a warranty return/replacement),
-resold, or discarded -- whose new holder does not also hold the
-board. It is near-zero protection against whole-machine theft: the
-UUID is readable from the BIOS setup screen, chassis stickers and
-service tags, IPMI (a server's built-in remote-management
-interface, readable independently of the running OS), or any
-live-USB boot of the very machine holding the disk. This is a
-deliberate trade-off: auto-unlock with no TPM (Trusted Platform
-Module) involved, not full-disk-encryption-grade secrecy.
+THREAT MODEL: keying the pool to the machine's hardware identity
+protects a SEPARATED disk -- pulled for RMA (a warranty
+return/replacement), resold, or discarded -- whose new holder does
+not also hold the machine. It is near-zero protection against
+whole-machine theft: the value is readable from the BIOS setup
+screen, chassis stickers and service tags, IPMI (a server's
+built-in remote-management interface, readable independently of the
+running OS) on `x86_64-linux`, or, on either platform, any live-USB
+boot of the very machine holding the disk. This is a deliberate
+trade-off: auto-unlock with no TPM (Trusted Platform Module)
+involved, not full-disk-encryption-grade secrecy.
 
-RECOVERY: record the UUID (`dmidecode --string system-uuid`)
-somewhere off-machine at install time. After a board swap the pool no
-longer auto-unlocks, and boot does NOT prompt for a passphrase
-either: this function sets `boot.zfs.requestEncryptionCredentials =
-[ ]`, opting out of NixOS's own "prompt for anything still locked"
-default. Recovery is manual: boot from a rescue/live medium (a
-bootable USB/CD running a live Linux, independent of the installed
-system), import the pool (ZFS's term for attaching a pool it doesn't
-yet know about), and `zfs load-key -L prompt <dataset>` with the OLD
-board's UUID as the passphrase, for every affected dataset, then
-re-key them to the new
-board's UUID.
+RECOVERY: record the hardware identity value somewhere off-machine
+at install time -- `dmidecode --string system-uuid` on
+`x86_64-linux`, or the `Serial` field of `/proc/cpuinfo` on
+`aarch64-linux` (see `keySourceCommand` below for any other
+platform). After a hardware swap the pool no longer auto-unlocks,
+and boot does NOT prompt for a passphrase either: this function sets
+`boot.zfs.requestEncryptionCredentials = [ ]`, opting out of NixOS's
+own "prompt for anything still locked" default. Recovery is manual:
+boot from a rescue/live medium (a bootable USB/CD running a live
+Linux, independent of the installed system), import the pool (ZFS's
+term for attaching a pool it doesn't yet know about), and
+`zfs load-key -L prompt <dataset>` with the OLD hardware's identity
+value as the passphrase, for every affected dataset, then re-key
+them to the new hardware's value.
 
 PARTITIONS: one GPT disk, holding (in on-disk order) the boot
 partition(s), the ZFS pool partition, then SWAP last if `swapSize` is
@@ -221,11 +224,13 @@ declareZfsRootDisk :: Attribute -> Module
 
 - **enableEncryption**
   Whether the pool should be encrypted. Default `true`.
-  Currently the encryption is using the motherboard's UUID as the key.
-  You can find it with the command: `dmidecode --string system-uuid`
-  -- record it off-machine; see the THREAT MODEL and RECOVERY
-  paragraphs above for what this protects against and what a board
-  swap costs.
+  The key is derived from the machine's hardware identity: on
+  `x86_64-linux`, `dmidecode --string system-uuid`; on
+  `aarch64-linux`, the `Serial` field of `/proc/cpuinfo`. Record the
+  relevant one off-machine; see the THREAT MODEL and RECOVERY
+  paragraphs above for what this protects against and what a
+  hardware swap costs. See `keySourceCommand` below to use a
+  different source, or to support another platform.
 
 - **swapSize**
   Set the size (in GiB, gibibytes -- 1024^3 bytes) of the SWAP
@@ -257,6 +262,20 @@ declareZfsRootDisk :: Attribute -> Module
   sharing one flag rather than one shared implementation. Throws if
   combined with `defineBootPartitions`, or on any other platform.
   Default `false`.
+
+- **keySourceCommand**
+  Overrides where the encryption key comes from. Default `null` (use
+  the predefined per-platform source described under
+  `enableEncryption` above: `dmidecode` on `x86_64-linux`,
+  `/proc/cpuinfo`'s `Serial` on `aarch64-linux`). A string replaces
+  that dispatch entirely, on ANY platform: a POSIX-sh snippet (no
+  `[[`, no `$'...'` -- it may run under busybox ash, in the
+  script-initrd context) that sets the shell variable `KEY` to the
+  key material. Use it to support a platform with no predefined
+  source, or to key the pool to something other than this function's
+  default choice. `enableEncryption = true` on a platform that is
+  neither `x86_64-linux` nor `aarch64-linux` throws unless this is
+  given -- there is no predefined source to fall back to.
 
 - **extraDatasets**
   An attribute set of additional zfs datasets, merged into the generated ones.

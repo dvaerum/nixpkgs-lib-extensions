@@ -13,6 +13,17 @@
 # hard-coded /tmp/secrets is moved into $TMPDIR so the test cannot touch a
 # real /tmp on a machine that builds without the sandbox.
 #
+# The aarch64-linux key source (/proc/cpuinfo's Serial field) is exercised
+# the same way, with one difference: `pkgs.stdenv.hostPlatform.system` is
+# patched to "aarch64-linux" ONLY for constructing the module (a plain
+# string read, driving declareZfsRootDisk's own platform dispatch -- the
+# same technique checks/zfs-root-disk.nix's `unsupported-system-throws`
+# already relies on), while every binary actually EXECUTED below (bash,
+# busybox, this runCommand itself) stays on the check's real, native pkgs
+# throughout. Real aarch64 execution/emulation is never needed: the
+# generated aarch64 snippet is plain POSIX shell + awk reading a file, no
+# aarch64-specific binary involved at all.
+#
 # Whether ZFS itself tolerates a trailing newline in a
 # `keyformat=passphrase` key file is a separate question, answered in a VM by
 # `nix build .#zfs-newline-probe`: it does (a single trailing newline is
@@ -147,6 +158,104 @@ let
     [ "$(stat -c %a "$work/secrets")" = 700 ]
     printf '%s' '${uuid}' | cmp - "$work/secrets/zpool.key"
   '';
+
+  # ── aarch64-linux: same three writers, keyed off /proc/cpuinfo's Serial
+  # field instead of dmidecode. See the top-of-file comment for why
+  # `aarch64Pkgs` is safe to use without any real aarch64 execution. ──
+  aarch64Pkgs = pkgs // {
+    stdenv = pkgs.stdenv // {
+      hostPlatform = pkgs.stdenv.hostPlatform // {
+        system = "aarch64-linux";
+      };
+    };
+  };
+
+  moduleAarch64 =
+    (myLib.declareZfsRootDisk {
+      devicePath = "/dev/disk/by-id/test-disk";
+      hostname = "testhost";
+      listOfUsernames = [ "alice" ];
+    })
+      {
+        pkgs = aarch64Pkgs;
+        inherit lib;
+        config.boot.initrd.systemd.enable = true;
+      };
+
+  writersAarch64 = {
+    pool-create = moduleAarch64.disko.devices.zpool."zroot-testhost".preCreateHook;
+    systemd-initrd = moduleAarch64.boot.initrd.systemd.content.services.zfs-key-file-setup.script;
+    script-initrd = moduleAarch64.boot.initrd.postDeviceCommands.content;
+  };
+
+  # A plausible /proc/cpuinfo `Serial` value -- the field format (including
+  # the tab-padded label) matches real Raspberry Pi 4 hardware output.
+  serial = "10000000952974ce";
+  fakeCpuinfo =
+    value:
+    pkgs.writeText "cpuinfo" ''
+      processor	: 0
+      Hardware	: BCM2711
+      Revision	: c03111
+      Serial		: ${value}
+      Model		: Raspberry Pi 4 Model B Rev 1.1
+    '';
+  # No `Serial` line at all -- distinct from an empty/junk VALUE, and the
+  # case the universal `""` guard (not the aarch64-specific junk pattern)
+  # is what has to catch.
+  noSerialCpuinfo = pkgs.writeText "cpuinfo-no-serial" ''
+    processor	: 0
+    Hardware	: BCM2711
+    Revision	: c03111
+    Model		: Raspberry Pi 4 Model B Rev 1.1
+  '';
+
+  # `/proc/cpuinfo` is a hardcoded path in the generated snippet (unlike
+  # `dmidecode`, a swappable binary), so it is sed-substituted the same way
+  # `/tmp/secrets` already is.
+  sedArgsAarch64 =
+    cpuinfoPath: ''-e "s|/proc/cpuinfo|${cpuinfoPath}|g" -e "s|/tmp/secrets|$work/secrets|g"'';
+
+  runOneAarch64 = name: text: ''
+    echo "=== writer (aarch64): ${name}"
+    work="$TMPDIR/aarch64-${name}"
+    mkdir -p "$work"
+    sed ${sedArgsAarch64 (fakeCpuinfo serial)} ${pkgs.writeText "writer-aarch64-${name}.sh" text} > "$work/run.sh"
+    ( cd "$work" && ${interpreterFor name} ./run.sh )
+
+    key="$work/secrets/zpool.key"
+    # EXACTLY the serial: no trailing newline, nothing else
+    [ "$(wc -c < "$key")" -eq ${toString (builtins.stringLength serial)} ]
+    printf '%s' '${serial}' | cmp - "$key"
+    [ "$(stat -c %a "$work/secrets")" = 700 ]
+
+    cp "$key" "$TMPDIR/bytes-aarch64-${name}"
+  '';
+
+  # Junk /proc/cpuinfo (no Serial line at all, or the all-zeros value the
+  # VideoCore firmware reports on a failed "get board serial" mailbox call)
+  # must never become a key, same refusal behavior as the dmidecode junk
+  # cases above.
+  junkCaseAarch64 = slug: cpuinfoPath: ''
+    echo "=== junk cpuinfo (${slug}): systemd-initrd writer refuses"
+    work="$TMPDIR/junk-aarch64-${slug}"
+    mkdir -p "$work"
+    sed ${sedArgsAarch64 cpuinfoPath} ${pkgs.writeText "junk-writer-aarch64-${slug}.sh" writersAarch64.systemd-initrd} > "$work/run.sh"
+    rc=0
+    ( cd "$work" && bash ./run.sh ) 2> "$work/err" || rc=$?
+    [ "$rc" -ne 0 ]
+    grep -q "refusing" "$work/err"
+    [ ! -e "$work/secrets/zpool.key" ]
+
+    echo "=== junk cpuinfo (${slug}): script-initrd wrapper stays alive"
+    work="$TMPDIR/junk-script-aarch64-${slug}"
+    mkdir -p "$work"
+    sed ${sedArgsAarch64 cpuinfoPath} ${pkgs.writeText "junk-script-writer-aarch64-${slug}.sh" writersAarch64.script-initrd} > "$work/run.sh"
+    # rc MUST be 0: in the real script initrd this code is part of init
+    ( cd "$work" && ${pkgs.busybox}/bin/ash ./run.sh ) 2> "$work/err"
+    grep -q "will remain locked" "$work/err"
+    [ ! -e "$work/secrets/zpool.key" ]
+  '';
 in
 pkgs.runCommand "zfs-key-file-test"
   {
@@ -169,6 +278,16 @@ pkgs.runCommand "zfs-key-file-test"
     # THE invariant: pool creation and both boot paths agree byte for byte
     cmp "$TMPDIR/bytes-pool-create" "$TMPDIR/bytes-systemd-initrd"
     cmp "$TMPDIR/bytes-pool-create" "$TMPDIR/bytes-script-initrd"
+
+    # ── aarch64-linux: same writers, same invariants, keyed off
+    # /proc/cpuinfo's Serial instead of dmidecode ──
+    ${lib.concatStringsSep "\n" (lib.mapAttrsToList runOneAarch64 writersAarch64)}
+
+    ${junkCaseAarch64 "missing" noSerialCpuinfo}
+    ${junkCaseAarch64 "zeros" (fakeCpuinfo "0000000000000000")}
+
+    cmp "$TMPDIR/bytes-aarch64-pool-create" "$TMPDIR/bytes-aarch64-systemd-initrd"
+    cmp "$TMPDIR/bytes-aarch64-pool-create" "$TMPDIR/bytes-aarch64-script-initrd"
 
     # a leftover regular FILE where the folder belongs is removed (mkdir would
     # otherwise fail)

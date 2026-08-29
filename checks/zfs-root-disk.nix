@@ -299,6 +299,51 @@ let
       in
       !(builtins.tryEval (builtins.deepSeq m.disko.devices.disk.main.content.partitions true)).success;
 
+    # ── keySourceCommand: the hardware-identity key source, chosen by
+    # platform (dmidecode on x86_64-linux, /proc/cpuinfo's Serial on
+    # aarch64-linux), with a caller-supplied escape hatch for anything
+    # else. Byte-level writer behavior (junk detection, actually running
+    # the scripts) is covered in checks/zfs-key-file.nix; these are
+    # eval-only structural assertions. ──
+    key-source-x86-uses-dmidecode = lib.hasInfix "dmidecode" (
+      (buildFor "x86_64-linux" { enableEncryption = true; })
+      .disko.devices.zpool."zroot-testhost".preCreateHook
+    );
+    key-source-aarch64-uses-cpuinfo-serial =
+      let
+        w =
+          (buildFor "aarch64-linux" { enableEncryption = true; })
+          .disko.devices.zpool."zroot-testhost".preCreateHook;
+      in
+      lib.hasInfix "/proc/cpuinfo" w && lib.hasInfix "Serial" w && lib.hasInfix "0000000000000000" w;
+    # dmidecode is only staged into the systemd-initrd image when it will
+    # actually be used -- bundling it unconditionally would force building
+    # a binary that is useless on a platform with no DMI/SMBIOS at all.
+    dmidecode-staged-only-on-x86 =
+      let
+        x86Extra =
+          (buildFor "x86_64-linux" { enableEncryption = true; }).boot.initrd.systemd.content.extraBin;
+        aarch64Extra =
+          (buildFor "aarch64-linux" { enableEncryption = true; }).boot.initrd.systemd.content.extraBin;
+      in
+      x86Extra ? dmidecode && aarch64Extra == { };
+    # no predefined source on an unsupported platform -- throws rather
+    # than silently shipping a key source that can never work
+    key-source-unsupported-platform-throws = buildForThrows "riscv64-linux" {
+      enableEncryption = true;
+    } (r: r.disko.devices.zpool."zroot-testhost".preCreateHook);
+    # ... unless the caller supplies their own, on ANY platform
+    key-source-command-escape-hatch = lib.hasPrefix "KEY=custom-value" (
+      (buildFor "riscv64-linux" {
+        enableEncryption = true;
+        keySourceCommand = "KEY=custom-value";
+      }).disko.devices.zpool."zroot-testhost".preCreateHook
+    );
+    key-source-command-non-string-throws = buildForThrows "x86_64-linux" {
+      enableEncryption = true;
+      keySourceCommand = 42;
+    } (r: r.disko.devices.zpool."zroot-testhost".preCreateHook);
+
     # ── useZfsForTmp, both positions ──
     # zfs /tmp (the default): TMP dataset with the documented options, and
     # boot.tmp stays off tmpfs (values sit behind mkDefault, hence .content)

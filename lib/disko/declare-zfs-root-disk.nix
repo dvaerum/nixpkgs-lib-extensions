@@ -10,9 +10,9 @@
     `zroot-<hostname>` pool itself, and the standard ZFS datasets inside
     it (root, /var, /var/log, /nix/store, /home, optional /tmp) plus one
     HOME dataset per user, with optional encryption keyed to the
-    motherboard's UUID. (A ZFS "pool" is the whole allocated block of
-    storage; a "dataset" is a mountable sub-filesystem inside it --
-    roughly ZFS's equivalent of a partition, but resizable and
+    machine's hardware identity. (A ZFS "pool" is the whole allocated
+    block of storage; a "dataset" is a mountable sub-filesystem inside
+    it -- roughly ZFS's equivalent of a partition, but resizable and
     nestable.)
 
     Prerequisites: the disko NixOS module must be imported (it provides
@@ -22,29 +22,32 @@
     normally" apart from "a pool still marked in-use by some OTHER,
     possibly still-running machine").
 
-    THREAT MODEL: keying the pool to the motherboard's UUID protects a
-    SEPARATED disk -- pulled for RMA (a warranty return/replacement),
-    resold, or discarded -- whose new holder does not also hold the
-    board. It is near-zero protection against whole-machine theft: the
-    UUID is readable from the BIOS setup screen, chassis stickers and
-    service tags, IPMI (a server's built-in remote-management
-    interface, readable independently of the running OS), or any
-    live-USB boot of the very machine holding the disk. This is a
-    deliberate trade-off: auto-unlock with no TPM (Trusted Platform
-    Module) involved, not full-disk-encryption-grade secrecy.
+    THREAT MODEL: keying the pool to the machine's hardware identity
+    protects a SEPARATED disk -- pulled for RMA (a warranty
+    return/replacement), resold, or discarded -- whose new holder does
+    not also hold the machine. It is near-zero protection against
+    whole-machine theft: the value is readable from the BIOS setup
+    screen, chassis stickers and service tags, IPMI (a server's
+    built-in remote-management interface, readable independently of the
+    running OS) on `x86_64-linux`, or, on either platform, any live-USB
+    boot of the very machine holding the disk. This is a deliberate
+    trade-off: auto-unlock with no TPM (Trusted Platform Module)
+    involved, not full-disk-encryption-grade secrecy.
 
-    RECOVERY: record the UUID (`dmidecode --string system-uuid`)
-    somewhere off-machine at install time. After a board swap the pool no
-    longer auto-unlocks, and boot does NOT prompt for a passphrase
-    either: this function sets `boot.zfs.requestEncryptionCredentials =
-    [ ]`, opting out of NixOS's own "prompt for anything still locked"
-    default. Recovery is manual: boot from a rescue/live medium (a
-    bootable USB/CD running a live Linux, independent of the installed
-    system), import the pool (ZFS's term for attaching a pool it doesn't
-    yet know about), and `zfs load-key -L prompt <dataset>` with the OLD
-    board's UUID as the passphrase, for every affected dataset, then
-    re-key them to the new
-    board's UUID.
+    RECOVERY: record the hardware identity value somewhere off-machine
+    at install time -- `dmidecode --string system-uuid` on
+    `x86_64-linux`, or the `Serial` field of `/proc/cpuinfo` on
+    `aarch64-linux` (see `keySourceCommand` below for any other
+    platform). After a hardware swap the pool no longer auto-unlocks,
+    and boot does NOT prompt for a passphrase either: this function sets
+    `boot.zfs.requestEncryptionCredentials = [ ]`, opting out of NixOS's
+    own "prompt for anything still locked" default. Recovery is manual:
+    boot from a rescue/live medium (a bootable USB/CD running a live
+    Linux, independent of the installed system), import the pool (ZFS's
+    term for attaching a pool it doesn't yet know about), and
+    `zfs load-key -L prompt <dataset>` with the OLD hardware's identity
+    value as the passphrase, for every affected dataset, then re-key
+    them to the new hardware's value.
 
     PARTITIONS: one GPT disk, holding (in on-disk order) the boot
     partition(s), the ZFS pool partition, then SWAP last if `swapSize` is
@@ -142,11 +145,13 @@
 
     enableEncryption
     : Whether the pool should be encrypted. Default `true`.
-    : Currently the encryption is using the motherboard's UUID as the key.
-    : You can find it with the command: `dmidecode --string system-uuid`
-    : -- record it off-machine; see the THREAT MODEL and RECOVERY
-    : paragraphs above for what this protects against and what a board
-    : swap costs.
+    : The key is derived from the machine's hardware identity: on
+    : `x86_64-linux`, `dmidecode --string system-uuid`; on
+    : `aarch64-linux`, the `Serial` field of `/proc/cpuinfo`. Record the
+    : relevant one off-machine; see the THREAT MODEL and RECOVERY
+    : paragraphs above for what this protects against and what a
+    : hardware swap costs. See `keySourceCommand` below to use a
+    : different source, or to support another platform.
 
     swapSize
     : Set the size (in GiB, gibibytes -- 1024^3 bytes) of the SWAP
@@ -179,6 +184,20 @@
     : combined with `defineBootPartitions`, or on any other platform.
     : Default `false`.
 
+    keySourceCommand
+    : Overrides where the encryption key comes from. Default `null` (use
+    : the predefined per-platform source described under
+    : `enableEncryption` above: `dmidecode` on `x86_64-linux`,
+    : `/proc/cpuinfo`'s `Serial` on `aarch64-linux`). A string replaces
+    : that dispatch entirely, on ANY platform: a POSIX-sh snippet (no
+    : `[[`, no `$'...'` -- it may run under busybox ash, in the
+    : script-initrd context) that sets the shell variable `KEY` to the
+    : key material. Use it to support a platform with no predefined
+    : source, or to key the pool to something other than this function's
+    : default choice. `enableEncryption = true` on a platform that is
+    : neither `x86_64-linux` nor `aarch64-linux` throws unless this is
+    : given -- there is no predefined source to fall back to.
+
     extraDatasets
     : An attribute set of additional zfs datasets, merged into the generated ones.
     : Keys are dataset paths relative to the pool root (like the generated
@@ -193,6 +212,7 @@
       devicePath,
       hostname,
       enableEncryption ? true,
+      keySourceCommand ? null,
       swapSize ? 32,
       useZfsForTmp ? true,
       listOfUsernames,
@@ -242,21 +262,29 @@
       # deterministic bytes, used by all three. It expects `KEY` to be set by
       # the caller.
       #
+      # `junkPatterns`: extra shell `case` alternatives (besides the
+      # universal, source-independent bare `""`) naming values THIS
+      # particular key source is known to emit on failure -- a UUID-shaped
+      # placeholder only means something for dmidecode's output, a
+      # hex-shaped one only for `/proc/cpuinfo`'s `Serial`, so each source
+      # supplies its own list (see `keySourceFor` below) rather than this
+      # shared writer hardcoding one source's shapes.
+      #
       # POSIX sh only (no `[[`, no `$'...'`): the script-initrd hooks run
       # under busybox ash (BusyBox's minimal Almquist-shell clone -- the
       # only shell present in that stripped-down environment, and it
       # rejects bash-only syntax), and one snippet serves every context.
-      writeKeyFile = ''
+      writeKeyFile = junkPatterns: ''
         SECRET_FOLDER_PATH="${builtins.dirOf keyFilePath}"
         KEY_FILE_PATH="${keyFilePath}"
 
         # REFUSE to derive a key from junk. Empty output or one of the
         # known placeholder values would "successfully" key the pool to a
-        # value every identical board reports -- or to nothing at all --
+        # value every identical machine reports -- or to nothing at all --
         # and the mistake only surfaces when unlocking fails later.
         case "$KEY" in
-          "" | "Not Settable" | "Not Present" | 00000000-0000-0000-0000-000000000000 | 03000200-0400-0500* )
-            echo "zfs key file: dmidecode returned an empty or placeholder system UUID ('$KEY'); refusing to derive a ZFS encryption key from it" >&2
+          ${lib.concatStringsSep " | " ([ "\"\"" ] ++ junkPatterns)} )
+            echo "zfs key file: the key source returned an empty or placeholder value ('$KEY'); refusing to derive a ZFS encryption key from it" >&2
             exit 1
             ;;
         esac
@@ -275,6 +303,21 @@
         # file verbatim, with no trailing newline.
         printf '%s' "$KEY" > "$KEY_FILE_PATH"
       '';
+
+      # dmidecode's own known placeholder shapes (BIOS fields left
+      # unset, or a widely-observed Dell service-tag placeholder GUID).
+      dmidecodeJunkPatterns = [
+        "\"Not Settable\""
+        "\"Not Present\""
+        "00000000-0000-0000-0000-000000000000"
+        "03000200-0400-0500*"
+      ];
+
+      # `/proc/cpuinfo`'s `Serial` field, as set by the Raspberry Pi
+      # VideoCore firmware: all-zeros specifically on a failed "get board
+      # serial" mailbox call, not a missing line (the universal `""` check
+      # covers that case instead).
+      cpuinfoSerialJunkPatterns = [ "0000000000000000" ];
 
       # The load-key loop, shared verbatim by BOTH initrd flavors -- the
       # script-initrd copy used to swallow failures with a bare `|| true`
@@ -307,6 +350,54 @@
           swapSize
         else
           throw "The argument `swapSize` must be an integer >= 0 (GiB); 0 disables the SWAP partition";
+
+      checkedKeySourceCommand =
+        if keySourceCommand == null || lib.isString keySourceCommand then
+          keySourceCommand
+        else
+          throw "The argument `keySourceCommand` must be `null` (use the predefined per-platform key source) or a string (a POSIX-sh snippet that sets `KEY`), but is a value of type `${builtins.typeOf keySourceCommand}`";
+
+      # Chooses where `KEY` comes from: `checkedKeySourceCommand` if given
+      # (ANY platform, caller's own snippet, used verbatim); otherwise the
+      # predefined per-platform source. `dmidecodeInvocation` -- the ONE
+      # thing that still varies by SITE rather than by platform -- is
+      # threaded in by each of the three call sites below rather than
+      # hardcoded here: preCreateHook runs in an arbitrary live-installer
+      # environment and needs a `which`-guarded fallback to `nix run`,
+      # systemd-initrd's service relies on `extraBin` staging `dmidecode`
+      # onto PATH, and script-initrd's postDeviceCommands references the
+      # absolute store path directly (no PATH, no `nix`, in that
+      # environment) -- collapsing these into one shared string would
+      # either lose preCreateHook's fallback or hand the other two
+      # contexts an invocation that cannot work in them. The
+      # aarch64-linux and custom-override branches have no such per-site
+      # variation: `/proc/cpuinfo` has no availability/PATH concerns in
+      # any of the three contexts, and a caller's snippet is spliced in
+      # verbatim wherever it is used.
+      keySourceFor =
+        dmidecodeInvocation:
+        if checkedKeySourceCommand != null then
+          {
+            script = checkedKeySourceCommand;
+            junkPatterns = [ ];
+          }
+        else if pkgs.stdenv.hostPlatform.system == "x86_64-linux" then
+          {
+            script = dmidecodeInvocation;
+            junkPatterns = dmidecodeJunkPatterns;
+          }
+        else if pkgs.stdenv.hostPlatform.system == "aarch64-linux" then
+          {
+            # `Serial` appears exactly once in /proc/cpuinfo -- after the
+            # last per-core block -- regardless of core count, so a single
+            # match is always correct.
+            script = ''
+              KEY="$(awk -F': *' '/^Serial/{print $2}' /proc/cpuinfo | tr -d '\n')"
+            '';
+            junkPatterns = cpuinfoSerialJunkPatterns;
+          }
+        else
+          throw "declareZfsRootDisk: `enableEncryption = true` has no predefined key source for `${pkgs.stdenv.hostPlatform.system}` -- supply your own via `keySourceCommand`.";
 
       # `legacyBoot` only means anything against the predefined per-platform
       # layout below -- a `defineBootPartitions` override replaces that
@@ -534,25 +625,35 @@
       # is inert on script-based initrd (boot.initrd.systemd options are
       # ignored there), so it only gates on enableEncryption.
       boot.initrd.systemd = lib.mkIf enableEncryption {
-        extraBin = {
-          dmidecode = "${pkgs.dmidecode}/bin/dmidecode";
-        };
+        # Only staged when it will actually be used: unconditionally
+        # bundling `dmidecode` would force building/embedding a binary
+        # that is useless on aarch64-linux (no DMI/SMBIOS on ARM SBCs at
+        # all) into every such initrd.
+        extraBin = lib.optionalAttrs (
+          checkedKeySourceCommand == null && pkgs.stdenv.hostPlatform.system == "x86_64-linux"
+        ) { dmidecode = "${pkgs.dmidecode}/bin/dmidecode"; };
 
-        services.zfs-key-file-setup = {
-          description = "Create ZFS encryption key file from system UUID";
-          unitConfig.DefaultDependencies = false;
-          wantedBy = [ "zfs-import-${zrootName}.service" ];
-          before = [ "zfs-import-${zrootName}.service" ];
-          after = [ "systemd-modules-load.service" ];
-          serviceConfig = {
-            Type = "oneshot";
-            RemainAfterExit = true;
+        services.zfs-key-file-setup =
+          let
+            ks = keySourceFor ''
+              KEY="$(dmidecode --string system-uuid | tr -d '\n')"
+            '';
+          in
+          {
+            description = "Create ZFS encryption key file from the machine's hardware identity";
+            unitConfig.DefaultDependencies = false;
+            wantedBy = [ "zfs-import-${zrootName}.service" ];
+            before = [ "zfs-import-${zrootName}.service" ];
+            after = [ "systemd-modules-load.service" ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+            };
+            script = ''
+              ${ks.script}
+              ${writeKeyFile ks.junkPatterns}
+            '';
           };
-          script = ''
-            KEY="$(dmidecode --string system-uuid | tr -d '\n')"
-            ${writeKeyFile}
-          '';
-        };
 
         services.zfs-load-encryption-keys = {
           description = "Load ZFS encryption keys for all datasets";
@@ -585,12 +686,19 @@
       # for a passphrase (requestEncryptionCredentials is [] -- see above),
       # so this message is the ONLY signal a human gets before whatever
       # dataset needed the key times out several screens later.
-      boot.initrd.postDeviceCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) ''
-        (
-          KEY="$(${pkgs.dmidecode}/bin/dmidecode --string system-uuid | tr -d '\n')"
-          ${writeKeyFile}
-        ) || echo "declareZfsRootDisk: no usable ZFS key file was written; the affected dataset(s) will remain locked (see RECOVERY above)" >&2
-      '';
+      boot.initrd.postDeviceCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) (
+        let
+          ks = keySourceFor ''
+            KEY="$(${pkgs.dmidecode}/bin/dmidecode --string system-uuid | tr -d '\n')"
+          '';
+        in
+        ''
+          (
+            ${ks.script}
+            ${writeKeyFile ks.junkPatterns}
+          ) || echo "declareZfsRootDisk: no usable ZFS key file was written; the affected dataset(s) will remain locked (see RECOVERY above)" >&2
+        ''
+      );
 
       boot.initrd.postResumeCommands = lib.mkIf (enableEncryption && !useSystemdInitrd) (
         lib.mkAfter loadKeysScript
@@ -820,15 +928,22 @@
 
             datasets = zrootGeneralDatasets // zfsFilesystemsForUsers // tmpDataset // checkedExtraDatasets;
 
-            preCreateHook = lib.optionalString enableEncryption ''
-              if which dmidecode > /dev/null 2> /dev/null; then
-                KEY="$(dmidecode --string system-uuid | tr -d '\n')"
-              else
-                # Needed in case the kexec image does not have dmidecode when using nixos-anythere or if booting from an ISO
-                KEY="$(nix run nixpkgs#dmidecode -- --string system-uuid | tr -d '\n')"
-              fi
-              ${writeKeyFile}
-            '';
+            preCreateHook = lib.optionalString enableEncryption (
+              let
+                ks = keySourceFor ''
+                  if which dmidecode > /dev/null 2> /dev/null; then
+                    KEY="$(dmidecode --string system-uuid | tr -d '\n')"
+                  else
+                    # Needed in case the kexec image does not have dmidecode when using nixos-anythere or if booting from an ISO
+                    KEY="$(nix run nixpkgs#dmidecode -- --string system-uuid | tr -d '\n')"
+                  fi
+                '';
+              in
+              ''
+                ${ks.script}
+                ${writeKeyFile ks.junkPatterns}
+              ''
+            );
 
             postMountHook = ''
               # First mount after "/" is mounted (doing installation)
