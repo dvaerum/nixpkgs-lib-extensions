@@ -12,6 +12,7 @@ builders? Start with the
 - [disko](#disko)
   - [`lib.disko.declareZfsRootDisk`](#libdiskodeclarezfsrootdisk)
 - [imports](#imports)
+  - [`lib.imports.discoverPatches`](#libimportsdiscoverpatches)
   - [`lib.imports.importIfNix`](#libimportsimportifnix)
   - [`lib.imports.importIfNixOr`](#libimportsimportifnixor)
   - [`lib.imports.readIfPlain`](#libimportsreadifplain)
@@ -290,6 +291,75 @@ declareZfsRootDisk :: Attribute -> Module
 ---
 
 # imports
+
+
+## `lib.imports.discoverPatches`
+
+Auto-discover a directory of nixpkgs patches, classified by filename,
+for the builders' `patches` argument (fed to `pkgs.applyPatches` --
+see `mkNixosSystem`'s doc comment). Returns a plain list; combine it
+with a hand-written one yourself if you need both:
+`patches = myOwnPatches ++ discoverPatches pkgs ./patches;`.
+
+| Filename                                  | Effect |
+| ------------------------------------------ | ------ |
+| `<name>.patch`                             | A local unified-diff patch, used as-is. |
+| `<name>.nix`                               | A REMOTE patch: the file must evaluate to a function `pkgs: <derivation>` -- the common form is `pkgs.fetchpatch { url = ...; hash = ...; }` against an upstream PR's `.diff` URL. Called with `pkgs`, and the resulting derivation is used as the patch. |
+| anything ending in `.disabled`             | Ignored, no warning -- e.g. `<name>.patch.disabled` or `<name>.nix.disabled` keeps a known-good copy around without deleting it or applying it. |
+| `*.md`                                     | Ignored, no warning -- documentation (a README explaining the convention, say). |
+| anything else                              | Ignored, WITH an evaluation warning naming the exact file -- a skipped file is never a silent mystery. |
+
+A stray subdirectory, or a symlink to one, is treated the same as an
+unrecognized filename: warned and skipped. A symlink to a REGULAR file
+is resolved and classified by what it points at, same rule as
+`importIfNixOr`/`readIfPlainOr` -- so a symlinked `.patch`/`.nix` file
+is picked up like its target. A DANGLING symlink is not specially
+detected (Nix has no cheap, non-crashing way to tell "broken link"
+apart from "links to a regular file" -- see the code comment on
+`resolvedType`): it is treated as regular and only fails once the
+patch is actually used, as a plain Nix error naming the missing path
+rather than a warning naming the symlink.
+
+Applied in LEXICOGRAPHIC filename order (`builtins.readDir`'s own
+ordering) -- `.patch` and `.nix` entries interleave by name, so prefix
+filenames with `10-`, `50-`, `99-`, etc. when application order
+matters.
+
+A missing directory is NOT an error: it is treated the same as an
+empty one (`[ ]`) -- a repo with no patches at all should not need to
+create an empty directory just to call this.
+
+### Example
+
+```nix
+# extLib = inputs.nixpkgs-lib-extensions.lib
+patches = extLib.discoverPatches pkgs ./patches;
+```
+
+```
+patches/
+  10-foundational.patch
+  50-feature.nix              # pkgs: pkgs.fetchpatch { url = ...; hash = ...; }
+  99-cleanup.patch.disabled   # ignored
+  README.md                  # ignored
+  notes.txt                  # WARNS: unrecognized filename
+```
+
+### Type
+
+```
+discoverPatches :: pkgs -> Path -> [ Path | Derivation ]
+```
+
+### Arguments
+
+- **pkgs**
+  The package set passed to each `.nix` remote-patch file (`import file pkgs`).
+
+- **dir**
+  The directory to scan. Non-existent is treated as empty, not an error.
+
+
 
 
 ## `lib.imports.importIfNix`

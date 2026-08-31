@@ -19,6 +19,7 @@
     "importIfNixOr"
     "readIfPlain"
     "readIfPlainOr"
+    "discoverPatches"
   ];
   internal-helpers-hidden = !(myLib ? mkContext) && !(myLib ? resolveUser);
   fixed-point-assembles = myLib ? stringToTitle;

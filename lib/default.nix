@@ -45,6 +45,7 @@ lib.fix (
         ./imports/import-if-nix-or.nix
         ./imports/read-if-plain.nix
         ./imports/read-if-plain-or.nix
+        ./imports/discover-patches.nix
       ];
       nixos = [
         ./nixos/build-configurations.nix

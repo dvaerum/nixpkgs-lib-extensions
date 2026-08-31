@@ -157,6 +157,10 @@
             pkgs = nixpkgs.legacyPackages.${system};
             inherit myLib;
           };
+          discover-patches = import ./checks/discover-patches.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            inherit myLib;
+          };
           # its own check: verifying `patches` is import-from-derivation
           # over the whole nixpkgs tree, which inside `builders` blocked
           # every cheap assertion there until the copy existed
