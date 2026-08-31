@@ -20,6 +20,8 @@
     "readIfPlain"
     "readIfPlainOr"
     "discoverPatches"
+    "detachedRun"
+    "interceptingWrapper"
   ];
   internal-helpers-hidden = !(myLib ? mkContext) && !(myLib ? resolveUser);
   fixed-point-assembles = myLib ? stringToTitle;

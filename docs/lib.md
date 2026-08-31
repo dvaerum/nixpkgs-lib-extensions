@@ -27,6 +27,9 @@ builders? Start with the
   - [`lib.nixos.normalUserModule`](#libnixosnormalusermodule)
 - [strings](#strings)
   - [`lib.strings.stringToTitle`](#libstringsstringtotitle)
+- [systemd](#systemd)
+  - [`lib.systemd.detachedRun`](#libsystemddetachedrun)
+  - [`lib.systemd.interceptingWrapper`](#libsystemdinterceptingwrapper)
 
 # attrsets
 
@@ -1536,3 +1539,156 @@ stringToTitle "fooBar"
 stringToTitle ""
 => ""
 ```
+
+
+---
+
+# systemd
+
+
+## `lib.systemd.detachedRun`
+
+Run a shell command detached from the caller, in a fresh
+`systemd-run --user` transient unit, following its journal for
+interactive output and propagating its real exit status. Built for
+commands whose own effects can restart the unit the CALLER is running
+in -- `home-manager switch` is the motivating case (see
+`interceptingWrapper`): its activation restarts every user unit whose
+store path changed, which can include the very unit the calling
+shell's cgroup lives in (a tmux-server.service, a timer unit's own
+ExecStart, ...). Stopping that unit TERMs the in-flight activation --
+stops run, starts never do. Running detached breaks that link: the
+transient unit is never part of any restart set, so it completes even
+if whatever launched it is killed mid-run; only the interactive
+journal tail dies with it.
+
+Returns a shell script FRAGMENT (a string), not a derivation -- splice
+it into a wrapper script (`interceptingWrapper` does this) or straight
+into a systemd unit's own `ExecStart` (a timer-triggered upgrade
+service is exactly this: wrapping its own `home-manager switch` call
+the same way protects it from the identical self-restart risk).
+`command`, like `interceptingWrapper`'s `shouldDetach`, is raw shell
+syntax spliced in verbatim (e.g. `"$real" "$@"`) -- not a Nix-modeled
+argv list.
+
+### Example
+
+```nix
+# extLib = inputs.nixpkgs-lib-extensions.lib
+# as a systemd service's ExecStart:
+script = extLib.systemd.detachedRun pkgs {
+  label = "hm-upgrade";
+  command = "${pkgs.home-manager}/bin/home-manager switch";
+  extraProperties = [ "RuntimeMaxSec=7200" ];
+};
+```
+
+### Type
+
+```
+detachedRun :: pkgs -> Attribute -> String
+```
+
+### Arguments
+
+- **pkgs**
+  The package set `systemd-run`/`journalctl`/`systemctl` are taken from.
+
+- **label**
+  Names the transient unit (prefixed, followed by a timestamp and PID
+  for uniqueness) AND the failure message verbatim -- keep it a valid
+  systemd unit-name component (letters, digits, `:_.-`; no spaces). A
+  human-readable label like "home-manager switch" reads better in the
+  failure text but is not a legal unit name; a slug like "hm-switch"
+  is both at once, at the cost of a plainer message.
+
+- **command**
+  Raw shell syntax for the command to run detached, e.g. `"$real" "$@"`
+  or a fixed invocation. Spliced verbatim after `systemd-run`'s own
+  flags.
+
+- **extraEnv**
+  Names of additional environment variables to forward into the
+  transient unit, read from the CALLER's environment at runtime (a
+  shell loop with indirect expansion, since their VALUES are not
+  known until the script actually runs). `PATH` is always forwarded
+  and does not need to be listed. Default `[ ]`.
+
+- **extraProperties**
+  Additional `systemd-run --property=` values, verbatim `"NAME=VALUE"`
+  strings -- e.g. `[ "RuntimeMaxSec=7200" ]`. Unlike `extraEnv` these
+  are static configuration, known at Nix eval time, so they are
+  spliced directly rather than read from the runtime environment.
+  Default `[ ]`.
+
+
+
+
+## `lib.systemd.interceptingWrapper`
+
+Shadow one binary from a package on `PATH`, routing matching
+invocations through `detachedRun` and everything else straight to the
+real binary. Built to fix commands like `home-manager switch` whose
+OWN effects can kill the shell that invoked them (see `detachedRun`'s
+doc comment for the mechanism and why); use this when that wrapping
+needs to happen wherever the plain command name is typed, not just at
+one fixed call site.
+
+The wrapper's `bin/<binary>` wins name resolution via `lib.hiPrio`,
+but everything else the real package ships (shell completions, other
+binaries, ...) still comes from it: `symlinkJoin` merges the two,
+priority only breaks the naming conflict on `binary` itself.
+
+### Example
+
+```nix
+# extLib = inputs.nixpkgs-lib-extensions.lib
+environment.systemPackages = [
+  (extLib.systemd.interceptingWrapper pkgs {
+    package = pkgs.home-manager;
+    binary = "home-manager";
+    # detach only `home-manager switch`; every other subcommand
+    # (news, generations, ...) passes straight through
+    shouldDetach = ''[ "${1:-}" = "switch" ]'';
+    label = "hm-switch";
+  })
+];
+```
+
+### Type
+
+```
+interceptingWrapper :: pkgs -> Attribute -> Derivation
+```
+
+### Arguments
+
+- **pkgs**
+  The package set used to build the wrapper and passed through to
+  `detachedRun`.
+
+- **package**
+  The real package to wrap, e.g. `pkgs.home-manager`.
+
+- **binary**
+  Which binary inside `package` to shadow (`${package}/bin/${binary}`)
+  -- also the wrapper's own `writeShellScriptBin` name, so it is what
+  actually wins on `PATH`.
+
+- **shouldDetach**
+  Raw shell syntax for the condition to detach on, checked against the
+  wrapper's own positional parameters (`$1`, `$@`, ...) -- e.g.
+  `''[ "${1:-}" = "switch" ]''`. True routes through `detachedRun`;
+  false `exec`s the real binary with the same arguments. Not a
+  Nix-modeled argv list: Nix cannot see the caller's real arguments,
+  only shell can, at the moment the wrapper actually runs.
+
+- **label**
+  Passed straight through to `detachedRun` -- see its own doc comment.
+  Default: `binary` (already a valid unit-name component).
+
+- **extraEnv**
+  Passed straight through to `detachedRun`. Default `[ ]`.
+
+- **extraProperties**
+  Passed straight through to `detachedRun`. Default `[ ]`.

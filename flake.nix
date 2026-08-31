@@ -161,6 +161,10 @@
             pkgs = nixpkgs.legacyPackages.${system};
             inherit myLib;
           };
+          systemd-wrapping = import ./checks/systemd-wrapping.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            inherit myLib;
+          };
           # its own check: verifying `patches` is import-from-derivation
           # over the whole nixpkgs tree, which inside `builders` blocked
           # every cheap assertion there until the copy existed

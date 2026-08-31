@@ -56,6 +56,10 @@ lib.fix (
         ./nixos/mk-nixos-system.nix
         ./nixos/normal-user-module.nix
       ];
+      systemd = [
+        ./systemd/detached-run.nix
+        ./systemd/intercepting-wrapper.nix
+      ];
     };
     namespaces = lib.mapAttrs (_: paths: lib.mergeAttrsList (map load paths)) namespacePaths;
 
