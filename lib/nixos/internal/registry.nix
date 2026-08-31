@@ -1,10 +1,8 @@
 # userRegistry machinery for the lib/nixos builders: matching entries to
 # a user on a host, validating entry directories, and deriving a host's
 # user lists from the registry keys. One of the concern-files
-# aggregated by ./shared.nix.
-#
-# Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully
-# assembled nixpkgs-lib-extensions lib.
+# aggregated by ./shared.nix (which documents the shared `{ lib, self, ... }`
+# calling convention).
 { lib, self, ... }:
 let
 
@@ -23,16 +21,14 @@ let
   # reuse it). A plain entry shadowed by @-entries triggers a warning.
   #
   # A "<user>@*" entry ALSO auto-detects a `hosts/<hostname>` subdirectory
-  # inside its own directory -- the SAME convention `hosts/<hostname>.nix`
-  # uses at the flake root, one level down -- and merges it in exactly like
-  # an explicit "<user>@<hostname>" entry would. Scoped to "@*" only: a plain
-  # "<user>" entry's directory is never auto-scanned, consistent with plain
-  # entries never merging with anything else. An explicit "<user>@<hostname>"
-  # key and an auto-detected folder both existing for the same user+host is
-  # ambiguous and THROWS, naming both paths -- this codebase throws rather
-  # than silently picks a winner whenever two independent sources claim the
-  # same slot (unlike the plain-vs-@ shadowing above, which has one simple,
-  # predictable winner).
+  # and merges it in like an explicit "<user>@<hostname>" entry would --
+  # see `mkNixosSystem`'s doc comment (`docs/lib.md`, `userRegistry`) for
+  # the full convention and the ambiguous-entry throw. Scoped to "@*"
+  # only: a plain "<user>" entry's directory is never auto-scanned,
+  # consistent with plain entries never merging with anything else
+  # (unlike the plain-vs-@ shadowing above, which has one simple,
+  # predictable winner, the folder-vs-explicit-key clash throws instead
+  # of picking one).
   matchedEntries =
     userRegistry: hostname: username:
     let

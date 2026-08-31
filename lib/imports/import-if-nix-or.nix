@@ -18,9 +18,8 @@
     to have -- see `default` below.
 
     Made for setups where secret files are encrypted in the remote repo
-    (e.g. via git-crypt, which encrypts individual files in a git repo
-    transparently -- a checkout without the decryption key sees raw
-    ciphertext instead of the file's real content): locally `private.nix`
+    (e.g. via git-crypt -- see `readIfPlainOr`'s doc comment for what it
+    does to a checkout without the decryption key): locally `private.nix`
     is plain Nix and gets imported;
     on a CI checkout the same path is an encrypted blob, which fails the
     validity probe and becomes the (non-secret) default -- so the same

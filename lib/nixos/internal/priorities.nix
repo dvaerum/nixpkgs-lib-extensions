@@ -1,5 +1,5 @@
-# PRIVATE (not listed in lib/default.nix). Takes the loader's calling
-# convention but needs only nixpkgs' `lib`.
+# PRIVATE, per ./shared.nix. Takes the loader's calling convention but
+# needs only nixpkgs' `lib`.
 #
 # The priority of the builder's OWN defaults, shared by ext-options.nix
 # (the `home.stateVersion` convenience default) and mk-system.nix (the

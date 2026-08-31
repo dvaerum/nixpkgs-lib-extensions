@@ -426,9 +426,8 @@
         else
           legacyBoot;
 
-      # Additional zfs datasets requested by the caller. Keys are dataset paths
-      # relative to the pool root (e.g. "DATA/media" becomes
-      # <zrootName>/DATA/media); parent datasets must be declared by the caller too.
+      # See `extraDatasets` in the Arguments section above for the shape and
+      # merge semantics; this just type-checks it.
       checkedExtraDatasets =
         if (lib.isAttrs extraDatasets) then
           extraDatasets
@@ -586,9 +585,8 @@
 
     in
     {
-      # Attribute definitions to this file in error messages, instead of
-      # whichever configuration.nix called the function.
-      # Can be really helpful when debugging.
+      # Attributes this file in error messages, instead of whichever
+      # configuration.nix called the function.
       _file = ./declare-zfs-root-disk.nix;
 
       boot = {

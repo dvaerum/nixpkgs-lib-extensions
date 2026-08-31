@@ -44,12 +44,12 @@ in
     && !rootModule.users.users.root.group.condition
     && !rootModule.users.groups.condition;
 
-  # `isSystemUser` cannot GATE the definitions above -- users.groups and the
-  # user submodule are mutually dependent in NixOS, so deciding what to
-  # define by reading it is an infinite recursion. It is caught by an
-  # assertion instead, which names this module and the ways out; NixOS's own
-  # message ("exactly one of isSystemUser and isNormalUser must be set") is
-  # true but never says who set the other one.
+  # `isSystemUser` cannot GATE the definitions above -- see
+  # normal-user-module.nix's `normalAccount` comment for why that would be
+  # an infinite recursion. It is caught by an assertion instead, which names
+  # this module and the ways out; NixOS's own message ("exactly one of
+  # isSystemUser and isNormalUser must be set") is true but never says who
+  # set the other one.
   system-user-conflict-explained =
     let
       cfg =

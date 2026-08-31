@@ -2,10 +2,8 @@
 # input is recognized (home-manager, nixpkgs trees), how its exports are
 # mapped onto the auto-collection conventions, and how a consumer's
 # `inputContributions` entry narrows or replaces them. One of the
-# concern-files aggregated by ./shared.nix.
-#
-# Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully
-# assembled nixpkgs-lib-extensions lib.
+# concern-files aggregated by ./shared.nix (which documents the shared
+# `{ lib, self, ... }` calling convention).
 { lib, self, ... }:
 let
   shownList = names: lib.concatStringsSep ", " names;

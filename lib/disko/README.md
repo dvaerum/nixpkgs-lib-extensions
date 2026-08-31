@@ -7,11 +7,16 @@ Some extra notes about using disko to format disks.
 
 ## Raspberry PI 3 - Add legacy bios support
 
-The Raspberry Pi 3's bootrom (the fixed boot firmware built into the
-board, not something you can change) only understands MBR (Master
-Boot Record), the old-style partition table -- not GPT (GUID
-Partition Table), the modern one disko uses by default.
-After disko formats the disk and filesystems are unmounted, run:
+If you're formatting the disk through `declareZfsRootDisk`, set
+`legacyBoot = true` instead of the manual steps below -- it automates
+the same hybrid-MBR registration via disko's own native mechanism
+(see `declareZfsRootDisk`'s doc comment, `docs/lib.md`, PARTITIONS
+section, for why a Raspberry Pi bootrom needs this at all).
+
+For plain disko usage without `declareZfsRootDisk`: the Pi 3's
+bootrom cannot read GPT and needs a hybrid MBR entry to find its FAT
+boot partition. After disko formats the disk and filesystems are
+unmounted, run:
 
 ```bash
 sudo gdisk /dev/sdX   # replace sdX with your device
@@ -25,13 +30,6 @@ Or non-interactively:
 ```bash
 echo -e "r\nh\n1\nn\n0c\ny\nn\nw\ny" | sudo gdisk /dev/sdX
 ```
-
-This creates a "hybrid" MBR: a legacy MBR table squeezed onto the same
-disk as the GPT one, listing the FIRMWARE partition (the small FAT32
-partition holding the Pi's boot files) as MBR partition 1 so the
-bootrom -- which cannot read GPT at all -- can still find it, while
-the disk's real, full partition table stays GPT for Linux to read
-correctly.
 
 ## declareZfsRootDisk + a login-unlocked (PAM) home dataset
 

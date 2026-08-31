@@ -1,5 +1,4 @@
-# PRIVATE (not listed in lib/default.nix). Takes the one calling convention: `self` is the
-# fully assembled nixpkgs-lib-extensions lib (a fixed point), `lib` is nixpkgs'.
+# PRIVATE, per the calling convention documented in ./shared.nix.
 #
 # `mkSystem` is the mkNixosSystem implementation with the
 # evaluation core as an EXPLICIT parameter rather than a `_core` key smuggled

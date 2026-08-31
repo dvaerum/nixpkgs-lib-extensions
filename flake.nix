@@ -129,8 +129,8 @@
       # flake's module `lib`, where the system builders have no meaning.
       libOverlays.default = libOverlay;
 
-      # Keep overlay for pkgs.lib (works in some contexts)
-      # ... and the same for pkgs.lib.
+      # Also extend pkgs.lib -- some contexts read lib from there instead
+      # of the flake's lib output.
       overlays.default = final: prev: {
         lib = nixpkgs.lib.recursiveUpdate ownLibAdditions prev.lib;
       };

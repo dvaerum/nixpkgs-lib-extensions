@@ -71,12 +71,12 @@ namespaced duplicates exist for discoverability.
   bootrom only understands MBR partition tables, not the GPT this
   library uses, so a hybrid MBR overlays an MBR-compatible view of the
   boot partition on top of the GPT disk.
-- `importIfNix` / `importIfNixOr`: friendly to git-crypt (which
-  encrypts individual files in a git repo transparently -- a checkout
-  without the decryption key sees raw ciphertext instead of the file's
-  real content). A `private.nix` that is an encrypted blob in the
-  checkout (CI without the git-crypt key) evaluates to a default value
-  with a warning instead of breaking evaluation.
+- `importIfNix` / `importIfNixOr`: friendly to git-crypt (see
+  `readIfPlainOr`'s doc comment, `docs/lib.md`, for what git-crypt
+  does to a checkout without the decryption key). A `private.nix`
+  that is an encrypted blob in the checkout (CI without the
+  git-crypt key) evaluates to a default value with a warning instead
+  of breaking evaluation.
 - `readIfPlain` / `readIfPlainOr`: the same idea for a file that isn't
   Nix -- a plain secret or token. Reads it as a string when it's real
   plaintext, or returns a default (empty string, or your own) when

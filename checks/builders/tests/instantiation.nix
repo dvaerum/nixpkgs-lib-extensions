@@ -43,15 +43,9 @@
     mkRoute inputs.nixpkgs == mkRoute noNixosSystem;
 
   # `nixpkgs.lib` must be nixpkgs' OWN library, not merely something that
-  # LOOKS like a nixpkgs tree by isNixpkgsTree's capability check
-  # (legacyPackages + lib.nixosSystem). A hardware-vendor fork
-  # (nixos-raspberrypi is the real example that surfaced this) can export
-  # a full legacyPackages package set alongside a small, purpose-built
-  # `lib` of its own -- passing THAT as the builder's `nixpkgs` argument
-  # used to reach some unrelated, deep nixpkgs internal three files from
-  # here (nixos/lib/eval-config.nix's own `withWarnings`) and crash there
-  # with an opaque "attribute 'foldl'' missing", naming neither `nixpkgs`
-  # nor this argument. Caught immediately now, in mkContextCore.
+  # LOOKS like a nixpkgs tree by isNixpkgsTree's capability check -- see
+  # context.nix's `baseLib` comment (mkContextCore) for the nixos-raspberrypi
+  # incident this guards against and why the failure used to be so opaque.
   nixpkgs-lib-not-real-throws =
     let
       narrowLibNixpkgs = inputs.nixpkgs // {

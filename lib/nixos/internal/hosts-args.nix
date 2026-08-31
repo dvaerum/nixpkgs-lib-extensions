@@ -1,10 +1,8 @@
 # Argument validation for the lib/nixos builders: the shared argument
 # allowlists, direct-call validation and the hosts-attrset splitting used
 # by buildNixosConfigurations/buildHomeConfigurations. One of the
-# concern-files aggregated by ./shared.nix.
-#
-# Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully
-# assembled nixpkgs-lib-extensions lib.
+# concern-files aggregated by ./shared.nix (which documents the shared
+# `{ lib, self, ... }` calling convention).
 { lib, self, ... }:
 let
   inherit (import ./context.nix { inherit lib self; })
@@ -55,8 +53,9 @@ let
 
   # `extra` is the ONE per-host layering slot: a bare key REPLACES the
   # default, `extra.<key>` ADDS to it. It replaced the two `additional*`
-  # twins, which layered exactly two of the 21 arguments and left no way to
-  # say "the shared home modules PLUS these" at all.
+  # twins, which layered only `modules` and `specialArgs` out of the full
+  # `allowedDefaultArgs` list and left no way to say "the shared home
+  # modules PLUS these" at all.
   allowedHostArgs = allowedDefaultArgs ++ [
     "hostname"
     "extra"

@@ -1,6 +1,4 @@
-# PRIVATE (not listed in lib/default.nix). Takes the one calling convention:
-# `self` is the fully assembled nixpkgs-lib-extensions lib (a fixed point),
-# `lib` is nixpkgs'.
+# PRIVATE, per the calling convention documented in ./shared.nix.
 #
 # Which half of this repo's lib belongs in a MODULE's `lib`, and how it is
 # merged in. There are three sites that must agree -- the module lib built in

@@ -1,9 +1,11 @@
 # gen-docs: build docs/lib.md from the doc comments in lib/.
 #
-# Wrapped by writeShellApplication in flake.nix, which provides the
-# runtime inputs (coreutils, gawk, nixdoc) and shellcheck-verifies this
-# file at build time. The docs-up-to-date flake check runs this exact
-# script and diffs the result against the committed docs/lib.md.
+# Wrapped by writeShellApplication in flake.nix -- runtime inputs, a pass
+# through shellcheck, and the docs-up-to-date check that diffs its output
+# against docs/lib.md are wired there. (Comment worded so no line here
+# starts with "shellcheck": that would misparse as a shellcheck directive
+# and break the build with SC1072/SC1073, as trimming this exact comment
+# once did.)
 
 # nixdoc targets the NixOS manual toolchain; plain-markdown viewers
 # (GitHub included) need its output converted. One linear pass:

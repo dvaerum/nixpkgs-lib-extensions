@@ -7,14 +7,14 @@
 # key successfully.
 #
 # This is the question declareZfsRootDisk's key file used to depend on by
-# accident: pool creation wrote the passphrase with a trailing newline (a
-# here-string) while both boot paths wrote it without one (echo -n). That
-# drift was therefore harmless in practice -- worth knowing, because it is
-# the difference between "we had a latent unlockable-pool bug" and "we had
-# an inconsistency". The writers were unified anyway (one definition,
-# deterministic bytes, pinned by checks/zfs-key-file.nix) rather than
-# leaving correctness resting on this ZFS detail; this check is what makes
-# that detail a checked fact instead of an assumption.
+# accident (the historical writer drift is documented in the header of
+# checks/zfs-key-file.nix). That drift was therefore harmless in practice --
+# worth knowing, because it is the difference between "we had a latent
+# unlockable-pool bug" and "we had an inconsistency". The writers were
+# unified anyway (one definition, deterministic bytes, pinned by
+# checks/zfs-key-file.nix) rather than leaving correctness resting on this
+# ZFS detail; this check is what makes that detail a checked fact instead of
+# an assumption.
 #
 # No disko involved: a file-backed vdev is enough, and the encryption root
 # is the pool itself.

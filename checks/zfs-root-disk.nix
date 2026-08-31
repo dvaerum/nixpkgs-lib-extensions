@@ -36,8 +36,7 @@ let
   # legacyBoot's platform-specific behavior needs a SPECIFIC platform to
   # test each side of, regardless of which platform this check itself is
   # running under -- so, unlike `build` above, these pin their OWN `pkgs`
-  # explicitly rather than using the
-  # host system's.
+  # explicitly rather than using the host system's.
   buildFor =
     system: args:
     (myLib.declareZfsRootDisk (
@@ -92,9 +91,8 @@ let
     !(builtins.tryEval (builtins.deepSeq (select (buildFor system args)) true)).success;
 
   # The three places that write the encryption key file. Their BEHAVIOR is
-  # tested in checks/zfs-key-file.nix; these eval-only assertions catch the
-  # drift that once happened (a here-string appending a newline where the
-  # others wrote none) without building anything.
+  # tested in checks/zfs-key-file.nix, whose header documents the historical
+  # writer drift these eval-only assertions catch without building anything.
   encrypted = build { };
   keyWriters = [
     encrypted.disko.devices.zpool."zroot-testhost".preCreateHook

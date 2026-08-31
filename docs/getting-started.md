@@ -209,13 +209,8 @@ Each host is one entry in the hosts attrset you hand to
       };
     in
     # ONE call, BOTH outputs:
-    # nixosConfigurations for the hosts,
-    # and the "user@host"
-    # homeConfigurations the login
-    # bootstrap activates. It's a PLAIN
-    # attrset, so it merges with `//`
-    # like any other outputs -- it does
-    # not have to be the whole flake.
+    # nixosConfigurations AND
+    # homeConfigurations (see below)
     extLib.buildConfigurations hosts
     // {
       devShells.${system}.default =
@@ -249,12 +244,12 @@ Later snippets in this guide assume these bindings (`extLib`,
 `inputs`, `system`, the registry) from this skeleton.
 
 The reserved `_defaults` entry (never a valid hostname -- a hostname
-cannot START with `_`) supplies arguments to every host. Merging is per
-argument and the host entry wins entirely -- lists and attrsets are
-NOT deep-merged. For "shared base plus per-host extras" put the
-addition in that host's `extra` slot -- ONE rule for every argument: a
-bare key REPLACES the default, `extra.<key>` ADDS to it (lists
-concatenate, attrsets merge with `extra` winning a conflict):
+cannot START with `_`) supplies arguments to every host. Merging is
+per-argument and the host entry wins entirely, no deep-merging of
+lists or attrsets -- see `buildNixosConfigurations`'s doc comment
+(`docs/lib.md`) for the full merge rule. For "shared base plus
+per-host extras" put the addition in that host's `extra` slot
+instead:
 
 ```nix
 _defaults = { modules = [ ./base.nix ]; homeModules = [ ./direnv.nix ]; };

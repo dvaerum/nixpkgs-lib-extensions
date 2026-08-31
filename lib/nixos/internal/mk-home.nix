@@ -1,5 +1,4 @@
-# PRIVATE (not listed in lib/default.nix). Takes the one calling convention: `self` is the
-# fully assembled nixpkgs-lib-extensions lib (a fixed point), `lib` is nixpkgs'.
+# PRIVATE, per the calling convention documented in ./shared.nix.
 #
 # `mkHome` is the mkHomeConfiguration implementation, with the same
 # explicit `core` parameter as ./mk-system.nix -- see the note there.

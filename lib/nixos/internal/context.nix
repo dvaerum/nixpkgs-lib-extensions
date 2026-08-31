@@ -1,7 +1,8 @@
 # The shared evaluation context of the lib/nixos builders: `mkContext`
 # assembles everything a builder needs (lib, pkgs, specialArgs and the
 # auto-collected module/overlay sets) from one argument attrset. One of
-# the concern-files aggregated by ./shared.nix.
+# the concern-files aggregated by ./shared.nix (which documents the shared
+# `{ lib, self, ... }` calling convention).
 #
 # The context is built in two layers:
 #   mkContextCore  the host-INDEPENDENT part, a function of the core
@@ -12,9 +13,6 @@
 #                  or one planHosts already built, which is how
 #                  buildNixosConfigurations/buildHomeConfigurations share
 #                  ONE core across all hosts agreeing on the core arguments
-#
-# Takes the loader's `{ lib, self, ... }`: nixpkgs' lib, and the fully
-# assembled nixpkgs-lib-extensions lib.
 { lib, self, ... }:
 let
   inherit (import ./module-level.nix { inherit lib self; }) addOwnLib;
