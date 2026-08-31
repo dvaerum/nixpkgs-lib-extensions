@@ -51,6 +51,36 @@ let
     patches = [ markerPatch ];
   };
 
+  # A `patches` element that is a DIRECTORY auto-expands via
+  # discoverPatches (context.nix) -- built for real (IFD), same as
+  # `patched` above, to prove the expansion actually reaches
+  # `applyPatches` and not just a pure-eval classification.
+  patchedFromDir = myLib.mkNixosSystem {
+    inputs = {
+      inherit nixpkgs;
+      self.outPath = toString ../checks/example;
+    };
+    system = "x86_64-linux";
+    hostname = "patchedfromdir";
+    modules = [ ../checks/example/hosts/server/configuration.nix ];
+    patches = [ ../checks/fixtures/nixpkgs-patching-dir ];
+  };
+
+  # A `patches` directory that expands to `[ ]` (nothing applicable inside
+  # it) must NOT force a patched-tree rebuild -- `selectedSrc` stays the
+  # pristine input, so this needs no IFD/build at all, unlike the
+  # assertions above.
+  emptyDirPatched = myLib.mkNixosSystem {
+    inputs = {
+      inherit nixpkgs;
+      self.outPath = toString ../checks/example;
+    };
+    system = "x86_64-linux";
+    hostname = "emptydirpatched";
+    modules = [ ../checks/example/hosts/server/configuration.nix ];
+    patches = [ ../checks/fixtures/nixpkgs-patching-empty-dir ];
+  };
+
   assertions = {
     # the system really is evaluated from the patched tree
     patches-applied = builtins.pathExists "${patched.pkgs.path}/nixpkgs-lib-extensions-test-marker";
@@ -61,6 +91,15 @@ let
     # ... while the variant channel is built from the pristine one
     variant-not-patched =
       !builtins.pathExists "${variantUnpatched.config.nixpkgsLibExtensions.channels.variant.path}/nixpkgs-lib-extensions-test-marker";
+
+    # a `patches` DIRECTORY reaches the same real, built tree as an
+    # explicit patch derivation does -- not just a classification result
+    directory-patch-applied = builtins.pathExists "${patchedFromDir.pkgs.path}/nixpkgs-lib-extensions-test-dir-marker";
+
+    # a directory with nothing applicable in it does not force a rebuild:
+    # `pkgs.path` stays the pristine input, comparable WITHOUT building
+    # anything (identity, not content, is what's being checked here)
+    empty-directory-not-patched = toString emptyDirPatched.pkgs.path == toString nixpkgs;
   };
 
   runner = import ./run-assertions.nix { inherit pkgs; };

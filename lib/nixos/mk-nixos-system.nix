@@ -277,6 +277,10 @@ in
     : like `nix flake check --no-build` stop working for it). See
     : [Patching nixpkgs itself](getting-started.md#patching-nixpkgs-itself)
     : for an example and the costs involved.
+    : A list element that is a directory auto-expands via `discoverPatches`
+    : -- `patches = [ ./patches ];` works directly, mixed with explicit
+    : `.patch` paths or derivations if wanted. See `discoverPatches`'s own
+    : doc comment for the directory's file-classification rules.
 
     overlays
     : Overlays applied on top of the ones auto-collected from `inputs`.

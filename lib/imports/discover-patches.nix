@@ -5,9 +5,15 @@
   /**
     Auto-discover a directory of nixpkgs patches, classified by filename,
     for the builders' `patches` argument (fed to `pkgs.applyPatches` --
-    see `mkNixosSystem`'s doc comment). Returns a plain list; combine it
-    with a hand-written one yourself if you need both:
-    `patches = myOwnPatches ++ discoverPatches pkgs ./patches;`.
+    see `mkNixosSystem`'s doc comment). Returns a plain list.
+
+    You will usually NOT call this directly: a `patches` list element
+    that is a directory auto-expands through it already (see
+    `mkNixosSystem`'s `patches` argument) -- `patches = [ ./patches ];`
+    is enough, mixed with explicit `.patch` paths or derivations if
+    wanted. Call it yourself only for something the builder's own
+    expansion cannot do, e.g. filtering the discovered list before use:
+    `patches = builtins.filter keep (discoverPatches pkgs ./patches);`.
 
     | Filename                                  | Effect |
     | ------------------------------------------ | ------ |
@@ -40,8 +46,15 @@
     # Example
 
     ```nix
+    # the usual way -- no call needed, the builder expands the directory itself
+    patches = [ ./patches ];
+
+    # calling it directly, only needed for something the builder's own
+    # expansion cannot do, e.g. filtering:
     # extLib = inputs.nixpkgs-lib-extensions.lib
-    patches = extLib.discoverPatches pkgs ./patches;
+    patches = builtins.filter (p: builtins.baseNameOf (toString p) != "flaky.patch") (
+      extLib.discoverPatches pkgs ./patches
+    );
     ```
 
     ```

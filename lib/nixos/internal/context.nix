@@ -295,6 +295,31 @@ let
         }
         // nixpkgsConfig;
 
+        # A `patches` element that is a directory (or an absolute-path
+        # string naming one) auto-expands via discoverPatches -- same
+        # directory-detection idiom as registry.nix's `isDirEntry`, reused
+        # rather than reinvented. Everything else (a `.patch` file path, an
+        # already-resolved derivation from e.g. `pkgs.fetchpatch`) passes
+        # through unchanged: a bare directory was never a valid
+        # `applyPatches` element before, so recognizing one here can never
+        # collide with an existing, working `patches` value -- letting
+        # `patches = [ ./patches ];` work directly, mixed with explicit
+        # entries if wanted, with no separate `discoverPatches pkgs ./patches`
+        # call (and no need for the CALLER to have their own `pkgs` in scope
+        # for it -- `nixpkgs.legacyPackages.${system}`, the plain upstream
+        # set, is what `.nix` remote-patch files evaluate against; the
+        # FINAL, overlaid `pkgs` below is not available yet -- it depends on
+        # `selectedSrc`, which depends on this).
+        isDirectoryPatch =
+          p:
+          (baseLib.isPath p || (baseLib.isString p && baseLib.substring 0 1 p == "/"))
+          && baseLib.pathExists p
+          && builtins.readFileType p == "directory";
+
+        expandedPatches = baseLib.concatMap (
+          p: if isDirectoryPatch p then self.discoverPatches nixpkgs.legacyPackages.${system} p else [ p ]
+        ) patches;
+
         # Optionally apply patches to a nixpkgs source tree. Used for the
         # PRIMARY nixpkgs only -- see mkPkgs. The copy is named `source`, not
         # something descriptive: the patched tree becomes
@@ -303,13 +328,13 @@ let
         # (https://github.com/NixOS/nix/issues/7075, quoted by the option).
         patchSrc =
           npkgs:
-          if patches == [ ] then
+          if expandedPatches == [ ] then
             npkgs
           else
             npkgs.legacyPackages.${system}.applyPatches {
               name = "source";
               src = npkgs;
-              inherit patches;
+              patches = expandedPatches;
             };
 
         # `skipFor` is the only per-channel special-casing, and the asymmetry
@@ -405,7 +430,7 @@ let
         # point of choice) and whether `patches` forced a rebuilt tree
         # (selectedSrc is then a derivation, not the input).
         nixpkgsInput = nixpkgs;
-        nixpkgsPatched = patches != [ ];
+        nixpkgsPatched = expandedPatches != [ ];
       };
 
   # Shared context: everything the builders need (lib, pkgs, specialArgs and the

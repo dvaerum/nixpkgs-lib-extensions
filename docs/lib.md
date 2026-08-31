@@ -297,9 +297,15 @@ declareZfsRootDisk :: Attribute -> Module
 
 Auto-discover a directory of nixpkgs patches, classified by filename,
 for the builders' `patches` argument (fed to `pkgs.applyPatches` --
-see `mkNixosSystem`'s doc comment). Returns a plain list; combine it
-with a hand-written one yourself if you need both:
-`patches = myOwnPatches ++ discoverPatches pkgs ./patches;`.
+see `mkNixosSystem`'s doc comment). Returns a plain list.
+
+You will usually NOT call this directly: a `patches` list element
+that is a directory auto-expands through it already (see
+`mkNixosSystem`'s `patches` argument) -- `patches = [ ./patches ];`
+is enough, mixed with explicit `.patch` paths or derivations if
+wanted. Call it yourself only for something the builder's own
+expansion cannot do, e.g. filtering the discovered list before use:
+`patches = builtins.filter keep (discoverPatches pkgs ./patches);`.
 
 | Filename                                  | Effect |
 | ------------------------------------------ | ------ |
@@ -332,8 +338,15 @@ create an empty directory just to call this.
 ### Example
 
 ```nix
+# the usual way -- no call needed, the builder expands the directory itself
+patches = [ ./patches ];
+
+# calling it directly, only needed for something the builder's own
+# expansion cannot do, e.g. filtering:
 # extLib = inputs.nixpkgs-lib-extensions.lib
-patches = extLib.discoverPatches pkgs ./patches;
+patches = builtins.filter (p: builtins.baseNameOf (toString p) != "flaky.patch") (
+  extLib.discoverPatches pkgs ./patches
+);
 ```
 
 ```
@@ -1332,6 +1345,10 @@ mkNixosSystem :: Attribute -> NixosSystem
   like `nix flake check --no-build` stop working for it). See
   [Patching nixpkgs itself](getting-started.md#patching-nixpkgs-itself)
   for an example and the costs involved.
+  A list element that is a directory auto-expands via `discoverPatches`
+  -- `patches = [ ./patches ];` works directly, mixed with explicit
+  `.patch` paths or derivations if wanted. See `discoverPatches`'s own
+  doc comment for the directory's file-classification rules.
 
 - **overlays**
   Overlays applied on top of the ones auto-collected from `inputs`.

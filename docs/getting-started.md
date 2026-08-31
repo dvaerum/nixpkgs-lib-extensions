@@ -775,6 +775,18 @@ laptop = {
 };
 ```
 
+For more than one or two patches, point at a DIRECTORY instead and let
+`discoverPatches` classify what is in it (`.patch` files applied as-is,
+`.nix` files evaluated as `pkgs: <derivation>` for remote patches like
+`fetchpatch`, `.disabled`/`.md` ignored, anything else warned about) --
+a directory element auto-expands, mixed with explicit entries if wanted:
+
+```nix
+laptop = {
+  patches = [ ./patches ];
+};
+```
+
 What it costs: the whole nixpkgs tree is copied into the store with
 the patches applied, and that copy must be BUILT before evaluation
 can continue (import-from-derivation) -- the first build pays a
