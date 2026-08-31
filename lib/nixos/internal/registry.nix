@@ -79,9 +79,23 @@ let
   # (`nix flake check`, CI) refuses it outright. Warned, not removed;
   # message exported as data so the tests can pin the TEXT (a warning is
   # not observable in-language, unlike a throw).
+  #
+  # The suggested local-path fix has no equivalent for an entry that lives
+  # in ANOTHER flake input (`inputs.foo + "/users/alice"`, hit while
+  # cross-referencing a shared home-manager-config-style input): Nix
+  # rejects appending a string onto a path once it has already been
+  # coerced to a store-path string, with no primop to turn it back --
+  # `inputs.foo` is an attrset, so `+` forces it to a string first, and
+  # that direction has no return trip. The real fix crosses the flake
+  # boundary the other way: the PROVIDING flake exports the path itself,
+  # built from its OWN local path literals (`userRegistry."alice@*" =
+  # ./users/alice;` in that flake's own outputs), and the consumer reads
+  # it directly (`inputs.foo.userRegistry`) instead of reconstructing a
+  # path from a string. See the userRegistry Gotchas in
+  # docs/getting-started.md for the worked example.
   stringPathEntryWarning =
     username: entry:
-    "nixpkgs-lib-extensions: the userRegistry entry for `${username}` is an absolute path STRING (${entry}). String paths escape the flake: they are not copied to the store and fail under pure evaluation. Write a path value instead (e.g. `./users/${username}`).";
+    "nixpkgs-lib-extensions: the userRegistry entry for `${username}` is an absolute path STRING (${entry}). String paths escape the flake: they are not copied to the store and fail under pure evaluation. Write a path value instead (e.g. `./users/${username}`) -- or, if this path lives in ANOTHER flake input, have that flake export the path itself and read it directly (`inputs.foo + \"/...\"` string-concatenation can never produce a path value; see docs/getting-started.md).";
 
   # Validate one registry entry and return its parts. Every entry must be a
   # directory shipping `home.nix` (home-manager config) and/or

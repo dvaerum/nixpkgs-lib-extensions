@@ -123,7 +123,14 @@
       };
       msg = registry.stringPathEntryWarning "alice" "/somewhere/users/alice";
     in
-    lib.hasInfix "pure evaluation" msg && lib.hasInfix "path value" msg && lib.hasInfix "`alice`" msg;
+    lib.hasInfix "pure evaluation" msg
+    && lib.hasInfix "path value" msg
+    && lib.hasInfix "`alice`" msg
+    # the local-path fix has no equivalent across a flake-input boundary
+    # (inputs.foo + "/..." can never produce a path value) -- the message
+    # must point at the real fix (the OTHER flake exporting the path)
+    # instead of leaving that case looking like a dead end
+    && lib.hasInfix "ANOTHER flake input" msg;
 
   # only loginHomes get homeConfigurations outputs: dave/frank/grace are
   # system-managed, eve has no home config at all

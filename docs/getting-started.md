@@ -838,6 +838,29 @@ merged option value, also labeling the boot menu via
   one; Nix's own pure evaluation (`nix flake check`, CI, any real
   build) can still refuse to read it outright elsewhere in the
   chain -- treat the warning as something to fix, not ignore.
+  - **This has no local-path fix when the directory lives in ANOTHER
+    flake input** -- e.g. a shared home-manager config input:
+    `"alice@*" = inputs.home-manager-config + "/users/alice";` trips
+    the same warning, but `./users/alice` makes no sense here (that
+    path is in the OTHER repo). String-concatenating onto an input
+    can never produce a path value either: `inputs.foo` is an
+    attrset, so `+` coerces it to a string first, and Nix has no
+    primop to turn a store-path string back into a path -- there is
+    no fix on this side of the boundary. The real fix crosses it the
+    other way: have the PROVIDING flake export the path itself, built
+    from its own local literals, and read that directly:
+    ```nix
+    # home-manager-config/flake.nix
+    outputs = { ... }: {
+      userRegistry."alice@*" = ./users/alice;  # a genuine path literal here
+      # ...
+    };
+    ```
+    ```nix
+    # the consuming flake
+    userRegistry = inputs.home-manager-config.userRegistry;
+    ```
+    No string, no warning, no path fragment duplicated across two repos.
 - A plain `"user"` entry is IGNORED (with a warning) as soon as a
   `"user@*"` or `"user@<thishost>"` entry exists -- an @-entry naming
   some OTHER host does not shadow it -- import its directory explicitly from
