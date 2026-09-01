@@ -1,5 +1,4 @@
-# Loaded by lib/default.nix under the one calling convention: `self` is the
-# fully assembled nixpkgs-lib-extensions lib (a fixed point), `lib` is nixpkgs'.
+# Per lib/default.nix's `{ lib, self, ... }` calling convention (see there).
 # Shared machinery lives in ./internal/shared.nix.
 { self, lib, ... }:
 let
@@ -100,17 +99,10 @@ in
       homeManagerPkg =
         if home-manager == null then null else home-manager.packages.${system}.home-manager;
       # A STRING loginFlakeRef (not a flake input) is a deliberate escape
-      # hatch -- see its own doc comment -- for a MUTABLE ref
-      # ("/etc/nixos", "git+https://...") that home-manager reads LIVE at
-      # login, not the immutable store copy an input gives. That is a real,
+      # hatch -- see its own doc comment and stringFlakeRefWarning's comment
+      # (registry.nix) for why it's warned rather than rejected. A real,
       # tested capability (checks/builders/tests/bootstrap.nix exercises
-      # both a bare path string and full flake-ref syntax), not a mistake
-      # to reject -- but it also means nothing here can ever read a
-      # userRegistry off it (a raw string has no attributes), so
-      # resolveUserRegistry's auto-discovery never applies to it either.
-      # Warned rather than silent so that trade-off is visible at the
-      # point it is made, same "warn, don't remove" treatment as
-      # stringPathEntryWarning.
+      # both a bare path string and full flake-ref syntax), not a mistake.
       warnStringFlakeRef =
         v:
         if lib.isString loginFlakeRef then

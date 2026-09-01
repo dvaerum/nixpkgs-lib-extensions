@@ -462,7 +462,7 @@ let
   );
   assertions = lib.mergeAttrsList assertionSets;
 
-  # a silent merge collision would hide a test
+  # guards the duplicate-name rule from the header comment above
   totalDefined = lib.foldl' (sum: s: sum + lib.length (lib.attrNames s)) 0 assertionSets;
 
   runner = import ../run-assertions.nix { inherit pkgs; };

@@ -36,9 +36,9 @@ let
     patches = [ markerPatch ];
     # unrelated to patching -- explicit so `inputs.self`'s userRegistry
     # auto-discovery (loginFlakeRef's default) does not pick up
-    # checks/example/users/, whose frank-base/frank-laptop fixtures are
-    # deliberately named DIFFERENT from their intended registry key and
-    # break when auto-discovered under their own directory names instead
+    # checks/example/users/ (frank-base/frank-laptop are named differently
+    # from their registry key -- see builders/tests/registry.nix's
+    # autoDiscoverRoot comment for why that breaks auto-discovery)
     userRegistry = { };
   };
 

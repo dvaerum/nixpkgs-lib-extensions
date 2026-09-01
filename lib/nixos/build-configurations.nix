@@ -1,5 +1,4 @@
-# Loaded by lib/default.nix under the one calling convention: `self` is the
-# fully assembled nixpkgs-lib-extensions lib (a fixed point), `lib` is nixpkgs'.
+# Per lib/default.nix's `{ lib, self, ... }` calling convention (see there).
 { self, lib, ... }:
 let
   shared = import ./internal/shared.nix { inherit lib self; };

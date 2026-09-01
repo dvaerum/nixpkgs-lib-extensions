@@ -135,8 +135,8 @@ let
         ];
       in
       builtins.all (w: !(lib.hasInfix "[[" w) && !(lib.hasInfix "$'" w)) (keyWritersCode ++ loops);
-    # both initrd flavors' load-key loops come from ONE snippet: the
-    # script-initrd copy used to swallow failures with a bare `|| true`
+    # both initrd flavors' load-key loops come from ONE snippet -- see
+    # declare-zfs-root-disk.nix's loadKeysScript comment for why that matters
     load-key-loops-identical =
       encrypted.boot.initrd.systemd.content.services.zfs-load-encryption-keys.script
       == encrypted.boot.initrd.postResumeCommands.content.content;

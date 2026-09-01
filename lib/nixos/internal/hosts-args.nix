@@ -126,11 +126,7 @@ let
   # The complaints a hosts attrset raises, as DATA -- the COMPLETE list,
   # all four classes (reserved keys, `_defaults` keys, host-entry shapes,
   # host-entry keys); splitHostsArgs throws exactly what this returns.
-  # Exported for the tests, same reason as builderArgProblems:
-  # `builtins.tryEval` discards the message, so an assertion that only
-  # checks "did it throw" is satisfied by ANY failure in the expression and
-  # stays green against the wrong error forever. These messages are the
-  # library's main UX surface -- test them.
+  # Exported for the tests, same reason as builderArgProblems above.
   hostsProblems =
     fnName: hosts:
     let

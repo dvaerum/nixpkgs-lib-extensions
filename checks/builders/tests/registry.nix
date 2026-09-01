@@ -288,10 +288,8 @@ in
     && !(sys.config.systemd.user.services ? home-manager-bootstrap);
 
   # ── registry keys that cannot match anything ──
-  # `"alice@"` was dropped by usersFromRegistry (its host part matches no
-  # host and not `*`) while registryUserNames kept `alice`, so the two
-  # parsers disagreed: loginHomes = [ "alice" ] passed validation for a user
-  # no host had, and the system built and booted WITHOUT the user.
+  # See badRegistryKey's own comment (lib/nixos/internal/registry.nix) for
+  # why both of these throw: two parsers used to disagree on keys like this.
   registry-key-empty-host-throws =
     !(builtins.tryEval (
       builtins.attrNames (
@@ -305,8 +303,6 @@ in
       )
     )).success;
 
-  # `"@laptop"` is the mirror image: it produced a real account named "",
-  # a group named "", and (via declareZfsRootDisk) a dataset `HOME/`
   registry-key-empty-user-throws =
     !(builtins.tryEval (
       builtins.attrNames (

@@ -105,12 +105,10 @@ let
   # probeCoreOverrideMessage in checks/builders/default.nix for the same
   # pattern). `names` is `lib.attrNames` of the exported set; the exported
   # names themselves are listed via describeAvailable IF there are few
-  # enough to be useful: nixos-raspberrypi's 8 overlays are exactly what
-  # you need to pick one, but nixos-hardware's hundreds of mutually
-  # exclusive profiles (some of them `throw` tombstones) would be a wall of
-  # text that helps nobody who has not asked for a specific one. This
-  # doubles as the "what's available" answer resolveEntrySet gives when
-  # you DO name an entry and it does not exist -- same policy, same
+  # enough to be useful (see ambiguousListThreshold above for why --
+  # nixos-raspberrypi's 8 overlays are exactly what you need to pick one).
+  # This doubles as the "what's available" answer resolveEntrySet gives
+  # when you DO name an entry and it does not exist -- same policy, same
   # helper, so neither throw site can dump a wall of names the other one
   # was carefully capping.
   ambiguousExportMessage = name: channel: names: ''

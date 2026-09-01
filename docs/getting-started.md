@@ -161,14 +161,11 @@ Writing `userRegistry` by hand is one extra attrset a caller normally
 doesn't need to maintain by itself: when it is **omitted entirely**
 (not `null`, not `{ }` -- genuinely absent from the builder call) and
 `loginFlakeRef` resolves to a flake input, the builders discover it
-instead, from that input's `users/` directory:
-
-| Entry in `users/`                                       | Effect |
-| -------------------------------------------------------- | ------ |
-| subdirectory with `home.nix` and/or `configuration.nix`   | becomes a `"<name>@*"` entry |
-| subdirectory with neither file                            | ignored, with a warning naming it |
-| a dotfile or dot-directory (`.gitkeep`, `.git`, ...)      | ignored, no warning |
-| anything else (a plain file, `README.md`, ...)            | ignored, no warning |
+instead, from that input's `users/` directory: each subdirectory
+shipping `home.nix`/`configuration.nix` becomes a `"<name>@*"` entry
+(anything else in `users/` -- a malformed subdirectory, a dotfile, a
+stray file -- is skipped; see `discoverUserRegistry` in `docs/lib.md`
+for exactly which of those warn).
 
 This is what makes a **shared, multi-flake home-manager setup** work
 without a config-side registry at all: point `loginFlakeRef` at the
@@ -885,22 +882,17 @@ merged option value, also labeling the boot menu via
   directories and host files, or they are silently skipped.
 - Registry values should be **path values** (`./users/alice`), not
   hand-typed absolute path strings (`"/home/me/users/alice"`): such a
-  string is never copied into the flake's Nix store copy the way a
-  path value is, so it escapes the flake and depends on whatever sits
-  at that filesystem location instead. This library only WARNS when it
-  sees one; Nix's own pure evaluation (`nix flake check`, CI, any real
-  build) can still refuse to read it outright elsewhere in the
-  chain -- treat the warning as something to fix, not ignore.
-  - **A string built by concatenating onto a flake input is not the
-    same hazard**, despite also being a string -- e.g. a shared
-    home-manager config input: `"alice@*" = inputs.home-manager-config
-    + "/users/alice";` is accepted WITHOUT a warning. Nix strings can
-    carry "context" (an invisible record of which store paths they
-    reference), and `+` onto an input inherits it -- the result is
-    store-pinned and pure-eval-safe, unlike a hand-typed string. Prefer
-    [auto-discovery](#auto-discovery) over this form when the whole
-    `users/` directory should come from the other flake; reach for the
-    explicit concatenated form only for a single one-off entry.
+  string escapes the flake's store copy and only WARNS here, though
+  Nix's own pure evaluation (`nix flake check`, CI, any real build) can
+  refuse to read it outright elsewhere in the chain -- treat the
+  warning as something to fix, not ignore. See the `userRegistry`
+  argument in `docs/lib.md` (`mkNixosSystem`) for why, and for the one
+  exception: a string built by concatenating onto a flake input (e.g.
+  `"alice@*" = inputs.home-manager-config + "/users/alice";`) is
+  accepted WITHOUT a warning. Prefer [auto-discovery](#auto-discovery)
+  over that concatenated form when the whole `users/` directory should
+  come from the other flake; reach for it only for a single one-off
+  entry.
 - A plain `"user"` entry is IGNORED (with a warning) as soon as a
   `"user@*"` or `"user@<thishost>"` entry exists -- an @-entry naming
   some OTHER host does not shadow it -- import its directory explicitly from
