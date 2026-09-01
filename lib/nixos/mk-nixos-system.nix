@@ -184,9 +184,12 @@ in
     : that moving default -- pin it in the user's `home.nix` or fleet-wide
     : via `homeModules` -- and receives `username` as a module
     : argument) -- unless the user is listed in `loginHomes`. Prefer
-    : path values over absolute path strings: a string escapes the flake
-    : (never copied to the store, fails under pure evaluation) and warns. A
-    : directory with only a `configuration.nix` is a system-only user
+    : path values over absolute path strings: a CONTEXT-FREE string escapes
+    : the flake (never copied to the store, fails under pure evaluation)
+    : and warns. A string built by concatenating onto a flake INPUT
+    : (`inputs.foo + "/users/alice"`) is not the same hazard -- it carries
+    : store context and is pure-eval-safe -- and is accepted without
+    : warning. A directory with only a `configuration.nix` is a system-only user
     : (account, no home). Keys select where an entry applies:
     :   `"<user>@<host>"`  this host only
     :   `"<user>@*"`       every host; MERGES with a matching `"<user>@<host>"`
@@ -205,7 +208,16 @@ in
     : ambiguous and THROWS, naming both paths.
     : The keys define the host's users (exposed as the
     : `nixpkgsLibExtensions.users` option).
-    : `null` or `{ }` disables it. Default `{ }`.
+    : `null` or `{ }` disables it.
+    : OMITTED ENTIRELY (not `null`, not `{ }` -- genuinely absent), it
+    : auto-discovers instead: when `loginFlakeRef` resolves to a flake
+    : input, every subdirectory of that input's `users/` directory shipping
+    : `home.nix`/`configuration.nix` becomes a `"<name>@*"` entry (see
+    : `discoverUserRegistry`). A `loginFlakeRef` flake-ref STRING (a
+    : mutable checkout, not an input) cannot be read this way -- those
+    : setups still write `userRegistry` explicitly. Adoption is announced
+    : per host via `traceDiscoveredUsers` (default `true`); set
+    : `userRegistry = { };` to disable discovery outright.
     : WARNING: in a git-backed flake only TRACKED files exist -- `git add` a
     : new home.nix/configuration.nix or it is skipped silently.
 
@@ -235,8 +247,21 @@ in
     : the last `nixos-rebuild`, but local edits are invisible until the
     : next rebuild. Point it at a mutable checkout (e.g. `"/etc/nixos"`
     : or `"git+https://..."`) to make the bootstrap build from the live
-    : tree instead. Irrelevant without `loginHomes` users.
+    : tree instead -- a real, supported capability (not eval-time
+    : knowable, so `userRegistry` auto-discovery never applies to it;
+    : passing one WARNS, naming the trade-off, not because it is wrong).
+    : Irrelevant without `loginHomes` users.
     : Default `inputs.self`.
+
+    traceDiscoveredUsers
+    : Whether `userRegistry` auto-discovery (see its own entry above)
+    : announces what it adopted: `host \`<name>\`: userRegistry
+    : auto-discovered from <ref>/users: <names>`, once per host that
+    : actually adopted one (never printed for a host that supplies its own
+    : `userRegistry`, or whose scan found nothing). May print more than
+    : once per host -- the registry is independently resolved at each of
+    : several internal call sites, and Nix has no way to deduplicate a
+    : trace across them. Default `true`.
 
     loginReactivateEveryLogin
     : Bootstrap re-activates on every login instead of only the first.

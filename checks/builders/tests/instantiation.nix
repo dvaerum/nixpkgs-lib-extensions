@@ -35,6 +35,13 @@
           inherit inputs system nixpkgs;
           hostname = "routeparity";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+          # unrelated to route parity -- explicit so `inputs.self`'s
+          # userRegistry auto-discovery (loginFlakeRef's default) does not
+          # pick up checks/example/users/, whose frank-base/frank-laptop
+          # fixtures are deliberately named DIFFERENT from their intended
+          # registry key and break when auto-discovered under their own
+          # directory names instead
+          userRegistry = { };
         }).config.system.build.toplevel.drvPath;
       noNixosSystem = inputs.nixpkgs // {
         lib = builtins.removeAttrs inputs.nixpkgs.lib [ "nixosSystem" ];

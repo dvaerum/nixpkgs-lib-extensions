@@ -24,6 +24,7 @@ let
     resolveUser
     usersFromRegistry
     usersWithHome
+    resolveUserRegistry
     ;
   inherit (import ./priorities.nix { inherit lib; }) builderDefaultPriority mkBuilderDefault;
 in
@@ -41,6 +42,7 @@ in
       homeModules ? [ ],
       loginFlakeRef ? null,
       loginReactivateEveryLogin ? false,
+      traceDiscoveredUsers ? true,
       tags ? [ ],
       group ? null,
       hostFolder ? null,
@@ -68,7 +70,16 @@ in
         inherit (ctx) inputPkgs channels;
       };
 
-      registry = if userRegistry == null then { } else userRegistry;
+      registry = resolveUserRegistry {
+        wasGiven = args ? userRegistry;
+        inherit
+          userRegistry
+          inputs
+          loginFlakeRef
+          hostname
+          traceDiscoveredUsers
+          ;
+      };
 
       # The host's users, derived from the registry keys ("<user>@<host>"
       # for this host plus plain "<user>" fallback entries). `loginHomes`

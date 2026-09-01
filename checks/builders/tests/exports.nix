@@ -20,6 +20,7 @@
     "readIfPlain"
     "readIfPlainOr"
     "discoverPatches"
+    "discoverUserRegistry"
     "detachedRun"
     "interceptingWrapper"
   ];

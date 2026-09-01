@@ -9,7 +9,11 @@ let
     extHomeOptionsModule
     homeStateVersionModule
     ;
-  inherit (import ./registry.nix { inherit lib self; }) resolveUser usersFromRegistry;
+  inherit (import ./registry.nix { inherit lib self; })
+    resolveUser
+    usersFromRegistry
+    resolveUserRegistry
+    ;
 in
 {
   mkHome =
@@ -35,7 +39,20 @@ in
         autoHomeModules
         ;
 
-      registry = if userRegistry == null then { } else userRegistry;
+      # loginFlakeRef/traceDiscoveredUsers are not this function's OWN
+      # arguments (a direct mkHomeConfiguration call has no login-bootstrap
+      # concept to auto-discover from) -- they only arrive here via the
+      # hosts-attrset path (homesFromPlan passes the host's full merged
+      # args), where the SAME resolution hosts-args.nix/mk-system.nix
+      # already ran must reach a login-managed user's OWN home too, or a
+      # user that only exists via auto-discovery would build no home.nix
+      # for anyone.
+      registry = resolveUserRegistry {
+        wasGiven = args ? userRegistry;
+        inherit userRegistry inputs hostname;
+        loginFlakeRef = args.loginFlakeRef or null;
+        traceDiscoveredUsers = args.traceDiscoveredUsers or true;
+      };
       registryHomeModules = (resolveUser registry hostname username).homeModules;
     in
     (

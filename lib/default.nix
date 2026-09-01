@@ -51,6 +51,7 @@ lib.fix (
         ./nixos/build-configurations.nix
         ./nixos/build-home-configurations.nix
         ./nixos/build-nixos-configurations.nix
+        ./nixos/discover-user-registry.nix
         ./nixos/home-manager-bootstrap-module.nix
         ./nixos/mk-home-configuration.nix
         ./nixos/mk-nixos-system.nix

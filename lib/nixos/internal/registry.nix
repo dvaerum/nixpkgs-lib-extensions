@@ -72,30 +72,41 @@ let
     else
       [ ];
 
-  # An absolute path STRING still works as a registry entry, but it is a
-  # pure-eval hazard: unlike a path VALUE it is never copied into the
-  # store, so it escapes the flake -- the build depends on whatever
-  # happens to sit at that filesystem location, and pure evaluation
-  # (`nix flake check`, CI) refuses it outright. Warned, not removed;
-  # message exported as data so the tests can pin the TEXT (a warning is
-  # not observable in-language, unlike a throw).
+  # An absolute path STRING still works as a registry entry, but a
+  # CONTEXT-FREE one (hand-typed: `"/home/me/users/alice"`) is a pure-eval
+  # hazard: unlike a path VALUE it is never copied into the store, so it
+  # escapes the flake -- the build depends on whatever happens to sit at
+  # that filesystem location, and pure evaluation (`nix flake check`, CI)
+  # refuses to read it outright.
   #
-  # The suggested local-path fix has no equivalent for an entry that lives
-  # in ANOTHER flake input (`inputs.foo + "/users/alice"`, hit while
-  # cross-referencing a shared home-manager-config-style input): Nix
-  # rejects appending a string onto a path once it has already been
-  # coerced to a store-path string, with no primop to turn it back --
-  # `inputs.foo` is an attrset, so `+` forces it to a string first, and
-  # that direction has no return trip. The real fix crosses the flake
-  # boundary the other way: the PROVIDING flake exports the path itself,
-  # built from its OWN local path literals (`userRegistry."alice@*" =
-  # ./users/alice;` in that flake's own outputs), and the consumer reads
-  # it directly (`inputs.foo.userRegistry`) instead of reconstructing a
-  # path from a string. See the userRegistry Gotchas in
-  # docs/getting-started.md for the worked example.
+  # A string built by concatenating onto a flake INPUT
+  # (`inputs.foo + "/users/alice"`) is NOT the same hazard, despite also
+  # being a string: Nix strings can carry "context" -- an invisible record
+  # of which store paths they reference -- and `+` onto an input inherits
+  # it. Confirmed empirically, not assumed: `builtins.hasContext` is true
+  # for the concatenated form and false for a hand-typed one, and
+  # `readDir`/`pathExists`/`readFile` all work on the concatenated form
+  # under PURE evaluation (no `--impure`). An earlier version of this
+  # comment (and this library's own docs) claimed the concatenated form
+  # "fails under pure evaluation" and had "no fix on this side of the
+  # boundary" -- that was wrong, caught by testing the actual claim rather
+  # than trusting it. Only the context-free lane still warns.
+  #
+  # Warned, not thrown; message exported as data so the tests can pin the
+  # TEXT (a warning is not observable in-language, unlike a throw).
   stringPathEntryWarning =
     username: entry:
-    "nixpkgs-lib-extensions: the userRegistry entry for `${username}` is an absolute path STRING (${entry}). String paths escape the flake: they are not copied to the store and fail under pure evaluation. Write a path value instead (e.g. `./users/${username}`) -- or, if this path lives in ANOTHER flake input, have that flake export the path itself and read it directly (`inputs.foo + \"/...\"` string-concatenation can never produce a path value; see docs/getting-started.md).";
+    "nixpkgs-lib-extensions: the userRegistry entry for `${username}` is an absolute path STRING with no store context (${entry}). Such a string is never copied into the flake's store copy, so it escapes the flake and pure evaluation (`nix flake check`, CI) refuses to read it. Write a path value instead (e.g. `./users/${username}`) -- or, if this directory lives in ANOTHER flake input, concatenate onto the input directly (`inputs.foo + \"/users/${username}\"`): unlike a hand-typed string, that produces a string WITH context (store-pinned, pure-eval-safe), which this library accepts without warning.";
+
+  # `loginFlakeRef` as a STRING (not a flake input) is a deliberate escape
+  # hatch for a MUTABLE ref home-manager reads LIVE at login, not the
+  # immutable store copy an input gives -- see mk-nixos-system.nix's own
+  # doc comment. Warned, same "warn, don't remove" treatment as
+  # stringPathEntryWarning above, and for the same reason: message
+  # exported as data so tests can pin the TEXT.
+  stringFlakeRefWarning =
+    hostname: ref:
+    "nixpkgs-lib-extensions: host `${hostname}`: loginFlakeRef is a string (\"${ref}\"), not a flake input -- home-manager will read it LIVE at login (a mutable checkout, or whatever a remote ref currently resolves to), not the immutable store copy an input gives, and userRegistry auto-discovery (see its own doc comment) never applies to it either, since a raw string has no attributes to read. Intended? No action needed. Otherwise pass a flake input instead (e.g. `loginFlakeRef = inputs.self;`, the default).";
 
   # Validate one registry entry and return its parts. Every entry must be a
   # directory shipping `home.nix` (home-manager config) and/or
@@ -110,8 +121,15 @@ let
           "a value of type `${builtins.typeOf entry}`";
       hasHome = lib.pathExists (entry + "/home.nix");
       hasConf = lib.pathExists (entry + "/configuration.nix");
+      # Only a CONTEXT-FREE string warns -- see stringPathEntryWarning's
+      # own comment for why a context-carrying one (from concatenating
+      # onto a flake input) is not the hazard this guards against.
       warnStringEntry =
-        parts: if lib.isString entry then lib.warn (stringPathEntryWarning username entry) parts else parts;
+        parts:
+        if lib.isString entry && !(builtins.hasContext entry) then
+          lib.warn (stringPathEntryWarning username entry) parts
+        else
+          parts;
     in
     if !(isDirEntry entry) then
       throw ''
@@ -300,6 +318,73 @@ let
           if known == [ ] then "(none)" else lib.concatStringsSep ", " known
         }.
       '';
+
+  # The EFFECTIVE userRegistry for one host: the caller's own value if
+  # `userRegistry` was given at all (even `null`/`{ }`, both documented as
+  # "no users"), or an auto-discovered one -- via self.discoverUserRegistry
+  # -- when it was OMITTED ENTIRELY and `loginFlakeRef` resolves to a flake
+  # input (an attrset). A bare flake-ref STRING (`"/etc/nixos"`,
+  # `"git+https://..."`) cannot be read at eval time at all -- see
+  # `loginFlakeRef`'s own doc comment -- so those setups keep writing
+  # `userRegistry` by hand, same as before this existed.
+  #
+  # `wasGiven`: whether the CALLER's own argument attrset included the
+  # `userRegistry` key at all. `?`-shorthand defaulting cannot distinguish
+  # "omitted" from "explicitly passed the same value the default would
+  # be" (both `null` and `{ }` are already claimed as documented
+  # "disabled" values, so neither can double as a NEW "omitted" sentinel);
+  # every call site instead passes `args ? userRegistry` (mk-system.nix,
+  # mk-home.nix) or its hosts-attrset equivalent (hosts-args.nix).
+  #
+  # Called from THREE sites for one host with login-managed homes
+  # (hosts-args.nix's plan, mk-system.nix's own registry, and once per
+  # login-managed user from mk-home.nix) -- a pure function of the same
+  # inputs each time, so the RESULT never disagrees between them, but the
+  # adoption trace below can fire more than once per host as a result
+  # (accepted: `traceDiscoveredUsers` is about surfacing adoption, not
+  # deduplicating a side effect Nix gives no way to deduplicate across
+  # independently-forced call sites).
+  resolveUserRegistry =
+    {
+      wasGiven,
+      userRegistry,
+      inputs,
+      loginFlakeRef,
+      hostname,
+      traceDiscoveredUsers,
+    }:
+    if wasGiven then
+      (if userRegistry == null then { } else userRegistry)
+    else
+      let
+        # Same defaulting as home-manager-bootstrap-module.nix's
+        # effectiveFlakeRef -- duplicated rather than shared, because that
+        # module's own argument shape is its public contract and this
+        # needs the resolved value a layer earlier, before the registry
+        # that module reads even exists.
+        effectiveLoginFlakeRef = if loginFlakeRef != null then loginFlakeRef else (inputs.self or null);
+      in
+      if !(lib.isAttrs effectiveLoginFlakeRef) then
+        { }
+      else
+        let
+          # tryEval: `+` on an attrset with no `outPath`/`__toString` (not
+          # a genuine flake input, however it got here) throws immediately
+          # -- before discoverUserRegistry's own guard ever sees a `dir`
+          # to check. Same "an unrelated/unpredictable value must not
+          # break evaluation for a caller not even using this feature"
+          # reasoning as discoverUserRegistry's own tryEval.
+          usersDirProbe = builtins.tryEval (effectiveLoginFlakeRef + "/users");
+          discovered = if usersDirProbe.success then self.discoverUserRegistry usersDirProbe.value else { };
+        in
+        if discovered == { } || !traceDiscoveredUsers then
+          discovered
+        else
+          lib.trace ''
+            nixpkgs-lib-extensions: host `${hostname}`: userRegistry auto-discovered from ${
+              toString (effectiveLoginFlakeRef + "/users")
+            }: ${lib.concatStringsSep ", " (map (lib.removeSuffix "@*") (lib.attrNames discovered))} -- expected? Silence with `traceDiscoveredUsers = false;` (a builder argument, goes where `system`/`patches` do). Unexpected? Set `userRegistry = { };` to disable discovery.
+          '' discovered;
 in
 {
   inherit
@@ -310,5 +395,7 @@ in
     validateLoginUsers
     validateRegistryKeys
     stringPathEntryWarning
+    stringFlakeRefWarning
+    resolveUserRegistry
     ;
 }

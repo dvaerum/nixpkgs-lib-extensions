@@ -16,6 +16,7 @@ let
     validateLoginUsers
     validateRegistryKeys
     loginUsersWithHome
+    resolveUserRegistry
     ;
   inherit (import ./inputs.nix { inherit lib self; }) detectHomeManager;
 
@@ -38,6 +39,7 @@ let
     "homeModules"
     "loginFlakeRef"
     "loginReactivateEveryLogin"
+    "traceDiscoveredUsers"
     "tags"
     "group"
     "hostFolder"
@@ -474,24 +476,31 @@ let
       coreFor =
         hostname: (lib.findFirst (c: sameCoreArgs c.tuple coreTuples.${hostname}) null coreClasses).core;
     in
-    lib.mapAttrs (
-      hostname: args:
-      let
-        rawRegistry = args.userRegistry or { };
-      in
-      {
-        inherit args;
-        # ALWAYS a core, never null. With null the builder recomputed one --
-        # and so did EVERY mkHomeConfiguration call for that host, so
-        # a non-sharing host with 4 login homes paid for 5 nixpkgs
-        # evaluations. Computing it once per class moves that back to one.
-        # Lazy: a host nobody forces costs nothing beyond tuple comparisons.
-        core = coreFor hostname;
-        # `null` is a documented value for userRegistry; normalized ONCE
-        # here so every consumer of the plan sees an attrset.
-        registry = if rawRegistry == null then { } else rawRegistry;
-      }
-    ) mergedArgs;
+    lib.mapAttrs (hostname: args: {
+      inherit args;
+      # ALWAYS a core, never null. With null the builder recomputed one --
+      # and so did EVERY mkHomeConfiguration call for that host, so
+      # a non-sharing host with 4 login homes paid for 5 nixpkgs
+      # evaluations. Computing it once per class moves that back to one.
+      # Lazy: a host nobody forces costs nothing beyond tuple comparisons.
+      core = coreFor hostname;
+      # Normalized ONCE here so every consumer of the plan sees the
+      # SAME attrset -- `null` is a documented "no users" value, and an
+      # OMITTED key auto-discovers from `loginFlakeRef` (see
+      # resolveUserRegistry's own comment); mk-system.nix/mk-home.nix
+      # independently run the exact same resolution for the values THEY
+      # read directly (a pure function of the same inputs, so it never
+      # disagrees -- just possibly recomputed, and possibly traced more
+      # than once per host as a result).
+      registry = resolveUserRegistry {
+        wasGiven = args ? userRegistry;
+        userRegistry = args.userRegistry or { };
+        inherit (args) inputs;
+        loginFlakeRef = args.loginFlakeRef or null;
+        traceDiscoveredUsers = args.traceDiscoveredUsers or true;
+        inherit hostname;
+      };
+    }) mergedArgs;
 
   # A loginHomes typo is otherwise silent: the home flips to the
   # system-managed mechanism and everything still builds and boots. Only

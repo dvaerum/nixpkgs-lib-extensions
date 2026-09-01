@@ -21,6 +21,7 @@ builders? Start with the
   - [`lib.nixos.buildConfigurations`](#libnixosbuildconfigurations)
   - [`lib.nixos.buildHomeConfigurations`](#libnixosbuildhomeconfigurations)
   - [`lib.nixos.buildNixosConfigurations`](#libnixosbuildnixosconfigurations)
+  - [`lib.nixos.discoverUserRegistry`](#libnixosdiscoveruserregistry)
   - [`lib.nixos.homeManagerBootstrapModule`](#libnixoshomemanagerbootstrapmodule)
   - [`lib.nixos.mkHomeConfiguration`](#libnixosmkhomeconfiguration)
   - [`lib.nixos.mkNixosSystem`](#libnixosmknixossystem)
@@ -872,6 +873,7 @@ buildNixosConfigurations ::
     homes here, login-managed homes in `buildHomeConfigurations`)
   - `loginFlakeRef`
   - `loginReactivateEveryLogin`
+  - `traceDiscoveredUsers`
   - `tags`
   - `group` (also selects the host's `_groups` layer)
   - `hostFolder`
@@ -893,6 +895,54 @@ buildNixosConfigurations ::
   Optional reserved entry of `hosts` (never a hostname): per-group
   argument sets, applied between `_defaults` and the host entries
   that declare the matching `group` -- see the description above.
+
+
+
+
+## `lib.nixos.discoverUserRegistry`
+
+Auto-discover a `userRegistry` from a `users/` directory: one
+`"<name>@*"` entry per subdirectory that looks like a registry entry.
+You will usually NOT call this directly -- `mkNixosSystem`'s own
+`userRegistry` argument already does this automatically when it is
+omitted and `loginFlakeRef` names a flake input (see its doc comment).
+Call it yourself only for something that convention cannot do: scanning
+a differently-named directory, or filtering/extending the result before
+use (`discoverUserRegistry dir // { "extra@*" = ./local-user; }`).
+
+| Entry in `dir`                                          | Effect |
+| -------------------------------------------------------- | ------ |
+| subdirectory with `home.nix` and/or `configuration.nix`   | becomes `"<name>@*" = <path>;` |
+| subdirectory with NEITHER file                            | ignored, WITH a warning naming the directory -- a scan guessed wrong, so it degrades to a warning rather than the throw a hand-written registry entry with the same problem gets |
+| a dotfile or dot-directory (`.gitkeep`, `.git`, ...)      | ignored, no warning |
+| anything else (a plain file, `README.md`, ...)            | ignored, no warning -- only a directory could ever be a registry entry, so a stray file is not a mistake worth flagging |
+
+A symlink is resolved and classified by what it points at, same rule as
+`discoverPatches`/`importIfNixOr`. A missing `dir` is not an error: it
+is treated the same as an empty one (`{ }`) -- most flakes have no
+`users/` directory at all. Likewise if `dir` cannot be read under pure
+evaluation at all (`mkNixosSystem`'s auto-discovery -- see its own doc
+comment -- calls this on whatever `loginFlakeRef`/`inputs.self` happens
+to be, even for a caller who never set either up for this).
+
+### Example
+
+```nix
+# extLib = inputs.nixpkgs-lib-extensions.lib
+extLib.discoverUserRegistry (inputs.home-manager-config + "/users")
+=> { "dennis@*" = <path to .../users/dennis>; "root@*" = <path to .../users/root>; }
+```
+
+### Type
+
+```
+discoverUserRegistry :: Path -> Attribute
+```
+
+### Arguments
+
+- **dir**
+  The users directory to scan. Non-existent is treated as empty, not an error.
 
 
 
@@ -1255,9 +1305,12 @@ mkNixosSystem :: Attribute -> NixosSystem
   that moving default -- pin it in the user's `home.nix` or fleet-wide
   via `homeModules` -- and receives `username` as a module
   argument) -- unless the user is listed in `loginHomes`. Prefer
-  path values over absolute path strings: a string escapes the flake
-  (never copied to the store, fails under pure evaluation) and warns. A
-  directory with only a `configuration.nix` is a system-only user
+  path values over absolute path strings: a CONTEXT-FREE string escapes
+  the flake (never copied to the store, fails under pure evaluation)
+  and warns. A string built by concatenating onto a flake INPUT
+  (`inputs.foo + "/users/alice"`) is not the same hazard -- it carries
+  store context and is pure-eval-safe -- and is accepted without
+  warning. A directory with only a `configuration.nix` is a system-only user
   (account, no home). Keys select where an entry applies:
     `"<user>@<host>"`  this host only
     `"<user>@*"`       every host; MERGES with a matching `"<user>@<host>"`
@@ -1276,7 +1329,16 @@ mkNixosSystem :: Attribute -> NixosSystem
   ambiguous and THROWS, naming both paths.
   The keys define the host's users (exposed as the
   `nixpkgsLibExtensions.users` option).
-  `null` or `{ }` disables it. Default `{ }`.
+  `null` or `{ }` disables it.
+  OMITTED ENTIRELY (not `null`, not `{ }` -- genuinely absent), it
+  auto-discovers instead: when `loginFlakeRef` resolves to a flake
+  input, every subdirectory of that input's `users/` directory shipping
+  `home.nix`/`configuration.nix` becomes a `"<name>@*"` entry (see
+  `discoverUserRegistry`). A `loginFlakeRef` flake-ref STRING (a
+  mutable checkout, not an input) cannot be read this way -- those
+  setups still write `userRegistry` explicitly. Adoption is announced
+  per host via `traceDiscoveredUsers` (default `true`); set
+  `userRegistry = { };` to disable discovery outright.
   WARNING: in a git-backed flake only TRACKED files exist -- `git add` a
   new home.nix/configuration.nix or it is skipped silently.
 
@@ -1306,8 +1368,21 @@ mkNixosSystem :: Attribute -> NixosSystem
   the last `nixos-rebuild`, but local edits are invisible until the
   next rebuild. Point it at a mutable checkout (e.g. `"/etc/nixos"`
   or `"git+https://..."`) to make the bootstrap build from the live
-  tree instead. Irrelevant without `loginHomes` users.
+  tree instead -- a real, supported capability (not eval-time
+  knowable, so `userRegistry` auto-discovery never applies to it;
+  passing one WARNS, naming the trade-off, not because it is wrong).
+  Irrelevant without `loginHomes` users.
   Default `inputs.self`.
+
+- **traceDiscoveredUsers**
+  Whether `userRegistry` auto-discovery (see its own entry above)
+  announces what it adopted: `host \`<name>\`: userRegistry
+  auto-discovered from <ref>/users: <names>`, once per host that
+  actually adopted one (never printed for a host that supplies its own
+  `userRegistry`, or whose scan found nothing). May print more than
+  once per host -- the registry is independently resolved at each of
+  several internal call sites, and Nix has no way to deduplicate a
+  trace across them. Default `true`.
 
 - **loginReactivateEveryLogin**
   Bootstrap re-activates on every login instead of only the first.

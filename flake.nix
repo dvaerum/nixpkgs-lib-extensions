@@ -161,6 +161,10 @@
             pkgs = nixpkgs.legacyPackages.${system};
             inherit myLib;
           };
+          discover-user-registry = import ./checks/discover-user-registry.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            inherit myLib;
+          };
           systemd-wrapping = import ./checks/systemd-wrapping.nix {
             pkgs = nixpkgs.legacyPackages.${system};
             inherit myLib;

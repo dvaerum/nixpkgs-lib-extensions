@@ -38,6 +38,7 @@
     usersWithHome
     loginUsersWithHome
     validateLoginUsers
+    stringFlakeRefWarning
     ;
   inherit (import ./context.nix { inherit lib self; }) coreArgNames mkContextCore mkContext;
   inherit (import ./mk-system.nix { inherit lib self; }) mkSystem;

@@ -98,6 +98,7 @@ in
     :   homes here, login-managed homes in `buildHomeConfigurations`)
     : - `loginFlakeRef`
     : - `loginReactivateEveryLogin`
+    : - `traceDiscoveredUsers`
     : - `tags`
     : - `group` (also selects the host's `_groups` layer)
     : - `hostFolder`

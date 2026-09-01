@@ -99,7 +99,27 @@ in
       home-manager = if homeManager != null then homeManager else shared.detectHomeManager inputs;
       homeManagerPkg =
         if home-manager == null then null else home-manager.packages.${system}.home-manager;
-      effectiveFlakeRef = if loginFlakeRef != null then loginFlakeRef else (inputs.self or null);
+      # A STRING loginFlakeRef (not a flake input) is a deliberate escape
+      # hatch -- see its own doc comment -- for a MUTABLE ref
+      # ("/etc/nixos", "git+https://...") that home-manager reads LIVE at
+      # login, not the immutable store copy an input gives. That is a real,
+      # tested capability (checks/builders/tests/bootstrap.nix exercises
+      # both a bare path string and full flake-ref syntax), not a mistake
+      # to reject -- but it also means nothing here can ever read a
+      # userRegistry off it (a raw string has no attributes), so
+      # resolveUserRegistry's auto-discovery never applies to it either.
+      # Warned rather than silent so that trade-off is visible at the
+      # point it is made, same "warn, don't remove" treatment as
+      # stringPathEntryWarning.
+      warnStringFlakeRef =
+        v:
+        if lib.isString loginFlakeRef then
+          lib.warn (shared.stringFlakeRefWarning hostname loginFlakeRef) v
+        else
+          v;
+      effectiveFlakeRef = warnStringFlakeRef (
+        if loginFlakeRef != null then loginFlakeRef else (inputs.self or null)
+      );
       registry = if userRegistry == null then { } else userRegistry;
       # login-managed users with an actual home.nix on this host
       usersHome = shared.loginUsersWithHome registry hostname loginHomes;

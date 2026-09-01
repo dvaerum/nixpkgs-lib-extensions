@@ -155,6 +155,59 @@ folder both existing for the same user and host is ambiguous and
 The registry keys define the host's users -- there is no separate
 `users` argument anywhere.
 
+### Auto-discovery
+
+Writing `userRegistry` by hand is one extra attrset a caller normally
+doesn't need to maintain by itself: when it is **omitted entirely**
+(not `null`, not `{ }` -- genuinely absent from the builder call) and
+`loginFlakeRef` resolves to a flake input, the builders discover it
+instead, from that input's `users/` directory:
+
+| Entry in `users/`                                       | Effect |
+| -------------------------------------------------------- | ------ |
+| subdirectory with `home.nix` and/or `configuration.nix`   | becomes a `"<name>@*"` entry |
+| subdirectory with neither file                            | ignored, with a warning naming it |
+| a dotfile or dot-directory (`.gitkeep`, `.git`, ...)      | ignored, no warning |
+| anything else (a plain file, `README.md`, ...)            | ignored, no warning |
+
+This is what makes a **shared, multi-flake home-manager setup** work
+without a config-side registry at all: point `loginFlakeRef` at the
+flake that owns the `users/` directory (the default, `inputs.self`,
+already does this for a single-flake setup), and every system that
+imports it picks up its users automatically:
+
+```nix
+# home-manager-config/flake.nix -- owns users/dennis, users/root, ...
+# no userRegistry export needed; the users/ directory IS the registry
+
+# the consuming flake -- userRegistry omitted entirely
+mkNixosSystem {
+  loginFlakeRef = inputs.home-manager-config;
+  # ...
+};
+```
+
+Each host announces what it adopted (once per host that actually
+discovered a non-empty registry -- never for a host supplying its own
+`userRegistry`, or whose scan found nothing):
+
+```
+trace: nixpkgs-lib-extensions: host `laptop`: userRegistry
+auto-discovered from /nix/store/.../users: dennis, root -- expected?
+Silence with `traceDiscoveredUsers = false;` (a builder argument, goes
+where `system`/`patches` do). Unexpected? Set `userRegistry = { };` to
+disable discovery.
+```
+
+Set `userRegistry = { };` on a host to opt out and keep writing the
+registry by hand there; set the builder argument
+`traceDiscoveredUsers = false;` to silence the announcement without
+disabling discovery itself. `loginFlakeRef` as a flake-ref STRING
+(`"/etc/nixos"`, a mutable checkout -- see [Two home
+mechanisms](#two-home-mechanisms)) cannot be read this way at eval
+time at all, so those setups keep writing `userRegistry` explicitly,
+same as before this existed.
+
 ## Hosts
 
 Each host is one entry in the hosts attrset you hand to
@@ -831,36 +884,23 @@ merged option value, also labeling the boot menu via
 - **Untracked files are invisible to flakes.** `git add` new user
   directories and host files, or they are silently skipped.
 - Registry values should be **path values** (`./users/alice`), not
-  absolute path strings (`"/home/me/users/alice"`): a string is never
-  copied into the flake's Nix store copy the way a path value is, so
-  it escapes the flake and depends on whatever sits at that
-  filesystem location instead. This library only WARNS when it sees
-  one; Nix's own pure evaluation (`nix flake check`, CI, any real
+  hand-typed absolute path strings (`"/home/me/users/alice"`): such a
+  string is never copied into the flake's Nix store copy the way a
+  path value is, so it escapes the flake and depends on whatever sits
+  at that filesystem location instead. This library only WARNS when it
+  sees one; Nix's own pure evaluation (`nix flake check`, CI, any real
   build) can still refuse to read it outright elsewhere in the
   chain -- treat the warning as something to fix, not ignore.
-  - **This has no local-path fix when the directory lives in ANOTHER
-    flake input** -- e.g. a shared home-manager config input:
-    `"alice@*" = inputs.home-manager-config + "/users/alice";` trips
-    the same warning, but `./users/alice` makes no sense here (that
-    path is in the OTHER repo). String-concatenating onto an input
-    can never produce a path value either: `inputs.foo` is an
-    attrset, so `+` coerces it to a string first, and Nix has no
-    primop to turn a store-path string back into a path -- there is
-    no fix on this side of the boundary. The real fix crosses it the
-    other way: have the PROVIDING flake export the path itself, built
-    from its own local literals, and read that directly:
-    ```nix
-    # home-manager-config/flake.nix
-    outputs = { ... }: {
-      userRegistry."alice@*" = ./users/alice;  # a genuine path literal here
-      # ...
-    };
-    ```
-    ```nix
-    # the consuming flake
-    userRegistry = inputs.home-manager-config.userRegistry;
-    ```
-    No string, no warning, no path fragment duplicated across two repos.
+  - **A string built by concatenating onto a flake input is not the
+    same hazard**, despite also being a string -- e.g. a shared
+    home-manager config input: `"alice@*" = inputs.home-manager-config
+    + "/users/alice";` is accepted WITHOUT a warning. Nix strings can
+    carry "context" (an invisible record of which store paths they
+    reference), and `+` onto an input inherits it -- the result is
+    store-pinned and pure-eval-safe, unlike a hand-typed string. Prefer
+    [auto-discovery](#auto-discovery) over this form when the whole
+    `users/` directory should come from the other flake; reach for the
+    explicit concatenated form only for a single one-off entry.
 - A plain `"user"` entry is IGNORED (with a warning) as soon as a
   `"user@*"` or `"user@<thishost>"` entry exists -- an @-entry naming
   some OTHER host does not shadow it -- import its directory explicitly from

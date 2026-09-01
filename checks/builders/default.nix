@@ -371,7 +371,19 @@ let
     if overridden != [ ] then
       throw (probeCoreOverrideMessage overridden)
     else
-      sharedInternal.mkSystem probeCore (sharedInternal.validateBuilderArgs "mkProbeSystem" [ ] args);
+      sharedInternal.mkSystem probeCore (
+        sharedInternal.validateBuilderArgs "mkProbeSystem" [ ] (
+          # `// args`, not `args //`: an explicit userRegistry in a probe's
+          # own args still wins. Most probes have nothing to do with
+          # users at all and never set one -- inputs.self here points at
+          # exampleDir, whose users/ directory exists for OTHER tests'
+          # explicit registry entries (some, like frank-base/frank-laptop,
+          # deliberately keyed under a DIFFERENT name than their
+          # directory) and breaks if auto-discovered under those raw
+          # directory names instead.
+          { userRegistry = { }; } // args
+        )
+      );
 
   # The example's user set, derived from its registry: the canonical list
   # the option-value assertions compare against (shared here so no test

@@ -17,6 +17,20 @@
   repoDir,
   ...
 }:
+let
+  # A dedicated flake root (checks/fixtures/auto-registry-root) shaped like
+  # a real consumer's, with a users/ directory discoverUserRegistry can
+  # scan -- distinct from exampleDir, whose users/ has entries
+  # (frank-base/frank-laptop) deliberately keyed under a DIFFERENT name
+  # than their directory, incompatible with directory-name-derived
+  # discovery.
+  autoDiscoverRoot = fixturesDir + "/auto-registry-root";
+  autoDiscoverInputs = inputs // {
+    self = {
+      outPath = toString autoDiscoverRoot;
+    };
+  };
+in
 {
   # exampleUsers is the ctx-shared canonical list (ext-options.nix
   # compares option values against the same one)
@@ -131,6 +145,81 @@
     # must point at the real fix (the OTHER flake exporting the path)
     # instead of leaving that case looking like a dead end
     && lib.hasInfix "ANOTHER flake input" msg;
+
+  # a string entry built by CONCATENATING onto a flake input carries store
+  # context (builtins.hasContext) unlike a hand-typed one, and is accepted
+  # WITHOUT a warning -- see stringPathEntryWarning's own comment for why
+  # that distinction is real, not assumed. `inputs.self.outPath` IS
+  # exampleDir (checks/builders/default.nix), so this reaches the exact
+  # same `users/alice` directory as the path-literal entries elsewhere in
+  # this file.
+  context-carrying-string-entry-no-warning =
+    builtins.attrNames (
+      myLib.buildHomeConfigurations {
+        laptop = {
+          inherit inputs system;
+          userRegistry."alice" = inputs.self + "/users/alice";
+          loginHomes = [ "alice" ];
+        };
+      }
+    ) == [ "alice@laptop" ];
+
+  # ── userRegistry auto-discovery (resolveUserRegistry) ──
+
+  # userRegistry OMITTED ENTIRELY + loginFlakeRef defaulting to
+  # inputs.self: auto-discovery triggers and the discovered user's
+  # configuration.nix is applied.
+  auto-discovery-triggers-on-omitted-registry =
+    (myLib.mkNixosSystem {
+      inputs = autoDiscoverInputs;
+      inherit system;
+      hostname = "autodiscoverprobe";
+      modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+    }).config.users.groups ? auto-discovered-pat;
+
+  # an explicit `userRegistry = { }` -- "wasGiven" true, per
+  # resolveUserRegistry's own doc comment -- disables auto-discovery even
+  # though the same root has a users/ directory to find
+  explicit-empty-registry-disables-auto-discovery =
+    !(
+      (myLib.mkNixosSystem {
+        inputs = autoDiscoverInputs;
+        inherit system;
+        hostname = "autodiscoverdisabledprobe";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        userRegistry = { };
+      }).config.users.groups ? auto-discovered-pat
+    );
+
+  # a STRING loginFlakeRef has no attributes to read a users/ directory
+  # off, so auto-discovery never applies to it -- even with userRegistry
+  # omitted, the host builds with no discovered users
+  string-login-flake-ref-skips-auto-discovery =
+    !(
+      (myLib.mkNixosSystem {
+        inputs = autoDiscoverInputs;
+        inherit system;
+        hostname = "autodiscoverstringprobe";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        loginFlakeRef = "/etc/nixos";
+      }).config.users.groups ? auto-discovered-pat
+    );
+
+  # ... and that STRING loginFlakeRef case also warns (message exported as
+  # data, same "warn is not observable, pin the text" treatment as
+  # stringPathEntryWarning above)
+  string-flake-ref-warning-text =
+    let
+      registry = import (repoDir + "/lib/nixos/internal/registry.nix") {
+        inherit lib;
+        self = myLib;
+      };
+      msg = registry.stringFlakeRefWarning "laptop" "/etc/nixos";
+    in
+    lib.hasInfix "not a flake input" msg
+    && lib.hasInfix "LIVE at login" msg
+    && lib.hasInfix "`laptop`" msg
+    && lib.hasInfix "auto-discovery" msg;
 
   # only loginHomes get homeConfigurations outputs: dave/frank/grace are
   # system-managed, eve has no home config at all
