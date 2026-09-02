@@ -98,6 +98,7 @@ in
     : - `loginFlakeRef`
     : - `loginReactivateEveryLogin`
     : - `traceDiscoveredUsers`
+    : - `wrapHomeManagerSwitch`
     : - `tags`
     : - `group` (also selects the host's `_groups` layer)
     : - `hostFolder`

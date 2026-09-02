@@ -40,6 +40,7 @@ let
     "loginFlakeRef"
     "loginReactivateEveryLogin"
     "traceDiscoveredUsers"
+    "wrapHomeManagerSwitch"
     "tags"
     "group"
     "hostFolder"

@@ -466,6 +466,15 @@ the pinned copy from the last `nixos-rebuild`; point it at a mutable
 checkout (e.g. `"/etc/nixos"`) if users should build from a live
 tree.
 
+A login-managed user can also re-run `switch` manually between
+logins: the host gets a detach-safe `home-manager` on
+`environment.systemPackages` automatically (`wrapHomeManagerSwitch`,
+default `true`). Wrapped, not the bare package, because `switch`'s own
+activation restarts every user unit whose store path changed, which
+can include the very unit the invoking shell's cgroup lives in
+(a tmux server, an SSH session) -- stopping THAT terminates the switch
+mid-activation. Set `wrapHomeManagerSwitch = false;` to opt out.
+
 For login users your flake must export the home configurations for
 EVERY host where they appear -- the bootstrap on host X activates
 `<loginFlakeRef>#<user>@X`, which must exist. If that output is
@@ -552,12 +561,17 @@ A complete flake:
 
 At login the service runs
 `home-manager switch --flake <loginFlakeRef>#alice@laptop` exactly as
-in the builder setup. Two things the standalone module does NOT do
+in the builder setup. Three things the standalone module does NOT do
 (they are `mkNixosSystem` features): it never creates
-user accounts, and it never imports the registry directories'
-`configuration.nix` files. It does read the matched registry
-directories, but only to see which users ship a `home.nix` -- so an
-entry that is not a directory, or has neither file, still throws.
+user accounts, it never imports the registry directories'
+`configuration.nix` files, and it never adds the detach-safe
+`home-manager` wrapper (`wrapHomeManagerSwitch`) to
+`environment.systemPackages` -- a login user here has no way to
+manually re-run `switch` between logins unless you add
+`pkgs.home-manager` (or your own wrapper) yourself. It does read the
+matched registry directories, but only to see which users ship a
+`home.nix` -- so an entry that is not a directory, or has neither
+file, still throws.
 
 The module is self-gating: with no matching login user, no
 home-manager input, or no flake reference, it evaluates to an empty

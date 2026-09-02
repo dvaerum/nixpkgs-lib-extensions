@@ -24,6 +24,7 @@ let
     resolveUser
     usersFromRegistry
     usersWithHome
+    loginUsersWithHome
     resolveUserRegistry
     ;
   inherit (import ./priorities.nix { inherit lib; }) builderDefaultPriority mkBuilderDefault;
@@ -43,6 +44,7 @@ in
       loginFlakeRef ? null,
       loginReactivateEveryLogin ? false,
       traceDiscoveredUsers ? true,
+      wrapHomeManagerSwitch ? true,
       tags ? [ ],
       group ? null,
       hostFolder ? null,
@@ -189,6 +191,35 @@ in
         # bootstrap cannot detect a DIFFERENT input than the system homes
         homeManager = home-manager;
       };
+
+      # A login-managed user otherwise has NO way to manually re-run
+      # `home-manager switch` between logins -- only the bootstrap service
+      # itself ever invokes it. Wrapped, not the bare package: `switch`'s
+      # own activation restarts every user unit whose store path changed,
+      # which can include the very unit the invoking shell's cgroup lives
+      # in (tmux-server.service, ...), TERMing itself mid-activation -- see
+      # interceptingWrapper/detachedRun's own doc comments for the
+      # mechanism. `homeManagerSwitchPkg` duplicates
+      # homeManagerBootstrapModule's own computation rather than threading
+      # it through, same "that module's own argument shape is its public
+      # contract" reasoning as resolveUserRegistry's effectiveFlakeRef.
+      homeManagerSwitchPkg =
+        if home-manager == null then null else home-manager.packages.${system}.home-manager;
+      wantHomeManagerSwitchWrapper =
+        wrapHomeManagerSwitch
+        && homeManagerSwitchPkg != null
+        && loginUsersWithHome registry hostname loginHomes != [ ];
+      homeManagerSwitchWrapperModule = {
+        _file = ../mk-nixos-system.nix;
+        environment.systemPackages = lib.optional wantHomeManagerSwitchWrapper (
+          self.systemd.interceptingWrapper pkgs {
+            package = homeManagerSwitchPkg;
+            binary = "home-manager";
+            shouldDetach = ''[ "''${1:-}" = "switch" ]'';
+            label = "hm-switch";
+          }
+        );
+      };
     in
     # What BOTH evaluation routes below receive. `system` is deliberately
     # not among the eval-config arguments anymore: that set the legacy
@@ -263,6 +294,7 @@ in
           )
           bootstrapModule
           systemHomesModule
+          homeManagerSwitchWrapperModule
         ]
         ++ autoNixosModules
         ++ autoHostModules

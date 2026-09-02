@@ -8,6 +8,7 @@
   home-manager,
   inputs,
   system,
+  laptop,
   server,
   execStart,
   bootstrapModuleFor,
@@ -16,6 +17,12 @@
   exampleDir,
   ...
 }:
+let
+  # ── wrapHomeManagerSwitch: a detach-safe `home-manager` for a login user
+  #    to manually re-run `switch` between logins ──
+  hasWrappedHomeManager =
+    sys: lib.any (p: (p.name or "") == "home-manager-wrapped") sys.config.environment.systemPackages;
+in
 {
   # only loginHomes are bootstrapped: dave/frank/grace are system-managed,
   # eve is system-only (no home.nix). Parameters are CLI arguments on
@@ -88,4 +95,36 @@
     } == { };
   bootstrap-gates-without-flake-ref =
     applyBootstrap { inputs = { inherit nixpkgs home-manager; }; } == { };
+
+  # laptop has login-managed users (alice, bob) shipping a home.nix: gets it
+  wrapped-home-manager-for-login-host = hasWrappedHomeManager laptop;
+  # the server has no registry, so no login user, so no wrapper either
+  server-no-wrapped-home-manager = !(hasWrappedHomeManager server);
+
+  # a loginHomes user with NO home.nix on this host (eve is config-only) is
+  # the same self-gating condition the bootstrap service itself uses: no
+  # wrapper, mirroring no-bootstrap-for-config-only-login-user above
+  no-wrapper-for-config-only-login-user =
+    !(hasWrappedHomeManager (
+      myLib.mkNixosSystem {
+        inherit inputs system;
+        hostname = "evelogin";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        userRegistry."eve" = exampleDir + "/users/eve";
+        loginHomes = [ "eve" ];
+      }
+    ));
+
+  # the escape hatch actually disables it
+  wrap-home-manager-switch-false-disables =
+    !(hasWrappedHomeManager (
+      myLib.mkNixosSystem {
+        inherit inputs system;
+        hostname = "nowrapper";
+        modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
+        userRegistry."alice" = exampleDir + "/users/alice";
+        loginHomes = [ "alice" ];
+        wrapHomeManagerSwitch = false;
+      }
+    ));
 }

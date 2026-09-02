@@ -266,6 +266,18 @@ in
     : Bootstrap re-activates on every login instead of only the first.
     : Irrelevant without `loginHomes` users. Default `false`.
 
+    wrapHomeManagerSwitch
+    : Whether a login-managed user's host also gets a detach-safe
+    : `home-manager` on `environment.systemPackages`, so they can manually
+    : re-run `switch` between logins (the bootstrap service is otherwise
+    : the only thing that ever invokes it). Wrapped via
+    : `systemd.interceptingWrapper`/`detachedRun` -- see their own doc
+    : comments -- because `switch`'s own activation can restart the very
+    : unit the invoking shell's cgroup lives in, terminating itself
+    : mid-activation. Self-gating like the bootstrap module: no effect
+    : without a `loginHomes` user actually shipping a `home.nix` on this
+    : host. Default `true`.
+
     homeModules
     : home-manager modules added to every SYSTEM-managed home (on top of
     : those auto-collected from `inputs`). The same argument is read by
