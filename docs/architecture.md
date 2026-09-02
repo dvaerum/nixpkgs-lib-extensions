@@ -17,12 +17,14 @@ lib/
   attrsets/         small helpers (recursiveMerge, ...)
   strings/          small helpers (stringToTitle, ...)
   imports/          importIfNix / importIfNixOr, readIfPlain /
-                    readIfPlainOr (git-crypt-friendly)
+                    readIfPlainOr (git-crypt-friendly), discoverPatches
+  systemd/          detachedRun, interceptingWrapper
   disko/            declareZfsRootDisk (+ operational README.md)
   nixos/            the builders -- what this repo is about
     build-configurations.nix        buildConfigurations
     build-nixos-configurations.nix  buildNixosConfigurations
     build-home-configurations.nix   buildHomeConfigurations
+    discover-user-registry.nix      discoverUserRegistry (the users tree)
     mk-nixos-system.nix             mkNixosSystem (public face)
     mk-home-configuration.nix       mkHomeConfiguration (public face)
     home-manager-bootstrap-module.nix  the login bootstrap module
@@ -32,8 +34,10 @@ lib/
                       only by direct import
       shared.nix      thin aggregator the builder files import
       hosts-args.nix  argument allowlists, hosts-attrset validation,
-                      planHosts, and the plan's two projections into
-                      builder output (systemsFromPlan / userHomesFromPlan)
+                      planHosts, the plan's two projections into builder
+                      output (systemsFromPlan / userHomesFromPlan), and
+                      userHomesStandalone (the plan-less
+                      buildHomeConfigurations path)
       context.nix     mkContextCore / mkContext -- the expensive
                       `import nixpkgs` lives here
       inputs.nix      input conventions and inputContributions
@@ -42,6 +46,7 @@ lib/
       mk-home.nix     mkHome (the mkHomeConfiguration implementation)
       ext-options.nix the nixpkgsLibExtensions.* options module
       module-level.nix  the module-level/flake-level lib split
+      priorities.nix  the builder's own option-definition priority
       bootstrap-script.nix  wiring for scripts/
 checks/             eval-time tests (builders/tests/*.nix), VM tests,
                     fixtures, and the example that doubles as the
@@ -59,17 +64,20 @@ without importing it.
 
 ```mermaid
 flowchart TD
-    Call(["buildConfigurations hosts<br/>(or buildNixosConfigurations /<br/>buildHomeConfigurations alone)"])
+    Call(["buildConfigurations hosts<br/>(or buildNixosConfigurations alone)"])
+    Standalone(["buildHomeConfigurations args<br/>(flat args, no hosts attrset)"])
+    Stand2["userHomesStandalone"]
     Plan["planHosts<br/>(hosts-args.nix)"]
     PlanData["plan = { &lt;hostname&gt;: { args; core; registry; } }"]
     Systems["systemsFromPlan"]
     Homes["userHomesFromPlan"]
     MkSystem["mkSystem core args<br/>(mk-system.nix)"]
-    MkHome["mkHome core args<br/>(mk-home.nix, per login user@host)"]
+    MkHome["mkHome core args<br/>(mk-home.nix, per 'user' and 'user@host')"]
 
     Call --> Plan --> PlanData
     PlanData --> Systems --> MkSystem
     PlanData --> Homes --> MkHome
+    Standalone --> Stand2 --> MkHome
 ```
 
 `planHosts` does three things:
@@ -94,6 +102,11 @@ routes to the same derivation. `userHomesFromPlan` calls `mkHome core args`
 per user -- a host-less `"<user>"` home from their directory alone,
 plus `"<user>@<host>"` for each `hosts/<host>/` override -- sharing the
 same `mkContext` core and producing `homeManagerConfiguration`s.
+
+`buildHomeConfigurations` does NOT go through the plan: it is a flat
+argument set with no hosts attrset, so `userHomesStandalone` builds one
+`mkContextCore` directly and takes the host dimension from the tree
+(`discoverHostsForUser`) rather than from declared hosts.
 
 The direct builders (`mkNixosSystem`, `mkHomeConfiguration`) validate
 their arguments and call the same `mkSystem`/`mkHome` with

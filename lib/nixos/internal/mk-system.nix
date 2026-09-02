@@ -208,7 +208,8 @@ in
       # mechanism. `homeManagerSwitchPkg` duplicates
       # homeManagerBootstrapModule's own computation rather than threading
       # it through, same "that module's own argument shape is its public
-      # contract" reasoning as resolveUserRegistry's effectiveFlakeRef.
+      # contract" reasoning as homeManagerBootstrapModule's own
+      # effectiveFlakeRef.
       homeManagerSwitchPkg =
         if home-manager == null then null else home-manager.packages.${system}.home-manager;
       wantHomeManagerSwitchWrapper =

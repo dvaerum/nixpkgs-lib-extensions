@@ -25,7 +25,7 @@
         binary = "home-manager";
         # detach only `home-manager switch`; every other subcommand
         # (news, generations, ...) passes straight through
-        shouldDetach = ''[ "${1:-}" = "switch" ]'';
+        shouldDetach = ''[ "''${1:-}" = "switch" ]'';
         label = "hm-switch";
       })
     ];

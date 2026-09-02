@@ -64,8 +64,10 @@ in
     : The flake's `inputs` set. The home-manager input is detected by capability.
 
     hostname
-    : The host name the home is built for (selects the matching registry
-    : entries).
+    : The host name the home is built for -- it selects the
+    : `users/<username>/hosts/<hostname>/` override, when one exists.
+    : OMIT it for the host-less home: no override applies and
+    : `nixpkgsLibExtensions.hostname` is `null`.
 
     username
     : The user whose home to build.
@@ -74,8 +76,10 @@ in
     : The system double, e.g. `"x86_64-linux"`.
 
     users
-    : WHICH of the users tree applies -- omitted means all of them, a
-    : list names exactly those wanted, and an unknown name THROWS. Users
+    : Accepted and IGNORED here, so one argument set can be shared with
+    : `mkNixosSystem` (where it selects which of the tree a host takes).
+    : This function builds the ONE user named by `username`, so there is
+    : nothing to select. Users
     : are declared by DIRECTORIES under `users/` (read from `rootPath`,
     : default `inputs.self`, or from `loginFlakeRef`): this home is built
     : from `users/<username>/home.nix`, plus

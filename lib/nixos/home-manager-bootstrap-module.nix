@@ -13,8 +13,10 @@ in
     `mkNixosSystem` includes this module automatically when it
     has `loginHomes`, so it normally does not need to be wired up by hand —
     direct use is for custom setups that build their NixOS systems some
-    other way. It is driven by a resolved users tree filtered by `loginHomes`
-    (the same arguments the builders take) but is otherwise independent of
+    other way. It is driven by a resolved users tree (`{ <username> =
+    <directory>; }` -- note this is the RESOLVED tree, unlike
+    `mkNixosSystem`'s `users`, which is a list of names to select)
+    filtered by `loginHomes` but is otherwise independent of
     the builders. Self-gating: when no login user matches, the home-manager
     input is missing or the flake reference is unset, the module is empty.
 
@@ -54,7 +56,9 @@ in
     : as the default flake reference).
 
     hostname
-    : The host name; the `@<host>` suffix of the flake attribute to activate.
+    : The host name. Used to look for a `<user>@<hostname>` output (and
+    : falling back to a bare `<user>` one) when resolving what to
+    : activate -- see `loginFlakeRef`.
 
     system
     : The system double, e.g. `"x86_64-linux"`.
@@ -65,13 +69,18 @@ in
 
     loginHomes
     : The usernames whose homes are login-managed; only these are
-    : bootstrapped (and only when the registry gives them a `home.nix`
+    : bootstrapped (and only when the users tree gives them a `home.nix`
     : on this host). Default `[ ]` (module is empty).
 
     loginFlakeRef
     : Flake reference for `home-manager switch --flake <ref>#<user>@<host>`;
-    : the flake at this reference must export those
-    : `homeConfigurations."<user>@<host>"` outputs. The default
+    : the flake at this reference must export a matching
+    : `homeConfigurations."<user>@<host>"` or `."<user>"` output. Which
+    : one is used is decided at EVALUATION time by looking at that
+    : flake's actual outputs: the host-suffixed name wins when present,
+    : else the bare one, and exporting neither is a build-time throw.
+    : A flake-ref STRING cannot be introspected, so it keeps the
+    : historical `<user>@<host>` form. The default
     : `inputs.self` is the immutable store copy of your flake the system
     : was built from (homes match the last `nixos-rebuild`); use a mutable
     : reference like `"/etc/nixos"` to build homes from a live checkout.

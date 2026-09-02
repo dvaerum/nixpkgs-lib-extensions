@@ -51,9 +51,10 @@
     PARTITIONS: one GPT disk, holding (in on-disk order) the boot
     partition(s), the ZFS pool partition, then SWAP last if `swapSize` is
     nonzero. That order comes from disko's own `priority` field, where a
-    SMALLER number is created earlier on the disk -- boot gets `1` (`2`
-    for the second aarch64-linux partition below), the ZFS partition
-    `10`, SWAP `100`. The ZFS partition's own SIZE is what actually
+    SMALLER number is created earlier on the disk. The ESP is always
+    `2`; slot `1` is taken by whatever must precede it -- `EF02` on
+    x86_64 with `legacyBoot`, `FIRMWARE` on aarch64 -- and is simply
+    unused otherwise. The ZFS partition is `10`, SWAP `100`. The ZFS partition's own SIZE is what actually
     reserves SWAP's space, despite coming first on disk: with a nonzero
     `swapSize` it ends `swapSize` GiB before the end of the disk
     (`end = "-${swapSize}G"`), leaving exactly that much free for SWAP to

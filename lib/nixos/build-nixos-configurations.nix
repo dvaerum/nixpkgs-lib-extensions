@@ -126,9 +126,9 @@ in
     hosts:
     # `planHosts` does the split, the `_defaults` merge, the validation and
     # the context-core decision; `systemsFromPlan` is one of its two
-    # projections. buildHomeConfigurations runs the SAME code over its own
-    # plan of the same hosts attrset -- only `buildConfigurations` plans
-    # once and takes both projections from it.
+    # projections. `buildHomeConfigurations` does NOT plan -- it is the
+    # user-centric standalone entry point (userHomesStandalone); only
+    # `buildConfigurations` plans once and takes both projections.
     shared.systemsFromPlan "buildNixosConfigurations" (
       shared.planHosts "buildNixosConfigurations" hosts
     );

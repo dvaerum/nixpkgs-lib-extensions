@@ -2,65 +2,73 @@
 { lib, ... }:
 {
   /**
-    Read a path as plain text, but only when it is NOT still git-crypt
-    ciphertext; otherwise return `default` instead of aborting evaluation.
-    `readIfPlain` is the same function with the default fixed to `""`.
+        Read a path as plain text, but only when it is NOT still git-crypt
+        ciphertext; otherwise return `default` instead of aborting evaluation.
+        `readIfPlain` is the same function with the default fixed to `""`.
 
-    Companion to `importIfNixOr`/`importIfNix` for files that are not Nix
-    -- a plain secret, token, or config value protected by git-crypt
-    (which encrypts individual files in a git repo transparently -- a
-    checkout without the decryption key sees raw ciphertext instead of
-    the file's real content). Locally (key present) git-crypt's smudge
-    filter has already replaced the working-tree file with real
-    plaintext, and this returns it as a string. On a checkout without the
-    key, the working-tree file is still git-crypt's raw ciphertext --
-    `builtins.readFile` on that would likely THROW (its bytes are not
-    valid UTF-8) rather than return usable garbage, so the ciphertext is
-    detected BEFORE ever calling `readFile` on it.
+        Companion to `importIfNixOr`/`importIfNix` for files that are not Nix
+        -- a plain secret, token, or config value protected by git-crypt
+        (which encrypts individual files in a git repo transparently -- a
+        checkout without the decryption key sees raw ciphertext instead of
+        the file's real content). Locally (key present) git-crypt's smudge
+        filter has already replaced the working-tree file with real
+        plaintext, and this returns it as a string. On a checkout without the
+        key, the working-tree file is still git-crypt's raw ciphertext --
+        `builtins.readFile` on that would likely THROW (its bytes are not
+        valid UTF-8) rather than return usable garbage, so the ciphertext is
+        detected BEFORE ever calling `readFile` on it.
 
-    Detection does not depend on the plaintext's content being valid Nix
-    (there may be none to parse): a git-crypt-encrypted file always
-    begins with the same fixed 10-byte header (a NUL byte, `GITCRYPT`,
-    another NUL byte), whatever the plaintext underneath actually is.
-    That header is checked byte-for-byte in a small derivation
-    (import-from-derivation, `preferLocalBuild`) -- IFD, like
-    `importIfNixOr`'s parse probe, just testing a fixed magic value
-    instead of running a Nix parser.
+        Detection does not depend on the plaintext's content being valid Nix
+        (there may be none to parse): a git-crypt-encrypted file always
+        begins with the same fixed 10-byte header (a NUL byte, `GITCRYPT`,
+        another NUL byte), whatever the plaintext underneath actually is.
+        That header is checked byte-for-byte in a small derivation
+        (import-from-derivation, `preferLocalBuild`) -- IFD, like
+        `importIfNixOr`'s parse probe, just testing a fixed magic value
+        instead of running a Nix parser.
 
-    Accepted: a regular file whose first bytes are not that header.
-    Symlinks are followed and classified by what they resolve to (a link
-    to such a file reads like its target; a dangling link counts as
-    missing). Everything else -- a missing path, a directory, or
-    genuine git-crypt ciphertext -- yields `default` WITH an evaluation
-    warning naming the reason, so a skipped read is never a silent
-    mystery.
+        Accepted: a regular file whose first bytes are not that header.
+        Symlinks are followed and classified by what they resolve to (a link
+    to such a file reads like its target).
+        Symlinks are followed and classified by what they resolve to. A
+        DANGLING link is NOT handled: `builtins.pathExists` returns true for
+        one, so it passes the guard and then aborts evaluation when the path
+        is realized -- uncatchably, since the failure is a primop error, not
+        a `throw`. `discoverPatches` documents the same gap; fixing it needs
+        a way to distinguish "link exists" from "target exists" that Nix
+        does not currently expose.
 
-    # Example
+        Everything else -- a missing path, a directory, or
+        genuine git-crypt ciphertext -- yields `default` WITH an evaluation
+        warning naming the reason, so a skipped read is never a silent
+        mystery.
 
-    ```nix
-    # extLib = inputs.nixpkgs-lib-extensions.lib
-    extLib.readIfPlainOr pkgs ./api-token.txt ""
-    # locally (key present)    => "sk-abc123...\n"
-    # on CI (still encrypted)  => "" (warns)
-    ```
+        # Example
 
-    # Type
+        ```nix
+        # extLib = inputs.nixpkgs-lib-extensions.lib
+        extLib.readIfPlainOr pkgs ./api-token.txt ""
+        # locally (key present)    => "sk-abc123...\n"
+        # on CI (still encrypted)  => "" (warns)
+        ```
 
-    ```
-    readIfPlainOr :: pkgs -> Path -> String -> String
-    ```
+        # Type
 
-    # Arguments
+        ```
+        readIfPlainOr :: pkgs -> Path -> String -> String
+        ```
 
-    pkgs
-    : A package set used to build the header-check probe (IFD).
+        # Arguments
 
-    path
-    : The path (or absolute path string) to inspect and maybe read.
+        pkgs
+        : A package set used to build the header-check probe (IFD).
 
-    default
-    : The value returned (with a warning) when `path` is still
-    : git-crypt ciphertext, missing, or not a regular file.
+        path
+        : The path (or absolute path string) to inspect and maybe read.
+
+        default
+        : The value returned (with a warning) when `path` is still
+        : git-crypt ciphertext, missing, or not a regular file.
   */
   readIfPlainOr =
     pkgs: path: default:

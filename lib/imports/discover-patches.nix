@@ -99,10 +99,9 @@
       # does not dereference for existence, only for the "/." directory
       # check), and the one primop that WOULD notice (`readFile`,
       # attempting to actually open the target) throws an error `tryEval`
-      # does not catch -- confirmed by testing, not assumed; this same gap
-      # already exists in importIfNixOr/readIfPlainOr despite their doc
-      # comments claiming "a dangling link counts as missing" (worth a
-      # separate fix there). A broken symlink here is classified
+      # does not catch -- confirmed by testing, not assumed. The same gap
+      # exists in importIfNixOr/readIfPlainOr, and is documented in their
+      # doc comments too. A broken symlink here is classified
       # "regular" and only fails once `applyPatches`/`import` actually
       # tries to use it -- a real, if less friendly, Nix error rather than
       # a silently skipped or silently wrong patch either way.

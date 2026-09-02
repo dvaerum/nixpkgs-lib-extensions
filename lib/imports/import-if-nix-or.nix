@@ -27,7 +27,14 @@
     Accepted: a regular file with the `.nix` suffix whose content parses as
     Nix, or a directory whose `default.nix` does. Symlinks are followed
     and classified by what they resolve to (a link to a valid `.nix` file
-    imports like its target; a dangling link counts as missing).
+    imports like its target).
+    Symlinks are followed and classified by what they resolve to. A
+    DANGLING link is NOT handled: `builtins.pathExists` returns true for
+    one, so it passes the guard and then aborts evaluation when the path
+    is realized -- uncatchably, since the failure is a primop error, not
+    a `throw`. `discoverPatches` documents the same gap; fixing it needs
+    a way to distinguish "link exists" from "target exists" that Nix
+    does not currently expose.
     Everything else yields
     `default` WITH an evaluation warning naming the reason (missing path,
     unsupported file extension, directory without default.nix, or content
@@ -100,9 +107,9 @@
       # reports "symlink" without following, and Nix has no readlink -- but
       # pathExists DOES follow, and stat'ing the path with a literal
       # trailing "/." (as a string, so the "." is not normalized away)
-      # succeeds exactly when the link resolves to a directory. A dangling
-      # link never gets here: the pathExists guard above already classified
-      # it as missing.
+      # succeeds exactly when the link resolves to a directory. A
+      # DANGLING link DOES get here -- pathExists returns true for one --
+      # and fails later, when the path is realized; see the doc comment.
       resolvedType =
         if type != "symlink" then
           type

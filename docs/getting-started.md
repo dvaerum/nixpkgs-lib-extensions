@@ -111,13 +111,17 @@ Then build and activate the host:
 nixos-rebuild switch --flake .#laptop
 ```
 
-This builds the system INCLUDING the homes of every user not listed
-in `loginHomes` -- those activate right there, with the switch. Homes
-of `loginHomes` are exported as flake outputs instead
-(`homeConfigurations."alice"`, or `"alice@laptop"` where she has a
-per-host override) and applied later: on each user's first login, by
-the bootstrap service. Either way you normally
-never run `home-manager` by hand.
+This builds the system INCLUDING the homes of every user not listed in
+`loginHomes` -- those activate right there, with the switch. Users
+listed in `loginHomes` are left out of the system and activated on
+their first login by the bootstrap service instead.
+
+Independently of that split, EVERY user with a `home.nix` is also
+exported as a flake output -- `homeConfigurations."alice"`, or
+`"alice@laptop"` where she has a per-host override. For a `loginHomes`
+user that output is what the bootstrap applies; for everyone else it is
+simply also buildable by hand. Either way you normally never run
+`home-manager` yourself.
 
 ## The users tree
 
@@ -298,16 +302,21 @@ Each host is one entry in the hosts attrset you hand to
 }
 ```
 
-`buildConfigurations` is the entry point to reach for. The two halves
-are also available separately as `buildNixosConfigurations` and
-`buildHomeConfigurations` (same hosts attrset), but exporting only the
-first is a trap: a `loginHomes` user's home is resolved at their first
+`buildConfigurations` is the entry point to reach for. The NixOS half
+is also available separately as `buildNixosConfigurations` (same hosts
+attrset). Exporting only that one is a trap: a `loginHomes` user's home is resolved at their first
 login, so a missing `homeConfigurations` output fails *then*, on a
 booted machine, rather than at build time. One call cannot forget half.
-It is also cheaper: each build function plans its hosts independently, so
-calling both by hand evaluates the shared host-independent context twice
--- for a fleet, two full nixpkgs evaluations. `buildConfigurations` plans
-once and takes both outputs from that one plan.
+It is also cheaper: `buildConfigurations` plans the hosts once and takes
+both outputs from that one plan, instead of evaluating the shared
+host-independent context twice.
+
+`buildHomeConfigurations` is a different shape: it is the entry point
+for a **home-manager-only** flake and takes a FLAT argument set, not a
+hosts attrset. Having no declared host list, it discovers the host
+dimension from the tree alone -- so it also emits a `"<user>@<host>"`
+home for any `users/<user>/hosts/<host>/` directory, including hosts
+this flake never declares.
 
 Its return value is an ordinary attrset -- `{ nixosConfigurations =
 ...; homeConfigurations = ...; }`, nothing more -- so it composes with
@@ -316,7 +325,7 @@ merge above. Nothing about using the builders confines your flake to
 only the two outputs they produce.
 
 Later snippets in this guide assume these bindings (`extLib`,
-`inputs`, `system`, the registry) from this skeleton.
+`inputs`, `system`) from this skeleton.
 
 The reserved `_defaults` entry (never a valid hostname -- a hostname
 cannot START with `_`) supplies arguments to every host. Merging is
@@ -380,7 +389,7 @@ entries (a typo throws, listing the declared groups); without
 
 ## Accounts
 
-Every registry-derived user gets a login account automatically:
+Every user the tree gives a host gets a login account automatically:
 `userModule` defaults to `normalUserModule`, which sets
 `isNormalUser` and gives the user a **private primary group** named
 after them (instead of the shared `users` group).
@@ -389,9 +398,9 @@ System accounts are recognized by uid and left untouched: NixOS
 reserves uid 0-999 for system and service accounts (root is 0) and
 its module system forbids setting `isNormalUser = true;` on any of
 them. So when a user's merged uid falls in that range -- root, or a
-registry user whose `configuration.nix` pins a reserved uid -- this
+user whose `configuration.nix` pins a reserved uid -- this
 module contributes nothing: the account keeps whatever group and
-shell its own config already gives it. So `"root"` is a valid registry
+shell its own config already gives it. So `"root"` is a valid users-tree
 entry: it gets its `home.nix`/`configuration.nix`, never account
 changes.
 
@@ -412,13 +421,13 @@ Disable account creation entirely with `userModule = null;`
 
 ## Two home mechanisms
 
-Every registry user's `home.nix` is activated by exactly one of two
+Every user's `home.nix` is activated by exactly one of two
 mechanisms; `loginHomes` selects which:
 
 ```mermaid
 flowchart TD
     A(["a user's home.nix"]) --> B{"listed in loginHomes?"}
-    B -->|"no (default)"| C["built INTO the system<br/>(home-manager's NixOS module)"]
+    B -->|"no (default)"| C["built INTO the system<br/>(home-manager's NixOS module)<br/>-- the flake output exists too,<br/>nothing consumes it"]
     B -->|"yes"| D["exported as a flake output<br/>homeConfigurations.'user'<br/>(or 'user@host' with an override)"]
     C --> E(["activates with<br/>nixos-rebuild switch"])
     D --> F(["activated on the user's<br/>FIRST LOGIN by the<br/>bootstrap service"])
@@ -443,8 +452,12 @@ system rebuilds. On the user's first login a systemd *user* service
 runs
 
 ```
-home-manager switch --flake <loginFlakeRef>#<user>@<host>
+home-manager switch --flake <loginFlakeRef>#<user>
 ```
+
+(or `#<user>@<host>` where that user has a `hosts/<host>/` override --
+the bootstrap picks whichever the flake actually exports, decided when
+the system is built, not at login)
 
 in the background (login is never blocked). A stamp file in
 `$XDG_STATE_HOME` (default `~/.local/state`) prevents re-runs; pass
@@ -463,11 +476,13 @@ can include the very unit the invoking shell's cgroup lives in
 (a tmux server, an SSH session) -- stopping THAT terminates the switch
 mid-activation. Set `wrapHomeManagerSwitch = false;` to opt out.
 
-For login users your flake must export the home configurations for
-EVERY host where they appear -- the bootstrap on host X activates
-`<loginFlakeRef>#<user>@X`, which must exist. If that output is
-missing, the service fails with "flake ... does not provide attribute
-homeConfigurations..." on first login. The skeleton above covers it:
+For login users your flake must export a home configuration for every
+host where they appear. The bootstrap activates
+`<loginFlakeRef>#<user>@X` or `#<user>` -- whichever that flake really
+exports, decided when the system is BUILT. A flake exporting neither
+fails the build, naming the user. (Only a flake-ref STRING cannot be
+introspected that way; there a missing output surfaces at first login
+as "flake ... does not provide attribute homeConfigurations...".) The skeleton above covers it:
 `buildConfigurations hosts` produces the homeConfigurations half from
 that same host list. (The underlying single-user function is
 `mkHomeConfiguration`, if you need one specific home.)
@@ -533,12 +548,12 @@ A complete flake:
           ];
         };
 
-      # the homes the bootstrap activates:
-      # "alice@laptop" MUST exist here
+      # the home the bootstrap activates. The module looks for
+      # "alice@laptop" first and falls back to "alice", so either name
+      # works -- this one omits `hostname`, giving the host-less form.
       homeConfigurations."alice" =
         extLib.mkHomeConfiguration {
           inherit inputs system;
-          hostname = "laptop";
           username = "alice";
         };
     };
@@ -546,18 +561,18 @@ A complete flake:
 ```
 
 At login the service runs
-`home-manager switch --flake <loginFlakeRef>#alice@laptop` exactly as
-in the builder setup. Three things the standalone module does NOT do
+`home-manager switch --flake <loginFlakeRef>#alice` -- the name it
+resolved at build time -- exactly as in the builder setup. Three things the standalone module does NOT do
 (they are `mkNixosSystem` features): it never creates
-user accounts, it never imports the registry directories'
+user accounts, it never imports the user directories'
 `configuration.nix` files, and it never adds the detach-safe
 `home-manager` wrapper (`wrapHomeManagerSwitch`) to
 `environment.systemPackages` -- a login user here has no way to
 manually re-run `switch` between logins unless you add
 `pkgs.home-manager` (or your own wrapper) yourself. It does read the
-matched registry directories, but only to see which users ship a
-`home.nix` -- so an entry that is not a directory, or has neither
-file, still throws.
+matched user directories, but only to see which users ship a
+`home.nix`; a directory that carries neither file contributes nothing
+and is skipped.
 
 The module is self-gating: with no matching login user, no
 home-manager input, or no flake reference, it evaluates to an empty
@@ -583,8 +598,8 @@ plasma-manager export their single module under a name, not
 -- nixos-hardware, for example, ships hundreds of mutually exclusive
 hardware profiles -- and the builder refuses to guess: evaluation
 throws and points at `inputContributions`, where you say which of them
-you want. (It does not list the entries; a catalog has hundreds. Name
-one that does not exist and *that* error lists them.)
+you want. (It lists the exported entries when there are few enough to be
+useful, and falls back to a count for a catalog of hundreds.)
 
 ### Selecting what an input contributes
 
@@ -738,7 +753,7 @@ so it cannot silently miss one:
 |--------|---------|
 | `nixpkgsLibExtensions.tags` | host tags; modules can ADD tags (list definitions merge) |
 | `nixpkgsLibExtensions.group` | the call argument of the same name (read-only) |
-| `nixpkgsLibExtensions.users` | the host's registry-derived users (read-only) |
+| `nixpkgsLibExtensions.users` | the host's users, derived from the tree (read-only) |
 | `nixpkgsLibExtensions.inputPkgs.<name>` | every input's packages, pre-selected for the host's system (read-only) |
 | `nixpkgsLibExtensions.channels.<variant>` | package set per `nixpkgs-*` input (read-only) |
 | `nixpkgsLibExtensions.hostname` | homes only: the host the home is built for -- NixOS modules read `config.networking.hostName` |
@@ -791,18 +806,12 @@ git add users/carol
 directory stages nothing, which would leave the new `home.nix`
 untracked and therefore invisible to the flake.)
 
-```nix
-# flake.nix registry
-"carol" = ./users/carol;
-```
+That is the whole recipe -- there is nothing to register anywhere.
 
-Give a user extra groups on one host only: create
-`users/carol-work/configuration.nix` with the groups and register
-
-```nix
-"carol@*"    = ./users/carol;      # home everywhere
-"carol@work" = ./users/carol-work; # extra config on work
-```
+Give a user extra groups on one host only: put them in
+`users/carol/hosts/work/configuration.nix`. Her own `users/carol/`
+files still apply on every host; the `hosts/work/` ones merge on top
+on `work` alone.
 
 Rename or add a host -- three places move together:
 
@@ -811,7 +820,7 @@ Rename or add a host -- three places move together:
    one hosts attrset, the homeConfigurations follow automatically)
 2. the host file: `hosts/<name>.nix` or
    `hosts/<name>/configuration.nix`
-3. any `"user@<name>"` registry keys
+3. any `users/<user>/hosts/<name>/` override directories
 
 Package-set knobs per host (full reference in [lib.md](lib.md)):
 
@@ -922,17 +931,19 @@ merged option value, also labeling the boot menu via
   fully logged out everywhere. The bootstrap re-runs at that
   first-session boundary, not on each additional terminal login.
 - If the bootstrap seems to do nothing: at least one `loginHomes`
-  name must match a registry user shipping a `home.nix` on this host,
+  name must match a user in the tree shipping a `home.nix` on this host,
   a home-manager input must exist, and `inputs.self` (or
   `loginFlakeRef`) must be set -- all are required, and the service
   is simply absent otherwise. Users NOT in `loginHomes` never touch
   the bootstrap: their homes activate with `nixos-rebuild switch`.
 - A `loginHomes` name is only checked across the WHOLE hosts attrset:
-  a name no host's registry mentions at all throws (typo), but a name
+  a name the tree does not have at all throws (typo), but a name
   that merely does not apply to some host is legal there -- one shared
   list in `_defaults` is the normal shape. In a DIRECT
   `mkNixosSystem`/`mkHomeConfiguration` call there
-  is only one host in view, so unknown names are silently ignored.
+  is only one host in view, so unknown names are silently ignored --
+  and `buildHomeConfigurations`, which has no hosts attrset at all,
+  does not run the check either.
 - Switching mechanisms (moving a user out of `loginHomes` and back, or
   changing `loginFlakeRef`/the hostname) is safe on the bootstrap side:
   the stamp records the exact activation parameters, and a stamp whose

@@ -1,8 +1,8 @@
 # nixpkgs-lib-extensions
 
 A library for building a fleet of NixOS hosts and their home-manager
-homes from one declarative description: a hosts attrset plus a per-user
-directory registry. It started as a handful of extra `nixpkgs.lib`
+homes from one declarative description: a hosts attrset plus a `users/`
+directory tree. It started as a handful of extra `nixpkgs.lib`
 functions (some written here, some collected), and those helpers are
 still included -- but the builders are what this repo is about now.
 
@@ -17,7 +17,7 @@ still included -- but the builders are what this repo is about now.
 ## The NixOS / home-manager builders
 
 Build your `nixosConfigurations` and standalone `homeConfigurations`
-from one per-user directory convention. One `buildConfigurations` call
+from one `users/` directory tree. One `buildConfigurations` call
 produces both outputs from one hosts attrset. See
 [docs/lib.md](docs/lib.md) for the full reference of
 `buildConfigurations`, `buildNixosConfigurations`,
@@ -33,10 +33,16 @@ nix flake init -t github:dvaerum/nixpkgs-lib-extensions
 
 Highlights:
 
-- One `userRegistry` declares the users: each value is a
-  directory with `home.nix` (home-manager config) and/or
-  `configuration.nix` (NixOS config: account, groups, ...). Keys select
-  hosts: `"alice@laptop"`, `"alice@*"` (every host), or plain `"alice"`.
+- A `users/` directory tree declares the users -- one directory each,
+  with `home.nix` (home-manager config) and/or `configuration.nix`
+  (NixOS config: account, groups, ...). A `users/<name>/hosts/<host>/`
+  subdirectory holds the same two files for one host, merged on top
+  there; a user with only `hosts/` subdirectories exists on those hosts
+  alone. A host's `users` argument selects which of the tree apply to
+  it (omitted = all, `[ ]` = none).
+- Home outputs are keyed by user: `homeConfigurations."alice"` (usable
+  on any machine) and `"alice@laptop"` where she has a per-host
+  override.
 - Each host's own config is found by convention:
   `hosts/<hostname>.nix` or `hosts/<hostname>/configuration.nix`.
 - Arguments shared by every host go in one `_defaults` entry; host
@@ -66,11 +72,12 @@ namespaced duplicates exist for discoverability.
   GPT partitions, pool, standard datasets plus one per user, optional
   encryption and extra datasets.
   [lib/disko/README.md](lib/disko/README.md) collects the operational
-  notes that go with it, such as the hybrid-MBR step some bootroms
-  need after disko has formatted the disk: the Raspberry Pi 3's
-  bootrom only understands MBR partition tables, not the GPT this
-  library uses, so a hybrid MBR overlays an MBR-compatible view of the
-  boot partition on top of the GPT disk.
+  notes that go with it, such as the hybrid-MBR case some bootroms
+  need: the Raspberry Pi 3's bootrom only understands MBR partition
+  tables, not the GPT this library uses, so a hybrid MBR overlays an
+  MBR-compatible view of the boot partition on top of the GPT disk.
+  `legacyBoot = true` automates it; the README also documents the
+  manual fallback.
 - `importIfNix` / `importIfNixOr`: friendly to git-crypt (see
   `readIfPlainOr`'s doc comment, `docs/lib.md`, for what git-crypt
   does to a checkout without the decryption key). A `private.nix`
@@ -81,6 +88,14 @@ namespaced duplicates exist for discoverability.
   Nix -- a plain secret or token. Reads it as a string when it's real
   plaintext, or returns a default (empty string, or your own) when
   it's still git-crypt ciphertext.
+- `discoverPatches` / `discoverUserRegistry`: read a directory into
+  something the builders consume -- a `patches` list from a `patches/`
+  folder, or the users tree from a `users/` folder -- classifying each
+  entry and warning about ones that look wrong.
+- `detachedRun` / `interceptingWrapper` (`lib.systemd`): run a command
+  in a transient `systemd-run --user` unit so it survives its own
+  side effects. Built for `home-manager switch`, whose activation can
+  restart the very unit the calling shell lives in.
 - Small string/attrset helpers (`stringToTitle`, `recursiveMerge`, ...).
 
 ## Working on this repo

@@ -136,9 +136,10 @@ them to the new hardware's value.
 PARTITIONS: one GPT disk, holding (in on-disk order) the boot
 partition(s), the ZFS pool partition, then SWAP last if `swapSize` is
 nonzero. That order comes from disko's own `priority` field, where a
-SMALLER number is created earlier on the disk -- boot gets `1` (`2`
-for the second aarch64-linux partition below), the ZFS partition
-`10`, SWAP `100`. The ZFS partition's own SIZE is what actually
+SMALLER number is created earlier on the disk. The ESP is always
+`2`; slot `1` is taken by whatever must precede it -- `EF02` on
+x86_64 with `legacyBoot`, `FIRMWARE` on aarch64 -- and is simply
+unused otherwise. The ZFS partition is `10`, SWAP `100`. The ZFS partition's own SIZE is what actually
 reserves SWAP's space, despite coming first on disk: with a nonzero
 `swapSize` it ends `swapSize` GiB before the end of the disk
 (`end = "-${swapSize}G"`), leaving exactly that much free for SWAP to
@@ -460,7 +461,14 @@ configuration evaluates in both places.
 Accepted: a regular file with the `.nix` suffix whose content parses as
 Nix, or a directory whose `default.nix` does. Symlinks are followed
 and classified by what they resolve to (a link to a valid `.nix` file
-imports like its target; a dangling link counts as missing).
+imports like its target).
+Symlinks are followed and classified by what they resolve to. A
+DANGLING link is NOT handled: `builtins.pathExists` returns true for
+one, so it passes the guard and then aborts evaluation when the path
+is realized -- uncatchably, since the failure is a primop error, not
+a `throw`. `discoverPatches` documents the same gap; fixing it needs
+a way to distinguish "link exists" from "target exists" that Nix
+does not currently expose.
 Everything else yields
 `default` WITH an evaluation warning naming the reason (missing path,
 unsupported file extension, directory without default.nix, or content
@@ -565,64 +573,72 @@ readIfPlain :: pkgs -> Path -> String
 ## `lib.imports.readIfPlainOr`
 
 Read a path as plain text, but only when it is NOT still git-crypt
-ciphertext; otherwise return `default` instead of aborting evaluation.
-`readIfPlain` is the same function with the default fixed to `""`.
+    ciphertext; otherwise return `default` instead of aborting evaluation.
+    `readIfPlain` is the same function with the default fixed to `""`.
 
-Companion to `importIfNixOr`/`importIfNix` for files that are not Nix
--- a plain secret, token, or config value protected by git-crypt
-(which encrypts individual files in a git repo transparently -- a
-checkout without the decryption key sees raw ciphertext instead of
-the file's real content). Locally (key present) git-crypt's smudge
-filter has already replaced the working-tree file with real
-plaintext, and this returns it as a string. On a checkout without the
-key, the working-tree file is still git-crypt's raw ciphertext --
-`builtins.readFile` on that would likely THROW (its bytes are not
-valid UTF-8) rather than return usable garbage, so the ciphertext is
-detected BEFORE ever calling `readFile` on it.
+    Companion to `importIfNixOr`/`importIfNix` for files that are not Nix
+    -- a plain secret, token, or config value protected by git-crypt
+    (which encrypts individual files in a git repo transparently -- a
+    checkout without the decryption key sees raw ciphertext instead of
+    the file's real content). Locally (key present) git-crypt's smudge
+    filter has already replaced the working-tree file with real
+    plaintext, and this returns it as a string. On a checkout without the
+    key, the working-tree file is still git-crypt's raw ciphertext --
+    `builtins.readFile` on that would likely THROW (its bytes are not
+    valid UTF-8) rather than return usable garbage, so the ciphertext is
+    detected BEFORE ever calling `readFile` on it.
 
-Detection does not depend on the plaintext's content being valid Nix
-(there may be none to parse): a git-crypt-encrypted file always
-begins with the same fixed 10-byte header (a NUL byte, `GITCRYPT`,
-another NUL byte), whatever the plaintext underneath actually is.
-That header is checked byte-for-byte in a small derivation
-(import-from-derivation, `preferLocalBuild`) -- IFD, like
-`importIfNixOr`'s parse probe, just testing a fixed magic value
-instead of running a Nix parser.
+    Detection does not depend on the plaintext's content being valid Nix
+    (there may be none to parse): a git-crypt-encrypted file always
+    begins with the same fixed 10-byte header (a NUL byte, `GITCRYPT`,
+    another NUL byte), whatever the plaintext underneath actually is.
+    That header is checked byte-for-byte in a small derivation
+    (import-from-derivation, `preferLocalBuild`) -- IFD, like
+    `importIfNixOr`'s parse probe, just testing a fixed magic value
+    instead of running a Nix parser.
 
-Accepted: a regular file whose first bytes are not that header.
-Symlinks are followed and classified by what they resolve to (a link
-to such a file reads like its target; a dangling link counts as
-missing). Everything else -- a missing path, a directory, or
-genuine git-crypt ciphertext -- yields `default` WITH an evaluation
-warning naming the reason, so a skipped read is never a silent
-mystery.
+    Accepted: a regular file whose first bytes are not that header.
+    Symlinks are followed and classified by what they resolve to (a link
+to such a file reads like its target).
+    Symlinks are followed and classified by what they resolve to. A
+    DANGLING link is NOT handled: `builtins.pathExists` returns true for
+    one, so it passes the guard and then aborts evaluation when the path
+    is realized -- uncatchably, since the failure is a primop error, not
+    a `throw`. `discoverPatches` documents the same gap; fixing it needs
+    a way to distinguish "link exists" from "target exists" that Nix
+    does not currently expose.
 
-### Example
+    Everything else -- a missing path, a directory, or
+    genuine git-crypt ciphertext -- yields `default` WITH an evaluation
+    warning naming the reason, so a skipped read is never a silent
+    mystery.
 
-```nix
-# extLib = inputs.nixpkgs-lib-extensions.lib
-extLib.readIfPlainOr pkgs ./api-token.txt ""
-# locally (key present)    => "sk-abc123...\n"
-# on CI (still encrypted)  => "" (warns)
-```
+    # Example
 
-### Type
+    ```nix
+    # extLib = inputs.nixpkgs-lib-extensions.lib
+    extLib.readIfPlainOr pkgs ./api-token.txt ""
+    # locally (key present)    => "sk-abc123...\n"
+    # on CI (still encrypted)  => "" (warns)
+    ```
 
-```
-readIfPlainOr :: pkgs -> Path -> String -> String
-```
+    # Type
 
-### Arguments
+    ```
+    readIfPlainOr :: pkgs -> Path -> String -> String
+    ```
 
-- **pkgs**
-  A package set used to build the header-check probe (IFD).
+    # Arguments
 
-- **path**
-  The path (or absolute path string) to inspect and maybe read.
+    pkgs
+    : A package set used to build the header-check probe (IFD).
 
-- **default**
-  The value returned (with a warning) when `path` is still
-  git-crypt ciphertext, missing, or not a regular file.
+    path
+    : The path (or absolute path string) to inspect and maybe read.
+
+    default
+    : The value returned (with a warning) when `path` is still
+    : git-crypt ciphertext, missing, or not a regular file.
 
 
 ---
@@ -675,7 +691,7 @@ outputs =
 =>
 {
   nixosConfigurations = { laptop = <nixosSystem>; server = <nixosSystem>; };
-  homeConfigurations = { "alice@laptop" = <homeManagerConfiguration>; };
+  homeConfigurations = { alice = <homeManagerConfiguration>; };
 }
 ```
 
@@ -700,38 +716,29 @@ buildConfigurations ::
 
 ## `lib.nixos.buildHomeConfigurations`
 
-Build the standalone home-manager configurations of every host's
-LOGIN-managed users in one call: takes the SAME hosts attrset as
-`buildNixosConfigurations` (including `_defaults` and the allowlist
-validation), applies `mkHomeConfiguration` per login user, and
-merges everything into one `{ "<user>@<hostname>" = ...; }` set —
-assignable to a flake's `homeConfigurations` output directly.
+Build the home-manager configurations of every user in the `users/`
+tree, in one call: a FLAT argument set (no `hosts` attrset, no
+`_defaults`), keyed by user.
 
-Only users listed in `loginHomes` (and shipping a `home.nix` for the
-host) get an output: SYSTEM-managed homes -- the default for anyone
-not in `loginHomes`, built into the NixOS system itself rather than
-activated at login; see `mkNixosSystem` for the full contrast -- are
-part of the systems built by `buildNixosConfigurations` and need no
-flake output. The
-produced set is exactly what the login bootstrap activates
-(`home-manager switch --flake <loginFlakeRef>#<user>@<host>`):
+Two shapes of key come out, and a user can produce both:
 
-```nix
-let
-  hosts = {
-    _defaults = {
-      inherit inputs system;
-      loginHomes = [ "alice" ];
-    };
-    laptop = { };
-    server = { users = [ ]; };
-  };
-in
-{
-  nixosConfigurations = extLib.buildNixosConfigurations hosts;
-  homeConfigurations = extLib.buildHomeConfigurations hosts;
-}
-```
+- `"<user>"` -- the host-less home, built from that user's own
+  `users/<user>/` files. Usable on any machine, including one this
+  flake has never heard of.
+- `"<user>@<host>"` -- one per `users/<user>/hosts/<host>/` override
+  directory, that home with the override merged on top.
+
+Every user with a `home.nix` gets an output; `loginHomes` does not
+gate this (it selects which homes a NixOS system leaves to the login
+bootstrap instead of building in, which is a `mkNixosSystem`
+concern). Outputs are lazy, so ones nobody builds cost nothing.
+
+This is the entry point for a home-manager-only flake. Because it has
+no declared host list, it discovers the host dimension from the tree
+alone -- so it emits `"<user>@<host>"` for EVERY override directory
+found, including hosts no NixOS system in your flake declares. Use
+`buildConfigurations` when you build systems too: it plans the hosts
+once and emits homes only for hosts that plan declares.
 
 ### Example
 
@@ -752,15 +759,18 @@ extLib.buildHomeConfigurations {
 
 ```
 buildHomeConfigurations ::
-  { <hostname> = Attribute; } -> { "<user>@<hostname>" = HomeManagerConfiguration; }
+  Attribute -> { "<user>" | "<user>@<hostname>" = HomeManagerConfiguration; }
 ```
 
 ### Arguments
 
-- **hosts**
-  The same attrset accepted by `buildNixosConfigurations` (same
-  allowlists, same `_defaults` semantics); see there for the full
-  key reference.
+- **(arguments)**
+  The same flat argument set `mkHomeConfiguration` takes, minus the
+  per-home `username`/`hostname` (those come from the tree). In
+  practice: `inputs`, `system`, and any of `rootPath`/`loginFlakeRef`
+  (where to read the tree), `homeModules`, `specialArgs`, `overlays`,
+  `nixpkgsConfig`, `traceDiscoveredUsers`, ... -- validated against
+  the same allowlist, so a typo throws.
 
 
 
@@ -893,11 +903,12 @@ Scan a `users/` directory into `{ <username> = <directory>; }`: one
 entry per subdirectory that looks like a user. This is how every
 builder learns who exists, so you will usually NOT call it directly
 -- `mkNixosSystem` and friends scan `rootPath` (or `loginFlakeRef`)
-themselves. Call it for something convention cannot do: scanning a
-differently-named directory, or filtering the result before use.
-Call it yourself only for something that convention cannot do: scanning
-a differently-named directory, or filtering/extending the result before
-use (`discoverUserRegistry dir // { extra = ./local-user; }`).
+themselves. Call it yourself only for something convention cannot
+do: scanning a differently-named directory, or filtering/extending
+the result before use
+(`discoverUserRegistry dir // { extra = ./local-user; }`). The
+attrset it returns is what the rest of these docs call the users
+tree; the "registry" in the name is historical.
 
 | Entry in `dir`                                          | Effect |
 | -------------------------------------------------------- | ------ |
@@ -946,8 +957,10 @@ background (so login is never hard-blocked). First-login-only by default.
 `mkNixosSystem` includes this module automatically when it
 has `loginHomes`, so it normally does not need to be wired up by hand —
 direct use is for custom setups that build their NixOS systems some
-other way. It is driven by a resolved users tree filtered by `loginHomes`
-(the same arguments the builders take) but is otherwise independent of
+other way. It is driven by a resolved users tree (`{ <username> =
+<directory>; }` -- note this is the RESOLVED tree, unlike
+`mkNixosSystem`'s `users`, which is a list of names to select)
+filtered by `loginHomes` but is otherwise independent of
 the builders. Self-gating: when no login user matches, the home-manager
 input is missing or the flake reference is unset, the module is empty.
 
@@ -987,7 +1000,9 @@ homeManagerBootstrapModule :: Attribute -> Module
   as the default flake reference).
 
 - **hostname**
-  The host name; the `@<host>` suffix of the flake attribute to activate.
+  The host name. Used to look for a `<user>@<hostname>` output (and
+  falling back to a bare `<user>` one) when resolving what to
+  activate -- see `loginFlakeRef`.
 
 - **system**
   The system double, e.g. `"x86_64-linux"`.
@@ -998,13 +1013,18 @@ homeManagerBootstrapModule :: Attribute -> Module
 
 - **loginHomes**
   The usernames whose homes are login-managed; only these are
-  bootstrapped (and only when the registry gives them a `home.nix`
+  bootstrapped (and only when the users tree gives them a `home.nix`
   on this host). Default `[ ]` (module is empty).
 
 - **loginFlakeRef**
   Flake reference for `home-manager switch --flake <ref>#<user>@<host>`;
-  the flake at this reference must export those
-  `homeConfigurations."<user>@<host>"` outputs. The default
+  the flake at this reference must export a matching
+  `homeConfigurations."<user>@<host>"` or `."<user>"` output. Which
+  one is used is decided at EVALUATION time by looking at that
+  flake's actual outputs: the host-suffixed name wins when present,
+  else the bare one, and exporting neither is a build-time throw.
+  A flake-ref STRING cannot be introspected, so it keeps the
+  historical `<user>@<host>` form. The default
   `inputs.self` is the immutable store copy of your flake the system
   was built from (homes match the last `nixos-rebuild`); use a mutable
   reference like `"/etc/nixos"` to build homes from a live checkout.
@@ -1080,8 +1100,10 @@ mkHomeConfiguration :: Attribute -> HomeManagerConfiguration
   The flake's `inputs` set. The home-manager input is detected by capability.
 
 - **hostname**
-  The host name the home is built for (selects the matching registry
-  entries).
+  The host name the home is built for -- it selects the
+  `users/<username>/hosts/<hostname>/` override, when one exists.
+  OMIT it for the host-less home: no override applies and
+  `nixpkgsLibExtensions.hostname` is `null`.
 
 - **username**
   The user whose home to build.
@@ -1090,8 +1112,10 @@ mkHomeConfiguration :: Attribute -> HomeManagerConfiguration
   The system double, e.g. `"x86_64-linux"`.
 
 - **users**
-  WHICH of the users tree applies -- omitted means all of them, a
-  list names exactly those wanted, and an unknown name THROWS. Users
+  Accepted and IGNORED here, so one argument set can be shared with
+  `mkNixosSystem` (where it selects which of the tree a host takes).
+  This function builds the ONE user named by `username`, so there is
+  nothing to select. Users
   are declared by DIRECTORIES under `users/` (read from `rootPath`,
   default `inputs.self`, or from `loginFlakeRef`): this home is built
   from `users/<username>/home.nix`, plus
@@ -1214,8 +1238,9 @@ each user's `home.nix` is activated is selected by `loginHomes`:
   `home-manager switch` against that flake's matching
   `homeConfigurations` output (`<user>`, or `<user>@<host>` where the
   user has a `hosts/<host>/` override -- resolved at evaluation
-  time); the flake must export those outputs (built by
-  `buildHomeConfigurations` from the same hosts attrset).
+  time); the flake must export one of them --
+  `buildConfigurations` does, from the same hosts attrset, and
+  `buildHomeConfigurations` from its own flat argument set.
 
 A home is managed by exactly one mechanism, by construction.
 
@@ -1332,9 +1357,11 @@ mkNixosSystem :: Attribute -> NixosSystem
   List of usernames (from the users tree) whose `home.nix` is
   LOGIN-managed instead of system-managed: not part of the system,
   activated on the user's first login by the bootstrap via
-  `home-manager switch --flake <loginFlakeRef>#<user>@<host>` -- the
-  flake must export those `homeConfigurations` outputs (built by
-  `buildHomeConfigurations` from the same hosts attrset). Accounts
+  `home-manager switch` against that flake's matching output --
+  `#<user>`, or `#<user>@<host>` where the user has a
+  `hosts/<host>/` override, resolved at EVALUATION time. The flake
+  must export one of them (`buildConfigurations` does, from the same
+  hosts attrset; `buildHomeConfigurations` from its own flat args). Accounts
   and `configuration.nix` handling are unaffected. Names not
   matching any of this host's users are ignored in a DIRECT call
   like this (the list is usually shared through `_defaults` across
@@ -1388,8 +1415,8 @@ mkNixosSystem :: Attribute -> NixosSystem
   home-manager modules added to every SYSTEM-managed home (on top of
   those auto-collected from `inputs`). The same argument is read by
   `mkHomeConfiguration`/`buildHomeConfigurations` for the
-  login-managed homes, so in a shared hosts attrset it applies to
-  both kinds. Default `[ ]`.
+  login-managed homes, so under `buildConfigurations` (which shares
+  one hosts attrset) it applies to both kinds. Default `[ ]`.
 
 - **tags**
   List of string tags, seeding the `nixpkgsLibExtensions.tags` option
@@ -1552,7 +1579,7 @@ extLib.normalUserModule "alice"
 # below 1000 (root, or a configuration.nix pinning a reserved uid)
 # the module contributes nothing -- NixOS forbids isNormalUser on
 # such accounts, and they define their own group and shell. So
-# "root" is a valid registry entry: it only gets its home.nix /
+# "root" is a valid users-tree entry: it only gets its home.nix /
 # configuration.nix, never account changes.
 
 # a custom userModule can build on it:
@@ -1621,7 +1648,7 @@ stringToTitle ""
 
 Run a shell command detached from the caller, in a fresh
 `systemd-run --user` transient unit, following its journal for
-interactive output and propagating its real exit status. Built for
+interactive output and propagating success or failure (exit 0/1, read from the unit's `Result`). Built for
 commands whose own effects can restart the unit the CALLER is running
 in -- `home-manager switch` is the motivating case (see
 `interceptingWrapper`): its activation restarts every user unit whose
@@ -1720,7 +1747,7 @@ environment.systemPackages = [
     binary = "home-manager";
     # detach only `home-manager switch`; every other subcommand
     # (news, generations, ...) passes straight through
-    shouldDetach = ''[ "${1:-}" = "switch" ]'';
+    shouldDetach = ''[ "''${1:-}" = "switch" ]'';
     label = "hm-switch";
   })
 ];

@@ -4,7 +4,7 @@
   /**
     Run a shell command detached from the caller, in a fresh
     `systemd-run --user` transient unit, following its journal for
-    interactive output and propagating its real exit status. Built for
+    interactive output and propagating success or failure (exit 0/1, read from the unit's `Result`). Built for
     commands whose own effects can restart the unit the CALLER is running
     in -- `home-manager switch` is the motivating case (see
     `interceptingWrapper`): its activation restarts every user unit whose

@@ -48,7 +48,7 @@ in
     =>
     {
       nixosConfigurations = { laptop = <nixosSystem>; server = <nixosSystem>; };
-      homeConfigurations = { "alice@laptop" = <homeManagerConfiguration>; };
+      homeConfigurations = { alice = <homeManagerConfiguration>; };
     }
     ```
 

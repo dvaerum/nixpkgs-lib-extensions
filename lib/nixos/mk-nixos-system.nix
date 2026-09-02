@@ -97,8 +97,9 @@ in
       `home-manager switch` against that flake's matching
       `homeConfigurations` output (`<user>`, or `<user>@<host>` where the
       user has a `hosts/<host>/` override -- resolved at evaluation
-      time); the flake must export those outputs (built by
-      `buildHomeConfigurations` from the same hosts attrset).
+      time); the flake must export one of them --
+      `buildConfigurations` does, from the same hosts attrset, and
+      `buildHomeConfigurations` from its own flat argument set.
 
     A home is managed by exactly one mechanism, by construction.
 
@@ -215,9 +216,11 @@ in
     : List of usernames (from the users tree) whose `home.nix` is
     : LOGIN-managed instead of system-managed: not part of the system,
     : activated on the user's first login by the bootstrap via
-    : `home-manager switch --flake <loginFlakeRef>#<user>@<host>` -- the
-    : flake must export those `homeConfigurations` outputs (built by
-    : `buildHomeConfigurations` from the same hosts attrset). Accounts
+    : `home-manager switch` against that flake's matching output --
+    : `#<user>`, or `#<user>@<host>` where the user has a
+    : `hosts/<host>/` override, resolved at EVALUATION time. The flake
+    : must export one of them (`buildConfigurations` does, from the same
+    : hosts attrset; `buildHomeConfigurations` from its own flat args). Accounts
     : and `configuration.nix` handling are unaffected. Names not
     : matching any of this host's users are ignored in a DIRECT call
     : like this (the list is usually shared through `_defaults` across
@@ -271,8 +274,8 @@ in
     : home-manager modules added to every SYSTEM-managed home (on top of
     : those auto-collected from `inputs`). The same argument is read by
     : `mkHomeConfiguration`/`buildHomeConfigurations` for the
-    : login-managed homes, so in a shared hosts attrset it applies to
-    : both kinds. Default `[ ]`.
+    : login-managed homes, so under `buildConfigurations` (which shares
+    : one hosts attrset) it applies to both kinds. Default `[ ]`.
 
     tags
     : List of string tags, seeding the `nixpkgsLibExtensions.tags` option

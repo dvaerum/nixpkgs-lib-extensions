@@ -5,38 +5,29 @@ let
 in
 {
   /**
-    Build the standalone home-manager configurations of every host's
-    LOGIN-managed users in one call: takes the SAME hosts attrset as
-    `buildNixosConfigurations` (including `_defaults` and the allowlist
-    validation), applies `mkHomeConfiguration` per login user, and
-    merges everything into one `{ "<user>@<hostname>" = ...; }` set —
-    assignable to a flake's `homeConfigurations` output directly.
+    Build the home-manager configurations of every user in the `users/`
+    tree, in one call: a FLAT argument set (no `hosts` attrset, no
+    `_defaults`), keyed by user.
 
-    Only users listed in `loginHomes` (and shipping a `home.nix` for the
-    host) get an output: SYSTEM-managed homes -- the default for anyone
-    not in `loginHomes`, built into the NixOS system itself rather than
-    activated at login; see `mkNixosSystem` for the full contrast -- are
-    part of the systems built by `buildNixosConfigurations` and need no
-    flake output. The
-    produced set is exactly what the login bootstrap activates
-    (`home-manager switch --flake <loginFlakeRef>#<user>@<host>`):
+    Two shapes of key come out, and a user can produce both:
 
-    ```nix
-    let
-      hosts = {
-        _defaults = {
-          inherit inputs system;
-          loginHomes = [ "alice" ];
-        };
-        laptop = { };
-        server = { users = [ ]; };
-      };
-    in
-    {
-      nixosConfigurations = extLib.buildNixosConfigurations hosts;
-      homeConfigurations = extLib.buildHomeConfigurations hosts;
-    }
-    ```
+    - `"<user>"` -- the host-less home, built from that user's own
+      `users/<user>/` files. Usable on any machine, including one this
+      flake has never heard of.
+    - `"<user>@<host>"` -- one per `users/<user>/hosts/<host>/` override
+      directory, that home with the override merged on top.
+
+    Every user with a `home.nix` gets an output; `loginHomes` does not
+    gate this (it selects which homes a NixOS system leaves to the login
+    bootstrap instead of building in, which is a `mkNixosSystem`
+    concern). Outputs are lazy, so ones nobody builds cost nothing.
+
+    This is the entry point for a home-manager-only flake. Because it has
+    no declared host list, it discovers the host dimension from the tree
+    alone -- so it emits `"<user>@<host>"` for EVERY override directory
+    found, including hosts no NixOS system in your flake declares. Use
+    `buildConfigurations` when you build systems too: it plans the hosts
+    once and emits homes only for hosts that plan declares.
 
     # Example
 
@@ -57,24 +48,23 @@ in
 
     ```
     buildHomeConfigurations ::
-      { <hostname> = Attribute; } -> { "<user>@<hostname>" = HomeManagerConfiguration; }
+      Attribute -> { "<user>" | "<user>@<hostname>" = HomeManagerConfiguration; }
     ```
 
     # Arguments
 
-    hosts
-    : The same attrset accepted by `buildNixosConfigurations` (same
-    : allowlists, same `_defaults` semantics); see there for the full
-    : key reference.
+    (arguments)
+    : The same flat argument set `mkHomeConfiguration` takes, minus the
+    : per-home `username`/`hostname` (those come from the tree). In
+    : practice: `inputs`, `system`, and any of `rootPath`/`loginFlakeRef`
+    : (where to read the tree), `homeModules`, `specialArgs`, `overlays`,
+    : `nixpkgsConfig`, `traceDiscoveredUsers`, ... -- validated against
+    : the same allowlist, so a typo throws.
   */
   buildHomeConfigurations =
     args:
-    # The user-centric entry point: no `hosts` attrset at all. Users come
-    # from the `users/` tree under `rootPath` (or `loginFlakeRef`, when the
-    # homes live in another flake), and the host dimension exists only
-    # where a user has a `hosts/<host>` override directory. Implemented as
-    # the degenerate one-host plan so it shares every code path (argument
-    # validation, `_defaults` merge, ONE context core) with the fleet
-    # entry points rather than duplicating them.
+    # No plan: there is no hosts attrset to plan over. One flat argument
+    # set means ONE context core, and the host dimension comes from the
+    # tree (`users/<u>/hosts/<h>/`) rather than from declared hosts.
     shared.userHomesStandalone "buildHomeConfigurations" args;
 }

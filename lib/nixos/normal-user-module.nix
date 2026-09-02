@@ -31,7 +31,7 @@
     # below 1000 (root, or a configuration.nix pinning a reserved uid)
     # the module contributes nothing -- NixOS forbids isNormalUser on
     # such accounts, and they define their own group and shell. So
-    # "root" is a valid registry entry: it only gets its home.nix /
+    # "root" is a valid users-tree entry: it only gets its home.nix /
     # configuration.nix, never account changes.
 
     # a custom userModule can build on it:
@@ -59,7 +59,7 @@
         { config, lib, ... }:
         let
           # An account with a fixed uid below 1000 is a system account --
-          # root (uid 0), or any registry user whose configuration.nix pins
+          # root (uid 0), or any user in the tree whose configuration.nix pins
           # a reserved uid. NixOS asserts isNormalUser is never combined
           # with such a uid, and those accounts define their own group and
           # shell, so this module leaves them entirely untouched. Reading
