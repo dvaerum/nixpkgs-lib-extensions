@@ -3,20 +3,21 @@
 {
   /**
     Auto-discover a `userRegistry` from a `users/` directory: one
-    `"<name>@*"` entry per subdirectory that looks like a registry entry.
+    entry per subdirectory that looks like a user.
     You will usually NOT call this directly -- `mkNixosSystem`'s own
     `userRegistry` argument already does this automatically when it is
     omitted and `loginFlakeRef` names a flake input (see its doc comment).
     Call it yourself only for something that convention cannot do: scanning
     a differently-named directory, or filtering/extending the result before
-    use (`discoverUserRegistry dir // { "extra@*" = ./local-user; }`).
+    use (`discoverUserRegistry dir // { extra = ./local-user; }`).
 
     | Entry in `dir`                                          | Effect |
     | -------------------------------------------------------- | ------ |
-    | subdirectory with `home.nix` and/or `configuration.nix`   | becomes `"<name>@*" = <path>;` |
-    | subdirectory with NEITHER file                            | ignored, WITH a warning naming the directory -- a scan guessed wrong, so it degrades to a warning rather than the throw a hand-written registry entry with the same problem gets |
+    | subdirectory with `home.nix` and/or `configuration.nix`   | becomes `<name> = <path>;` |
+    | subdirectory with only a `hosts/` subdirectory            | also a user -- one who exists only on the hosts named there |
+    | subdirectory with NEITHER file                            | ignored, WITH a warning naming the directory -- a scan guessed wrong, so it degrades to a warning rather than a throw |
     | a dotfile or dot-directory (`.gitkeep`, `.git`, ...)      | ignored, no warning |
-    | anything else (a plain file, `README.md`, ...)            | ignored, no warning -- only a directory could ever be a registry entry, so a stray file is not a mistake worth flagging |
+    | anything else (a plain file, `README.md`, ...)            | ignored, no warning -- only a directory could ever be a user, so a stray file is not a mistake worth flagging |
 
     A symlink is resolved and classified by what it points at, same rule as
     `discoverPatches`/`importIfNixOr`. A missing `dir` is not an error: it
@@ -31,7 +32,7 @@
     ```nix
     # extLib = inputs.nixpkgs-lib-extensions.lib
     extLib.discoverUserRegistry (inputs.home-manager-config + "/users")
-    => { "dennis@*" = <path to .../users/dennis>; "root@*" = <path to .../users/root>; }
+    => { dennis = <path to .../users/dennis>; root = <path to .../users/root>; }
     ```
 
     # Type
@@ -84,7 +85,14 @@
           let
             entryDir = dir + "/${name}";
           in
-          if lib.pathExists (entryDir + "/home.nix") || lib.pathExists (entryDir + "/configuration.nix") then
+          if
+            lib.pathExists (entryDir + "/home.nix")
+            || lib.pathExists (entryDir + "/configuration.nix")
+            # ... or a user who exists ONLY on specific hosts: no config of
+            # their own, just `hosts/<h>/` overrides. That is how "this
+            # user is only on this machine" is spelled.
+            || lib.pathExists (entryDir + "/hosts")
+          then
             "user"
           else
             "malformed";
@@ -99,14 +107,14 @@
 
       registry = lib.listToAttrs (
         map (e: {
-          name = "${e.name}@*";
+          name = e.name;
           value = dir + "/${e.name}";
         }) users
       );
 
       warnMsg =
         e:
-        "nixpkgs-lib-extensions: discoverUserRegistry ${toString dir}/${e.name}: a directory with neither home.nix nor configuration.nix, ignoring it as a registry entry.";
+        "nixpkgs-lib-extensions: discoverUserRegistry ${toString dir}/${e.name}: a directory with neither home.nix nor configuration.nix, ignoring it as a user.";
     in
     lib.foldl' (acc: e: lib.warn (warnMsg e) acc) registry malformed;
 }

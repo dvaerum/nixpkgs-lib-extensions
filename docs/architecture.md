@@ -33,11 +33,11 @@ lib/
       shared.nix      thin aggregator the builder files import
       hosts-args.nix  argument allowlists, hosts-attrset validation,
                       planHosts, and the plan's two projections into
-                      builder output (systemsFromPlan / homesFromPlan)
+                      builder output (systemsFromPlan / userHomesFromPlan)
       context.nix     mkContextCore / mkContext -- the expensive
                       `import nixpkgs` lives here
       inputs.nix      input conventions and inputContributions
-      registry.nix    userRegistry resolution and validation
+      registry.nix    users-tree resolution and validation
       mk-system.nix   mkSystem (the mkNixosSystem implementation)
       mk-home.nix     mkHome (the mkHomeConfiguration implementation)
       ext-options.nix the nixpkgsLibExtensions.* options module
@@ -63,7 +63,7 @@ flowchart TD
     Plan["planHosts<br/>(hosts-args.nix)"]
     PlanData["plan = { &lt;hostname&gt;: { args; core; registry; } }"]
     Systems["systemsFromPlan"]
-    Homes["homesFromPlan"]
+    Homes["userHomesFromPlan"]
     MkSystem["mkSystem core args<br/>(mk-system.nix)"]
     MkHome["mkHome core args<br/>(mk-home.nix, per login user@host)"]
 
@@ -90,9 +90,10 @@ and picks one of two evaluation routes -- route A,
 `nixpkgs.lib.nixosSystem`, for an unpatched nixpkgs flake; route B,
 `eval-config` imported from the selected tree, for a patched tree or a
 nixpkgs input exposing no `lib.nixosSystem` -- a check pins both
-routes to the same derivation. `homesFromPlan` calls `mkHome core args`
-per login-managed `user@host`, sharing the same `mkContext` core and
-producing a `homeManagerConfiguration`.
+routes to the same derivation. `userHomesFromPlan` calls `mkHome core args`
+per user -- a host-less `"<user>"` home from their directory alone,
+plus `"<user>@<host>"` for each `hosts/<host>/` override -- sharing the
+same `mkContext` core and producing `homeManagerConfiguration`s.
 
 The direct builders (`mkNixosSystem`, `mkHomeConfiguration`) validate
 their arguments and call the same `mkSystem`/`mkHome` with

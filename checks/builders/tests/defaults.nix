@@ -138,7 +138,7 @@ in
   host-unknown-key-throws = throws (
     myLib.buildNixosConfigurations {
       h = {
-        users = [ "root" ];
+        userRegistry = { };
       };
     }
   );
@@ -170,31 +170,17 @@ in
   # buildHomeConfigurations: the SAME hosts attrset produces the merged
   # "user@host" set across all hosts, with per-host registry overrides;
   # only loginHomes get outputs
+  # buildHomeConfigurations is user-centric: a flat argument set, no
+  # hosts attrset, and every user with a home.nix in the tree gets an
+  # output keyed by user (plus `@<host>` where they have an override)
   build-home-configurations =
     let
       homes = myLib.buildHomeConfigurations {
-        _defaults = {
-          inherit inputs system;
-          userRegistry."alice" = exampleDir + "/users/alice";
-          loginHomes = [
-            "alice"
-            "bob"
-          ];
-          # nixos-only argument: must be accepted and ignored here
-          modules = [ ];
-        };
-        hostA = { };
-        hostB = {
-          userRegistry = {
-            "bob@hostB" = exampleDir + "/users/bob";
-            # present but NOT a login user on hostB: no output
-            "dave" = exampleDir + "/users/dave";
-          };
-          loginHomes = [ "bob" ];
-        };
+        inherit inputs system;
+        traceDiscoveredUsers = false;
       };
     in
-    homes ? "alice@hostA" && homes ? "bob@hostB" && !(homes ? "alice@hostB") && !(homes ? "dave@hostB");
+    homes ? "alice" && homes ? "frank@laptop" && !(homes ? "eve");
 
   # buildConfigurations is the two build functions over ONE plan: same
   # hosts attrset in, both flake outputs out. The point is that a flake
@@ -205,7 +191,6 @@ in
       hosts = {
         _defaults = {
           inherit inputs system;
-          userRegistry."alice" = exampleDir + "/users/alice";
           loginHomes = [ "alice" ];
         };
         hostA = { };
@@ -224,16 +209,16 @@ in
       ]
     &&
       builtins.attrNames both.homeConfigurations == [
-        "alice@hostA"
-        "alice@hostB"
+        "alice"
+        "dave"
+        "frank"
+        "grace"
       ]
     # and it agrees with the separate functions, host for host
     &&
       both.nixosConfigurations.hostA.config.networking.hostName == (myLib.buildNixosConfigurations hosts)
       .hostA.config.networking.hostName
-    &&
-      (both.homeConfigurations."alice@hostA").config.home.username
-      == ((myLib.buildHomeConfigurations hosts)."alice@hostA").config.home.username;
+    && (both.homeConfigurations."alice").config.home.username == "alice";
 
   # restating a core argument with the SAME VALUE must still share the
   # defaults' context core: presence alone used to disqualify a host, so
@@ -261,32 +246,30 @@ in
   # functions -- where alice is a login user (hostA) she gets the flake
   # output and NO system home; where she is not (hostB) she gets the
   # system home and no output
+  # ONE hosts attrset still feeds both halves of buildConfigurations:
+  # where alice is a login user (hostA) she is NOT a system-managed home
+  # there; where she is not (hostB) the system builds her home in.
   cross-mechanism-partition =
     let
       hosts = {
         _defaults = {
           inherit inputs system;
-          userRegistry."alice" = exampleDir + "/users/alice";
         };
         hostA = {
           loginHomes = [ "alice" ];
         };
         hostB = { };
       };
-      homes = myLib.buildHomeConfigurations hosts;
       systems = myLib.buildNixosConfigurations hosts;
     in
-    builtins.attrNames homes == [ "alice@hostA" ]
-    && systems.hostB.config.home-manager.users ? alice
-    # hostA has no system-managed homes at all, so the builder never even
-    # imports home-manager's NixOS module there
-    && !(systems.hostA.options ? home-manager);
+    systems.hostB.config.home-manager.users ? alice
+    && !(systems.hostA.config.home-manager.users ? alice);
 
   # ... and shares the validation: the same typo throws there too
   build-home-configurations-allowlisted = throws (
     myLib.buildHomeConfigurations {
       h = {
-        users = [ "root" ];
+        userRegistry = { };
       };
     }
   );
@@ -298,7 +281,7 @@ in
       builtins.seq (myLib.mkNixosSystem {
         inherit inputs system;
         hostname = "typo";
-        users = [ "root" ];
+        userRegistry = { };
       }) true
     )).success;
   direct-home-call-typo-throws =
@@ -307,7 +290,6 @@ in
         inherit inputs system;
         hostname = "laptop";
         username = "alice";
-        userRegistry."alice" = exampleDir + "/users/alice";
         homesharedmodules = [ ];
       }) true
     )).success;
@@ -458,7 +440,7 @@ in
   # the host-entry classes are part of the problems DATA too -- they used
   # to be visible only as a throw, so a hosts attrset failing on them
   # reported "no problems" here
-  host-typo-complaint = complains { h.users = [ "root" ]; } "Host entries accept";
+  host-typo-complaint = complains { h.userRegistry = { }; } "Host entries accept";
   host-shape-complaint = complains { h = "not-an-attrset"; } "must be an attribute set";
   host-extra-typo-complaint = complains {
     h.extra.notAnArgument = [ ];

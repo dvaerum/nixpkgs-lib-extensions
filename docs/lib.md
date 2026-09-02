@@ -807,9 +807,9 @@ attribute name IS the group. When `_groups` is present, every host's
 `group` must name one of its entries (unknown names throw); without
 `_groups`, `group` is the free-form classification it always was.
 
-The same hosts attrset is designed to also feed
-`buildHomeConfigurations`, producing the matching `homeConfigurations`
-outputs the login bootstrap needs -- define it once, pass it to both.
+Users are declared by the `users/` directory tree (see
+`mkNixosSystem`'s own `users` argument), not by an attrset here; a
+host's `users` key only SELECTS which of them apply to it.
 
 ### Example
 
@@ -818,7 +818,7 @@ outputs the login bootstrap needs -- define it once, pass it to both.
 # extLib = inputs.nixpkgs-lib-extensions.lib
 nixosConfigurations = extLib.buildNixosConfigurations {
   _defaults = {
-    inherit inputs system userRegistry;
+    inherit inputs system;
     modules = [ ./common/base.nix ];
   };
   # each host's config is found by convention:
@@ -829,8 +829,8 @@ nixosConfigurations = extLib.buildNixosConfigurations {
     extra.modules = [ ./common/laptop-extras.nix ];
   };
   server = {
-    # per-argument override: replaces the registry entirely
-    userRegistry = { };
+    # none of the users/ tree applies to this host
+    users = [ ];
   };
 };
 =>
@@ -867,7 +867,8 @@ buildNixosConfigurations ::
   - `rootPath`
   - `modules`
   - `userModule`
-  - `userRegistry`
+  - `users` (which of the users/ tree apply to this host;
+    omitted = all of them, `[ ]` = none)
   - `loginHomes`
   - `homeModules` (applies to BOTH mechanisms: system-managed
     homes here, login-managed homes in `buildHomeConfigurations`)
@@ -903,20 +904,21 @@ buildNixosConfigurations ::
 ## `lib.nixos.discoverUserRegistry`
 
 Auto-discover a `userRegistry` from a `users/` directory: one
-`"<name>@*"` entry per subdirectory that looks like a registry entry.
+entry per subdirectory that looks like a user.
 You will usually NOT call this directly -- `mkNixosSystem`'s own
 `userRegistry` argument already does this automatically when it is
 omitted and `loginFlakeRef` names a flake input (see its doc comment).
 Call it yourself only for something that convention cannot do: scanning
 a differently-named directory, or filtering/extending the result before
-use (`discoverUserRegistry dir // { "extra@*" = ./local-user; }`).
+use (`discoverUserRegistry dir // { extra = ./local-user; }`).
 
 | Entry in `dir`                                          | Effect |
 | -------------------------------------------------------- | ------ |
-| subdirectory with `home.nix` and/or `configuration.nix`   | becomes `"<name>@*" = <path>;` |
-| subdirectory with NEITHER file                            | ignored, WITH a warning naming the directory -- a scan guessed wrong, so it degrades to a warning rather than the throw a hand-written registry entry with the same problem gets |
+| subdirectory with `home.nix` and/or `configuration.nix`   | becomes `<name> = <path>;` |
+| subdirectory with only a `hosts/` subdirectory            | also a user -- one who exists only on the hosts named there |
+| subdirectory with NEITHER file                            | ignored, WITH a warning naming the directory -- a scan guessed wrong, so it degrades to a warning rather than a throw |
 | a dotfile or dot-directory (`.gitkeep`, `.git`, ...)      | ignored, no warning |
-| anything else (a plain file, `README.md`, ...)            | ignored, no warning -- only a directory could ever be a registry entry, so a stray file is not a mistake worth flagging |
+| anything else (a plain file, `README.md`, ...)            | ignored, no warning -- only a directory could ever be a user, so a stray file is not a mistake worth flagging |
 
 A symlink is resolved and classified by what it points at, same rule as
 `discoverPatches`/`importIfNixOr`. A missing `dir` is not an error: it
@@ -931,7 +933,7 @@ to be, even for a caller who never set either up for this).
 ```nix
 # extLib = inputs.nixpkgs-lib-extensions.lib
 extLib.discoverUserRegistry (inputs.home-manager-config + "/users")
-=> { "dennis@*" = <path to .../users/dennis>; "root@*" = <path to .../users/root>; }
+=> { dennis = <path to .../users/dennis>; root = <path to .../users/root>; }
 ```
 
 ### Type
@@ -1003,8 +1005,9 @@ homeManagerBootstrapModule :: Attribute -> Module
 - **system**
   The system double, e.g. `"x86_64-linux"`.
 
-- **userRegistry**
-  The user registry (as in `mkNixosSystem`). Default `{ }`.
+- **users**
+  The users tree (`{ <username> = <directory>; }`, as `mkNixosSystem`
+  resolves it). Default `{ }`.
 
 - **loginHomes**
   The usernames whose homes are login-managed; only these are

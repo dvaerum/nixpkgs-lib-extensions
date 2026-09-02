@@ -31,7 +31,7 @@ pkgs.runCommand "home-manager-bootstrap-script-test" { } ''
   [ "$rc" -eq 64 ]
 
   # missing required arguments -> exit 64
-  rc=0; "$bootstrap" --users alice || rc=$?
+  rc=0; "$bootstrap" --user-attrs alice=alice@h || rc=$?
   [ "$rc" -eq 64 ]
 
   # a missing VALUE after --flake-ref/--hostname -> exit 64 with the
@@ -44,17 +44,17 @@ pkgs.runCommand "home-manager-bootstrap-script-test" { } ''
   echo "$msg" | grep -q "usage:"
 
   # user not in the list -> exit 0 and home-manager is NOT called
-  "$bootstrap" --flake-ref /f --hostname h --users bob carol
+  "$bootstrap" --flake-ref /f --hostname h --user-attrs bob=bob@h carol=carol@h
   [ ! -e "$RECORD" ]
 
   # a FAILING switch propagates the error and does NOT write the stamp,
   # so the next login retries
-  rc=0; HM_STUB_FAIL=1 "$bootstrap" --flake-ref /f --hostname h --users alice || rc=$?
+  rc=0; HM_STUB_FAIL=1 "$bootstrap" --flake-ref /f --hostname h --user-attrs alice=alice@h || rc=$?
   [ "$rc" -ne 0 ]
   [ ! -e "$HOME/.local/state/home-manager-bootstrap.stamp" ]
 
   # listed user -> home-manager switch is called for <user>@<host>
-  "$bootstrap" --flake-ref /f --hostname h --users alice bob
+  "$bootstrap" --flake-ref /f --hostname h --user-attrs alice=alice@h bob=bob@h
   grep -q "switch --flake /f#alice@h" "$RECORD"
   [ "$(wc -l < "$RECORD")" -eq 1 ]
   # ... and the stamp records the activation PARAMETERS, not emptiness
@@ -62,25 +62,25 @@ pkgs.runCommand "home-manager-bootstrap-script-test" { } ''
   [ "$(cat "$stamp")" = "/f#alice@h" ]
 
   # second login: stamp matches the current parameters -> NOT called again
-  "$bootstrap" --flake-ref /f --hostname h --users alice bob
+  "$bootstrap" --flake-ref /f --hostname h --user-attrs alice=alice@h bob=bob@h
   [ "$(wc -l < "$RECORD")" -eq 1 ]
 
   # STALE stamp content (parameters changed since it was written: another
   # flake ref, a mechanism migration, or a pre-content empty stamp) counts
   # as absent -> the bootstrap re-runs and rewrites the stamp
   printf '%s' "/old-ref#alice@h" > "$stamp"
-  "$bootstrap" --flake-ref /f --hostname h --users alice bob
+  "$bootstrap" --flake-ref /f --hostname h --user-attrs alice=alice@h bob=bob@h
   [ "$(wc -l < "$RECORD")" -eq 2 ]
   [ "$(cat "$stamp")" = "/f#alice@h" ]
 
   # ... the empty pre-content stamp explicitly: re-runs too
   : > "$stamp"
-  "$bootstrap" --flake-ref /f --hostname h --users alice bob
+  "$bootstrap" --flake-ref /f --hostname h --user-attrs alice=alice@h bob=bob@h
   [ "$(wc -l < "$RECORD")" -eq 3 ]
   [ "$(cat "$stamp")" = "/f#alice@h" ]
 
   # --reactivate-every-login ignores the stamp -> called again
-  "$bootstrap" --flake-ref /f --hostname h --reactivate-every-login --users alice bob
+  "$bootstrap" --flake-ref /f --hostname h --reactivate-every-login --user-attrs alice=alice@h bob=bob@h
   [ "$(wc -l < "$RECORD")" -eq 4 ]
 
   touch $out

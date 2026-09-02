@@ -87,8 +87,19 @@ in
   # `hostname` is declared only in the HOME variant -- a home has no
   # networking.hostName to read.
   ext-options-reach-login-homes =
-    aliceHome.config.nixpkgsLibExtensions.hostname == "laptop"
-    && aliceHome.config.nixpkgsLibExtensions.users == exampleUsers;
+    # alice's home is HOST-LESS (she has no hosts/<h> override), so the
+    # hostname option is null there -- see its own doc comment
+    aliceHome.config.nixpkgsLibExtensions.hostname == null
+    # a host-less home sees the users whose OWN directory carries config
+    # -- not bob, who exists only via a hosts/<h> override
+    &&
+      aliceHome.config.nixpkgsLibExtensions.users == [
+        "alice"
+        "dave"
+        "eve"
+        "frank"
+        "grace"
+      ];
 
   # ── tags MERGE now: builder argument + module contributions ──
   ext-tags-merge-from-modules =

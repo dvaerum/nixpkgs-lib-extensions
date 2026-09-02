@@ -12,7 +12,7 @@ let
   inherit (import ./registry.nix { inherit lib self; })
     resolveUser
     usersFromRegistry
-    resolveUserRegistry
+    resolveUsers
     ;
 in
 {
@@ -20,10 +20,9 @@ in
     core:
     {
       inputs,
-      hostname,
+      hostname ? null,
       system,
       username,
-      userRegistry ? { },
       homeModules ? [ ],
       tags ? [ ],
       group ? null,
@@ -39,21 +38,20 @@ in
         autoHomeModules
         ;
 
-      # loginFlakeRef/traceDiscoveredUsers are not this function's OWN
-      # arguments (a direct mkHomeConfiguration call has no login-bootstrap
-      # concept to auto-discover from) -- they only arrive here via the
-      # hosts-attrset path (homesFromPlan passes the host's full merged
-      # args), where the SAME resolution hosts-args.nix/mk-system.nix
-      # already ran must reach a login-managed user's OWN home too, or a
-      # user that only exists via auto-discovery would build no home.nix
-      # for anyone.
-      registry = resolveUserRegistry {
-        wasGiven = args ? userRegistry;
-        inherit userRegistry inputs hostname;
-        loginFlakeRef = args.loginFlakeRef or null;
-        traceDiscoveredUsers = args.traceDiscoveredUsers or true;
-      };
-      registryHomeModules = (resolveUser registry hostname username).homeModules;
+      # The users tree: scanned from `loginFlakeRef` when the homes live
+      # in another flake, else `rootPath` (this flake). `users` may also
+      # be handed in already-resolved by a plan, which is how a fleet
+      # shares one scan across every host and home.
+      userTree =
+        if args ? usersTree then
+          args.usersTree
+        else
+          resolveUsers {
+            ref = args.loginFlakeRef or (args.rootPath or (inputs.self or null));
+            label = if hostname == null then "${username}" else "${username}@${hostname}";
+            traceDiscoveredUsers = args.traceDiscoveredUsers or true;
+          };
+      registryHomeModules = (resolveUser userTree hostname username).homeModules;
     in
     (
       if home-manager == null then
@@ -63,9 +61,11 @@ in
         ''
       else if registryHomeModules == [ ] then
         throw ''
-          mkHomeConfiguration: `${username}` has no home.nix in
-          `userRegistry` matching host `${hostname}` (unmatched keys,
-          or a system-only entry shipping just a configuration.nix).
+          mkHomeConfiguration: `${username}` has no home.nix in the users
+          tree${
+            if hostname == null then "" else " for host `${hostname}`"
+          } (no such user directory, or a system-only one shipping just a
+          configuration.nix).
         ''
       else
         home-manager.lib.homeManagerConfiguration {
@@ -79,14 +79,15 @@ in
           modules =
             autoHomeModules
             ++ homeModules
-            # all matched home.nix files: "<user>@*" and "<user>@<host>" merge
+            # every matched home.nix: the user's own, plus their
+            # hosts/<hostname> override when this home is built for a host
             ++ registryHomeModules
             ++ [
               # the same `nixpkgsLibExtensions.*` options a SYSTEM-managed
               # home gets via home-manager.sharedModules (mk-system.nix)
               (extHomeOptionsModule {
                 inherit hostname group tags;
-                users = usersFromRegistry registry hostname;
+                users = usersFromRegistry userTree hostname;
                 inherit (ctx) inputPkgs channels;
               })
               # home.stateVersion default (current release) -- with a

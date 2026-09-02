@@ -473,7 +473,11 @@ let
     givenCore:
     {
       inputs,
-      hostname,
+      # `null` for a HOST-LESS home (`homeConfigurations."<user>"`): the
+      # context itself is host-independent (mkContextCore never sees a
+      # hostname at all), so this only reaches specialArgs and the
+      # shadow-check message.
+      hostname ? null,
       specialArgs ? { },
       # a throw, not a silent nonsense default: without inputs.self the
       # old `./.` fallback pointed INSIDE this library's own store tree,

@@ -215,7 +215,6 @@ in
       inherit inputs system;
       hostname = "laptop";
       username = "alice";
-      userRegistry."alice" = exampleDir + "/users/alice";
       homeModules = [
         (
           { inputs, ... }:
@@ -319,7 +318,6 @@ in
       inherit inputs system;
       hostname = "laptop";
       username = "alice";
-      userRegistry."alice" = exampleDir + "/users/alice";
       homeModules = [
         (
           { lib, ... }:
@@ -477,7 +475,6 @@ in
         inherit inputs system;
         hostname = "laptop";
         username = "alice";
-        userRegistry."alice" = exampleDir + "/users/alice";
         inputContributions."fake-module-input" = null;
       };
     in
@@ -618,7 +615,6 @@ in
       inherit system;
       hostname = "laptop";
       username = "alice";
-      userRegistry."alice" = exampleDir + "/users/alice";
       homeManager = inputs.home-manager;
     }).config.home.username == "alice";
 

@@ -36,7 +36,7 @@ let
           };
           inherit system;
           hostname = "vmhost";
-          userRegistry."alice" = ../example/users/alice;
+          users.alice = ../example/users/alice;
           loginHomes = [ "alice" ];
         }
         // extraBootstrapArgs

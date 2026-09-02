@@ -8,12 +8,13 @@
 #   --flake-ref <ref>          flake reference to build from
 #   --hostname <name>          this host's name
 #   --reactivate-every-login   re-activate on every login (default: first login only)
-#   --users <user>...          users that have a home config (must come LAST)
+#   --user-attrs <user>=<attr>...  users to bootstrap and the flake
+#                             attribute each activates (must come LAST)
 #
 # Runs in the background (oneshot service) so it never hard-blocks the login.
 
 usage() {
-  echo "usage: home-manager-bootstrap --flake-ref <ref> --hostname <name> [--reactivate-every-login] --users <user>..." >&2
+  echo "usage: home-manager-bootstrap --flake-ref <ref> --hostname <name> [--reactivate-every-login] --user-attrs <user>=<attr>..." >&2
 }
 
 # a missing VALUE after an option is a usage error (exit 64), not a
@@ -27,7 +28,7 @@ require_value() {
 flake_ref=""
 hostname=""
 reactivate=0
-users=()
+user_attrs=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -45,9 +46,9 @@ while [ $# -gt 0 ]; do
       reactivate=1
       shift
       ;;
-    --users)
+    --user-attrs)
       shift
-      users=("$@")
+      user_attrs=("$@")
       break
       ;;
     *)
@@ -64,15 +65,19 @@ if [ -z "${flake_ref}" ] || [ -z "${hostname}" ]; then
   exit 64
 fi
 
-# Only act for users that have a resolved home configuration.
-found=0
-for user in "${users[@]}"; do
-  if [ "${user}" = "${USER}" ]; then
-    found=1
+# Only act for users that have a resolved home configuration. Each entry
+# is `<user>=<attr>`: the flake attribute to switch to, resolved at BUILD
+# time by homeManagerBootstrapModule (see its `attrFor`) rather than
+# reconstructed here -- this script cannot see the target flake's outputs,
+# so a name guessed here would fail at login on one machine, invisibly.
+attr=""
+for pair in "${user_attrs[@]}"; do
+  if [ "${pair%%=*}" = "${USER}" ]; then
+    attr="${pair#*=}"
     break
   fi
 done
-if [ "${found}" != "1" ]; then
+if [ -z "${attr}" ]; then
   exit 0
 fi
 
@@ -82,13 +87,13 @@ fi
 # the stamp predates content-carrying stamps -- counts as absent, so the
 # bootstrap re-runs instead of skipping on stale state.
 stamp="${XDG_STATE_HOME:-${HOME}/.local/state}/home-manager-bootstrap.stamp"
-stamp_params="${flake_ref}#${USER}@${hostname}"
+stamp_params="${flake_ref}#${attr}"
 if [ "${reactivate}" != "1" ] && [ -e "${stamp}" ] \
   && [ "$(cat "${stamp}")" = "${stamp_params}" ]; then
   exit 0
 fi
 
-home-manager switch --flake "${flake_ref}#${USER}@${hostname}"
+home-manager switch --flake "${flake_ref}#${attr}"
 
 mkdir -p "$(dirname "${stamp}")"
 printf '%s' "${stamp_params}" > "${stamp}"

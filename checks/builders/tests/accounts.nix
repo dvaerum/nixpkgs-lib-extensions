@@ -56,11 +56,11 @@ in
         (mkProbeSystem {
           inherit inputs system;
           hostname = "sysuser";
+          users = null;
           modules = [
             (exampleDir + "/hosts/server/configuration.nix")
             { users.users.eve.isSystemUser = true; }
           ];
-          userRegistry."eve" = exampleDir + "/users/eve";
         }).config;
       failed = builtins.filter (a: !a.assertion) cfg.assertions;
     in
@@ -77,7 +77,8 @@ in
           inherit inputs system;
           hostname = "rootentry";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-          userRegistry."root" = exampleDir + "/users/alice";
+          users = null;
+          rootPath = fixturesDir + "/tree-root";
         }).config;
     in
     !cfg.users.users.root.isNormalUser
@@ -99,7 +100,8 @@ in
           inherit inputs system;
           hostname = "uid999";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-          userRegistry."svc" = fixturesDir + "/uid-999";
+          users = null;
+          rootPath = fixturesDir + "/tree-uid999";
         }).config;
     in
     cfg.users.users.svc.uid == 999
@@ -115,7 +117,8 @@ in
           inherit inputs system;
           hostname = "uid1000";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-          userRegistry."meg" = fixturesDir + "/uid-1000";
+          users = null;
+          rootPath = fixturesDir + "/tree-uid1000";
         }).config;
     in
     cfg.users.users.meg.uid == 1000
@@ -146,7 +149,6 @@ in
         inherit inputs system;
         hostname = "noaccounts";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-        userRegistry."alice" = exampleDir + "/users/alice";
         loginHomes = [ "alice" ];
         userModule = null;
       }).config.users.users ? alice

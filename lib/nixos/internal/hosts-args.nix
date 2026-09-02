@@ -14,9 +14,11 @@ let
   inherit (import ./mk-home.nix { inherit lib self; }) mkHome;
   inherit (import ./registry.nix { inherit lib self; })
     validateLoginUsers
-    validateRegistryKeys
     loginUsersWithHome
-    resolveUserRegistry
+    resolveUser
+    resolveUsers
+    discoverHostsForUser
+    filterUsers
     ;
   inherit (import ./inputs.nix { inherit lib self; }) detectHomeManager;
 
@@ -34,7 +36,7 @@ let
     "rootPath"
     "modules"
     "userModule"
-    "userRegistry"
+    "users"
     "loginHomes"
     "homeModules"
     "loginFlakeRef"
@@ -350,6 +352,19 @@ let
     fnName: hosts:
     let
       split = splitHostsArgs fnName hosts;
+      # ONE users-tree scan for the whole plan. Every host in a fleet
+      # normally shares `_defaults`' inputs/loginFlakeRef, so scanning per
+      # host would repeat identical work and (worse) repeat the discovery
+      # trace once per host for one real scan.
+      usersTree = resolveUsers {
+        ref =
+          if (split.defaults.loginFlakeRef or null) != null then
+            split.defaults.loginFlakeRef
+          else
+            (split.defaults.rootPath or (split.defaults.inputs.self or null));
+        label = fnName;
+        traceDiscoveredUsers = split.defaults.traceDiscoveredUsers or true;
+      };
       coreArgSet = lib.listToAttrs (
         map (n: {
           name = n;
@@ -482,21 +497,10 @@ let
       # Lazy: a host nobody forces costs nothing beyond tuple comparisons.
       core = coreFor hostname;
       # Normalized ONCE here so every consumer of the plan sees the
-      # SAME attrset -- `null` is a documented "no users" value, and an
-      # OMITTED key auto-discovers from `loginFlakeRef` (see
-      # resolveUserRegistry's own comment); mk-system.nix/mk-home.nix
-      # independently run the exact same resolution for the values THEY
-      # read directly (a pure function of the same inputs, so it never
-      # disagrees -- just possibly recomputed, and possibly traced more
-      # than once per host as a result).
-      registry = resolveUserRegistry {
-        wasGiven = args ? userRegistry;
-        userRegistry = args.userRegistry or { };
-        inherit (args) inputs;
-        loginFlakeRef = args.loginFlakeRef or null;
-        traceDiscoveredUsers = args.traceDiscoveredUsers or true;
-        inherit hostname;
-      };
+      # SAME tree for every consumer of the plan, scanned ONCE (see
+      # `usersTree` above) rather than per host -- mk-system.nix/mk-home.nix
+      # take it from here via `args.users` instead of rescanning.
+      registry = usersTree;
     }) mergedArgs;
 
   # A loginHomes typo is otherwise silent: the home flips to the
@@ -506,54 +510,164 @@ let
   # at all is a typo.
   planLoginUsers =
     fnName: plan:
-    lib.seq (validateRegistryKeys fnName (map (p: p.registry) (lib.attrValues plan))) validateLoginUsers
-      fnName
-      (
-        lib.attrValues (
-          lib.mapAttrs (hostname: p: {
-            inherit hostname;
-            # the plan's NORMALIZED registry: `userRegistry = null` is a
-            # documented value, and `p.args.userRegistry or { }` waves the
-            # null through `or` -- straight into lib.attrNames, as a bare
-            # type error naming no function and no host
-            registry = p.registry;
-            loginHomes = p.args.loginHomes or [ ];
-          }) plan
-        )
-      );
+    validateLoginUsers fnName (
+      lib.attrValues (
+        lib.mapAttrs (hostname: p: {
+          inherit hostname;
+          registry = p.registry;
+          loginHomes = p.args.loginHomes or [ ];
+        }) plan
+      )
+    );
 
   # The two projections of a plan. Kept here so buildNixosConfigurations,
   # buildHomeConfigurations and buildConfigurations are literally the same
   # code applied to the same plan.
   systemsFromPlan =
     fnName: plan:
-    lib.seq (planLoginUsers fnName plan) (lib.mapAttrs (_: p: mkSystem p.core p.args) plan);
+    lib.seq (planLoginUsers fnName plan) (
+      lib.mapAttrs (_: p: mkSystem p.core (p.args // { usersTree = p.registry; })) plan
+    );
 
-  homesFromPlan =
+  # STANDALONE user-centric homes: no `hosts` attrset at all, so there is
+  # no declared host list and no per-host build settings -- one flat
+  # argument set, ONE context core, and the host dimension discovered
+  # entirely from the users tree (`users/<u>/hosts/<h>/`).
+  #
+  # This is what a home-manager-only flake calls. A fleet that also builds
+  # NixOS systems uses buildConfigurations instead, where per-host homes
+  # reuse each host's own core (see userHomesFromPlan).
+  userHomesStandalone =
+    fnName: args:
+    let
+      checked = validateBuilderArgs fnName [ ] args;
+      core = mkContextCore checked;
+      tree = resolveUsers {
+        ref =
+          if (checked.loginFlakeRef or null) != null then
+            checked.loginFlakeRef
+          else
+            (checked.rootPath or (checked.inputs.self or null));
+        label = fnName;
+        traceDiscoveredUsers = checked.traceDiscoveredUsers or true;
+      };
+      homeFor =
+        username: hostname:
+        mkHome core (
+          checked
+          // {
+            inherit username hostname;
+            usersTree = tree;
+          }
+        );
+      bare = lib.filter (u: (resolveUser tree null u).homeModules != [ ]) (lib.attrNames tree);
+      pairs = lib.concatMap (
+        u:
+        map
+          (h: {
+            inherit u h;
+          })
+          (
+            lib.filter (h: (resolveUser tree h u).homeModules != [ ]) (discoverHostsForUser (tree.${u} or null))
+          )
+      ) (lib.attrNames tree);
+    in
+    if detectHomeManager (checked.inputs or { }) == null && (checked.homeManager or null) == null then
+      { }
+    else
+      lib.listToAttrs (
+        map (u: {
+          name = u;
+          value = homeFor u null;
+        }) bare
+      )
+      // lib.listToAttrs (
+        map (e: {
+          name = "${e.u}@${e.h}";
+          value = homeFor e.u e.h;
+        }) pairs
+      );
+
+  # USER-CENTRIC home projection. Users come from the plan's shared
+  # users tree; the host dimension exists only where a user actually has
+  # a `hosts/<hostname>` override directory:
+  #
+  #   users/dennis/home.nix               -> "dennis"
+  #   users/dennis/hosts/laptop/home.nix  -> "dennis@laptop"
+  #
+  # Both keys when both exist: `"dennis"` is the default-anywhere profile
+  # (buildable on a machine the tree has never heard of), `"dennis@laptop"`
+  # is that profile with the laptop override merged on top. Suppressing
+  # the bare key as soon as any `hosts/` folder appeared would mean adding
+  # one machine-specific override silently removed the ability to
+  # `switch --flake .#dennis` anywhere else.
+  #
+  # A `"<user>@<host>"` home is built against THAT host's core -- the same
+  # `mkContextCore` thunk `systemsFromPlan` uses for its system, so it
+  # costs no extra nixpkgs evaluation. A host-less home uses the
+  # defaults-class core.
+  userHomesFromPlan =
     fnName: plan:
     lib.seq (planLoginUsers fnName plan) (
-      lib.foldl' (
-        acc: hostname:
-        let
-          p = plan.${hostname};
-          # login-managed users that actually ship a home.nix on this host
-          usersHome = loginUsersWithHome p.registry hostname (p.args.loginHomes or [ ]);
-        in
-        # a host with no home-manager contributes nothing. An explicit
-        # `homeManager` counts as having one WITHOUT re-running detection --
-        # that argument exists to bypass it.
-        if (p.args.homeManager or null) == null && detectHomeManager (p.args.inputs or { }) == null then
-          acc
-        else
-          acc
-          // lib.listToAttrs (
-            map (username: {
-              name = "${username}@${hostname}";
-              value = mkHome p.core (p.args // { inherit username; });
-            }) usersHome
-          )
-      ) { } (lib.attrNames plan)
+      let
+        anyHost = lib.head (lib.attrNames plan);
+        tree = if plan == { } then { } else plan.${anyHost}.registry;
+        # a plan whose hosts have no home-manager contributes nothing; an
+        # explicit `homeManager` counts as having one WITHOUT re-running
+        # detection -- that argument exists to bypass it.
+        hasHomeManager =
+          p: (p.args.homeManager or null) != null || detectHomeManager (p.args.inputs or { }) != null;
+
+        # host-less homes, one per user with a home.nix of their own
+        bare = lib.listToAttrs (
+          map (u: {
+            name = u;
+            value = mkHome plan.${anyHost}.core (
+              plan.${anyHost}.args
+              // {
+                username = u;
+                hostname = null;
+                usersTree = tree;
+              }
+            );
+          }) (lib.filter (u: (resolveUser tree null u).homeModules != [ ]) (lib.attrNames tree))
+        );
+
+        # per-host homes, one per (user, hosts/<host>) override that a
+        # DECLARED host in this plan matches
+        perHost = lib.foldl' (
+          acc: hostname:
+          let
+            p = plan.${hostname};
+            # a host's own `users` filter narrows its homes as well as its
+            # accounts, so `users = [ ]` really means "nothing here"
+            hostTree = filterUsers fnName hostname (p.args.users or null) tree;
+            usersHere = lib.filter (u: lib.elem hostname (discoverHostsForUser (hostTree.${u} or null))) (
+              lib.attrNames hostTree
+            );
+          in
+          if !(hasHomeManager p) then
+            acc
+          else
+            acc
+            // lib.listToAttrs (
+              map (u: {
+                name = "${u}@${hostname}";
+                value = mkHome p.core (
+                  p.args
+                  // {
+                    username = u;
+                    inherit hostname;
+                    usersTree = tree;
+                  }
+                );
+              }) (lib.filter (u: (resolveUser hostTree hostname u).homeModules != [ ]) usersHere)
+            )
+        ) { } (lib.attrNames plan);
+      in
+      if plan == { } || !(hasHomeManager plan.${anyHost}) then { } else bare // perHost
     );
+
 in
 {
   inherit
@@ -565,6 +679,7 @@ in
     hostsProblems
     planHosts
     systemsFromPlan
-    homesFromPlan
+    userHomesFromPlan
+    userHomesStandalone
     ;
 }

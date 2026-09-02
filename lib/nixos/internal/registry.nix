@@ -1,6 +1,6 @@
-# userRegistry machinery for the lib/nixos builders: matching entries to
-# a user on a host, validating entry directories, and deriving a host's
-# user lists from the registry keys. One of the concern-files
+# The users tree for the lib/nixos builders: matching a user's directory
+# (and its `hosts/<host>` override) to a user on a host, validating those
+# directories, and deriving a host's user lists. One of the concern-files
 # aggregated by ./shared.nix (which documents the shared `{ lib, self, ... }`
 # calling convention).
 { lib, self, ... }:
@@ -14,147 +14,145 @@ let
     && lib.pathExists entry
     && builtins.readFileType entry == "directory";
 
-  # The registry entries that apply for `username` on `hostname`:
-  # "<user>@<host>" and "<user>@*" both apply (and merge); the plain "<user>"
-  # entry is a standalone default, used ONLY when no @-entry matched -- it is
-  # never merged with @-entries (import it explicitly from another entry to
-  # reuse it). A plain entry shadowed by @-entries triggers a warning.
+  # The directories that apply for `username` on `hostname`, in merge order.
   #
-  # A "<user>@*" entry ALSO auto-detects a `hosts/<hostname>` subdirectory
-  # and merges it in like an explicit "<user>@<hostname>" entry would --
-  # see `mkNixosSystem`'s doc comment (`docs/lib.md`, `userRegistry`) for
-  # the full convention and the ambiguous-entry throw. Scoped to "@*"
-  # only: a plain "<user>" entry's directory is never auto-scanned,
-  # consistent with plain entries never merging with anything else
-  # (unlike the plain-vs-@ shadowing above, which has one simple,
-  # predictable winner, the folder-vs-explicit-key clash throws instead
-  # of picking one).
-  matchedEntries =
-    userRegistry: hostname: username:
+  # A user is ONE directory under the users tree; there are no registry
+  # keys and no key forms. The base directory applies everywhere, and its
+  # `hosts/<hostname>` subdirectory -- when one exists -- merges on top,
+  # host-specific config layered over the shared config. `hostname == null`
+  # means a HOST-LESS home (`homeConfigurations."<user>"`): the base
+  # directory alone, never descending into `hosts/`, because a host-less
+  # home by definition has no host whose overrides could apply.
+  #
+  # A user with ONLY `hosts/<h>` subdirectories (no home.nix or
+  # configuration.nix of their own) exists on those hosts and nowhere
+  # else -- that is how "this user is only on this machine" is spelled.
+  entryDirsFor =
+    users: hostname: username:
     let
-      wildcardEntry = userRegistry."${username}@*" or null;
-      explicitHostEntry = userRegistry."${username}@${hostname}" or null;
-      autoHostDir =
-        if wildcardEntry != null && isDirEntry wildcardEntry then
-          wildcardEntry + "/hosts/${hostname}"
-        else
-          null;
-      autoHostEntry = if autoHostDir != null && isDirEntry autoHostDir then autoHostDir else null;
-      hostEntry =
-        if explicitHostEntry != null && autoHostEntry != null then
-          throw ''
-            userRegistry: `${username}@${hostname}` is ambiguous -- both an explicit registry entry (${toString explicitHostEntry}) and an auto-detected `hosts/${hostname}` folder under the `${username}@*` entry (${toString autoHostEntry}) claim it. Remove one: delete the explicit `"${username}@${hostname}"` key to use the auto-detected folder, or delete/rename the `hosts/${hostname}` folder to use the explicit entry.
-          ''
-        else if explicitHostEntry != null then
-          explicitHostEntry
-        else
-          autoHostEntry;
-      atTier = lib.filter (e: e != null) [
-        wildcardEntry
-        hostEntry
-      ];
-      fallback = userRegistry.${username} or null;
+      base = users.${username} or null;
+      hostDir = if base != null && hostname != null then base + "/hosts/${hostname}" else null;
+      # A directory contributes only if it actually carries config. A base
+      # directory that is just a container for `hosts/` (a user who exists
+      # only on specific machines) contributes nothing here rather than
+      # being an error -- entryFiles still throws for a directory that
+      # carries neither file AND has no hosts/ reason to exist.
+      carriesConfig =
+        d:
+        d != null
+        && isDirEntry d
+        && (lib.pathExists (d + "/home.nix") || lib.pathExists (d + "/configuration.nix"));
     in
-    if atTier != [ ] then
-      (
-        if fallback != null then
-          lib.warn ''
-            userRegistry: the plain `${username}` entry is IGNORED on host
-            `${hostname}` because `${username}@...` entries exist. Plain entries
-            are standalone defaults, never merged with @-entries; import the
-            directory explicitly from an @-entry if you want to reuse it.
-          '' atTier
-        else
-          atTier
-      )
-    else if fallback != null then
-      [ fallback ]
-    else
-      [ ];
+    lib.filter carriesConfig [
+      base
+      hostDir
+    ];
 
-  # An absolute path STRING still works as a registry entry, but a
-  # CONTEXT-FREE one (hand-typed: `"/home/me/users/alice"`) is a pure-eval
-  # hazard: unlike a path VALUE it is never copied into the store, so it
-  # escapes the flake -- the build depends on whatever happens to sit at
-  # that filesystem location, and pure evaluation (`nix flake check`, CI)
-  # refuses to read it outright.
-  #
-  # A string built by concatenating onto a flake INPUT
-  # (`inputs.foo + "/users/alice"`) is NOT the same hazard, despite also
-  # being a string: Nix strings can carry "context" -- an invisible record
-  # of which store paths they reference -- and `+` onto an input inherits
-  # it. Confirmed empirically, not assumed: `builtins.hasContext` is true
-  # for the concatenated form and false for a hand-typed one, and
-  # `readDir`/`pathExists`/`readFile` all work on the concatenated form
-  # under PURE evaluation (no `--impure`). An earlier version of this
-  # comment (and this library's own docs) claimed the concatenated form
-  # "fails under pure evaluation" and had "no fix on this side of the
-  # boundary" -- that was wrong, caught by testing the actual claim rather
-  # than trusting it. Only the context-free lane still warns.
-  #
-  # Warned, not thrown; message exported as data so the tests can pin the
-  # TEXT (a warning is not observable in-language, unlike a throw).
-  stringPathEntryWarning =
-    username: entry:
-    "nixpkgs-lib-extensions: the userRegistry entry for `${username}` is an absolute path STRING with no store context (${entry}). Such a string is never copied into the flake's store copy, so it escapes the flake and pure evaluation (`nix flake check`, CI) refuses to read it. Write a path value instead (e.g. `./users/${username}`) -- or, if this directory lives in ANOTHER flake input, concatenate onto the input directly (`inputs.foo + \"/users/${username}\"`): unlike a hand-typed string, that produces a string WITH context (store-pinned, pure-eval-safe), which this library accepts without warning.";
+  # The `hosts/<hostname>` subdirectories a user's directory carries --
+  # the hostnames that user has machine-specific config for. Same
+  # classification rules as `discoverUserRegistry`'s own scan of the users
+  # tree (see its doc comment): a subdirectory counts when it ships
+  # `home.nix` and/or `configuration.nix`, a dotfile or non-directory is
+  # skipped silently, and a directory with neither file warns rather than
+  # being silently ignored.
+  discoverHostsForUser =
+    userDir:
+    let
+      hostsDir = userDir + "/hosts";
+      entriesProbe = builtins.tryEval (
+        if isDirEntry userDir && lib.pathExists hostsDir then builtins.readDir hostsDir else { }
+      );
+      entries = if entriesProbe.success then entriesProbe.value else { };
+
+      # readDir reports "symlink" without following it, so a link is
+      # reclassified by what it resolves to -- same rule as
+      # discoverUserRegistry/discoverPatches. `toString ... + "/."`, NOT
+      # `... + "/."`: the latter stays a Nix PATH value and Nix silently
+      # normalizes away a trailing "/." when constructing one.
+      resolvedType =
+        name: rawType:
+        if rawType != "symlink" then
+          rawType
+        else if builtins.pathExists (toString (hostsDir + "/${name}") + "/.") then
+          "directory"
+        else
+          "regular";
+
+      classify =
+        name:
+        if lib.hasPrefix "." name then
+          "dotfile"
+        else if resolvedType name entries.${name} != "directory" then
+          "notDirectory"
+        else if
+          lib.pathExists (hostsDir + "/${name}/home.nix")
+          || lib.pathExists (hostsDir + "/${name}/configuration.nix")
+        then
+          "host"
+        else
+          "malformed";
+
+      classified = map (name: {
+        inherit name;
+        class = classify name;
+      }) (builtins.attrNames entries);
+
+      hosts = map (e: e.name) (lib.filter (e: e.class == "host") classified);
+      malformed = lib.filter (e: e.class == "malformed") classified;
+
+      warnMsg =
+        e:
+        "nixpkgs-lib-extensions: ${toString hostsDir}/${e.name}: a directory with neither home.nix nor configuration.nix, ignoring it as a per-host override.";
+    in
+    lib.foldl' (acc: e: lib.warn (warnMsg e) acc) hosts malformed;
 
   # `loginFlakeRef` as a STRING (not a flake input) is a deliberate escape
   # hatch for a MUTABLE ref home-manager reads LIVE at login, not the
   # immutable store copy an input gives -- see mk-nixos-system.nix's own
-  # doc comment. Warned, same "warn, don't remove" treatment as
-  # stringPathEntryWarning above, and for the same reason: message
-  # exported as data so tests can pin the TEXT.
+  # doc comment. Warned rather than rejected, and the message is exported
+  # as data so tests can pin the TEXT (a warning is not observable
+  # in-language, unlike a throw).
   stringFlakeRefWarning =
     hostname: ref:
-    "nixpkgs-lib-extensions: host `${hostname}`: loginFlakeRef is a string (\"${ref}\"), not a flake input -- home-manager will read it LIVE at login (a mutable checkout, or whatever a remote ref currently resolves to), not the immutable store copy an input gives, and userRegistry auto-discovery (see its own doc comment) never applies to it either, since a raw string has no attributes to read. Intended? No action needed. Otherwise pass a flake input instead (e.g. `loginFlakeRef = inputs.self;`, the default).";
+    "nixpkgs-lib-extensions: host `${hostname}`: loginFlakeRef is a string (\"${ref}\"), not a flake input -- home-manager will read it LIVE at login (a mutable checkout, or whatever a remote ref currently resolves to), not the immutable store copy an input gives, and the users tree cannot be scanned from it at evaluation time either, since a raw string has no attributes to read. Intended? No action needed. Otherwise pass a flake input instead (e.g. `loginFlakeRef = inputs.self;`, the default).";
 
-  # Validate one registry entry and return its parts. Every entry must be a
-  # directory shipping `home.nix` (home-manager config) and/or
-  # `configuration.nix` (NixOS config for that user: account, groups, ...).
+  # Validate one user directory and return its parts. Every directory that
+  # counts as a user (or as a per-host override) must ship `home.nix`
+  # (home-manager config) and/or `configuration.nix` (NixOS config for that
+  # user: account, groups, ...).
   entryFiles =
     username: entry:
     let
-      shown =
-        if lib.isPath entry || lib.isString entry then
-          toString entry
-        else
-          "a value of type `${builtins.typeOf entry}`";
+      shown = toString entry;
       hasHome = lib.pathExists (entry + "/home.nix");
       hasConf = lib.pathExists (entry + "/configuration.nix");
-      # Only a CONTEXT-FREE string warns -- see stringPathEntryWarning's
-      # own comment for why a context-carrying one (from concatenating
-      # onto a flake input) is not the hazard this guards against.
-      warnStringEntry =
-        parts:
-        if lib.isString entry && !(builtins.hasContext entry) then
-          lib.warn (stringPathEntryWarning username entry) parts
-        else
-          parts;
     in
     if !(isDirEntry entry) then
       throw ''
-        The userRegistry entry for `${username}` must be an existing
-        directory (as a path), but got: ${shown}
+        The users-tree directory for `${username}` must be an existing
+        directory, but got: ${shown}
       ''
     else if !hasHome && !hasConf then
       throw ''
-        The userRegistry directory for `${username}` (${shown})
+        The users-tree directory for `${username}` (${shown})
         contains neither a `home.nix` nor a `configuration.nix`.
       ''
     else
-      warnStringEntry {
+      {
         homeModule = if hasHome then entry + "/home.nix" else null;
         nixosModule = if hasConf then entry + "/configuration.nix" else null;
       };
 
-  # Everything that applies for a user on a host, across the matched entries:
+  # Everything that applies for a user on a host, across the matched
+  # directories (base, then the `hosts/<hostname>` override):
   # `homeModules` for home-manager, `nixosModules` for the system. A user
-  # whose matched entries only ship configuration.nix is system-only
+  # whose directories only ship configuration.nix is system-only
   # (homeModules == [ ]): no home output, no login bootstrap.
+  # `hostname == null` resolves the host-less form -- see entryDirsFor.
   resolveUser =
-    userRegistry: hostname: username:
+    users: hostname: username:
     let
-      parts = map (entryFiles username) (matchedEntries userRegistry hostname username);
+      parts = map (entryFiles username) (entryDirsFor users hostname username);
       nonNull = lib.filter (x: x != null);
     in
     {
@@ -162,91 +160,44 @@ let
       nixosModules = nonNull (map (p: p.nixosModule) parts);
     };
 
-  # A registry key that can never match anything, or that names an empty
-  # user. `usersFromRegistry` drops `"alice@"` (its host part matches no
-  # host and not `*`) while `registryUserNames` keeps `alice` -- so the two
-  # parsers disagreed and `loginHomes = [ "alice" ]` passed validation for a
-  # user no host had. `"@laptop"` is the mirror image: it produced a real
-  # account named "" , a group named "", and a ZFS dataset `HOME/`.
-  badRegistryKey =
-    key:
-    let
-      m = builtins.match "(.*)@(.*)" key;
-    in
-    if key == "" then
-      "the empty string is not a user name"
-    else if m == null then
-      null
-    else if lib.head m == "" then
-      "it has no user before the `@`"
-    else if lib.elemAt m 1 == "" then
-      "it has no host after the `@` (write `${lib.head m}` for every host, or `${lib.head m}@*`)"
-    else
-      null;
-
-  validateRegistryKeys =
-    fnName: registries:
-    let
-      problems = lib.concatLists (
-        map (
-          r:
-          lib.concatLists (
-            map (
-              key:
-              let
-                bad = badRegistryKey key;
-              in
-              if bad == null then [ ] else [ "- `${key}`: ${bad}." ]
-            ) (lib.attrNames r)
-          )
-        ) registries
-      );
-    in
-    if problems == [ ] then
-      null
-    else
-      throw ''
-        ${fnName}: unusable userRegistry key(s):
-        ${lib.concatStringsSep "
-" problems}
-      '';
-
-  # The users of a host, derived from the registry keys: "<user>@<host>" entries
-  # for this host, "<user>@*" wildcard entries (every host), plus plain
-  # "<user>" fallback entries (any host). Deduplicated (and sorted) via the
-  # listToAttrs/attrNames round-trip.
+  # The users of a host: every user in the tree whose base directory
+  # applies, plus every user who exists ONLY via a `hosts/<hostname>`
+  # subdirectory for THIS host. A user with neither is not on this host.
+  # Sorted and deduplicated by the attrNames round-trip.
   usersFromRegistry =
-    userRegistry: hostname:
-    let
-      toUser =
-        key:
-        let
-          m = builtins.match "(.*)@(.*)" key;
-          host = lib.elemAt m 1;
-        in
-        if m == null then
-          key
-        else if host == hostname || host == "*" then
-          lib.head m
-        else
-          null;
-      names = lib.filter (u: u != null) (map toUser (lib.attrNames userRegistry));
-    in
-    lib.attrNames (
-      lib.listToAttrs (
-        map (u: {
-          name = u;
-          value = null;
-        }) names
-      )
-    );
+    users: hostname:
+    lib.filter (
+      u:
+      (resolveUser users hostname u).homeModules != [ ]
+      || (resolveUser users hostname u).nixosModules != [ ]
+    ) (lib.attrNames users);
+
+  # Apply a host's own `users` filter to the tree: omitted (null) means
+  # every user in the tree applies -- the default -- while a list selects
+  # exactly those, and `[ ]` gives a host with no users at all (what an
+  # empty `userRegistry` used to say). Names that are not in the tree are
+  # a typo and throw, same bar as `loginHomes`.
+  filterUsers =
+    fnName: hostname: selection: tree:
+    if selection == null then
+      tree
+    else
+      let
+        unknown = lib.filter (u: !(tree ? ${u})) selection;
+      in
+      if unknown != [ ] then
+        throw "${fnName}: host `${hostname}`: `users` names ${lib.concatStringsSep ", " unknown}, which is not a user in the users tree (typo?). Users in the tree: ${
+          if tree == { } then "(none)" else lib.concatStringsSep ", " (lib.attrNames tree)
+        }."
+      else
+        lib.filterAttrs (u: _: lib.elem u selection) tree;
 
   # The subset of the host's users (usersFromRegistry) that actually have a
   # home configuration.
   usersWithHome =
-    userRegistry: hostname:
-    lib.filter (u: (resolveUser userRegistry hostname u).homeModules != [ ]) (
-      usersFromRegistry userRegistry hostname
+    users: hostname:
+    lib.filter (u: (resolveUser users hostname u).homeModules != [ ]) (
+      usersFromRegistry users hostname
     );
 
   # The login-managed users that actually ship a home.nix on this host:
@@ -254,35 +205,25 @@ let
   # a "<user>@<host>" flake output (buildHomeConfigurations) and that the
   # login bootstrap activates (homeManagerBootstrapModule).
   loginUsersWithHome =
-    userRegistry: hostname: loginHomes:
-    lib.filter (u: lib.elem u loginHomes) (usersWithHome userRegistry hostname);
+    users: hostname: loginHomes:
+    lib.filter (u: lib.elem u loginHomes) (usersWithHome users hostname);
 
   # Every user NAME these registries mention, taken from the keys and
   # ignoring which host each key targets. Deliberately not
   # `usersFromRegistry`: a `"bob@laptop"` entry means the registry knows
   # bob, even in a call that only builds `server`. The question this
   # answers is "is this a user at all", not "does it apply here".
+  # Every user NAME these user trees mention. Deliberately the union
+  # across trees rather than per-host: the question this answers is "is
+  # this a user at all", not "does it apply here".
   registryUserNames =
     registries:
     lib.attrNames (
       lib.listToAttrs (
-        map
-          (u: {
-            name = u;
-            value = null;
-          })
-          (
-            lib.concatMap (
-              r:
-              map (
-                key:
-                let
-                  m = builtins.match "(.*)@(.*)" key;
-                in
-                if m == null then key else lib.head m
-              ) (lib.attrNames r)
-            ) registries
-          )
+        map (u: {
+          name = u;
+          value = null;
+        }) (lib.concatMap lib.attrNames registries)
       )
     );
 
@@ -295,7 +236,8 @@ let
   # A name is only an error when NO registry mentions it at all: a name
   # that simply does not apply to a given host stays legal, because one
   # shared `loginHomes` in `_defaults` across a fleet -- and per-host
-  # `"<user>@<host>"` keys -- are the documented way to use it.
+  # `hosts/<host>/` override directories -- are the documented way to
+  # use it.
   validateLoginUsers =
     fnName: perHost:
     let
@@ -314,88 +256,63 @@ let
       null
     else
       throw ''
-        ${fnName}: loginHomes names ${lib.concatStringsSep ", " unknown}, which is not a userRegistry user on any host (typo?). A login user must exist in the registry; registry users across all hosts: ${
+        ${fnName}: loginHomes names ${lib.concatStringsSep ", " unknown}, which is not a user in the users tree on any host (typo?). A login user must exist there; users across all hosts: ${
           if known == [ ] then "(none)" else lib.concatStringsSep ", " known
         }.
       '';
 
-  # The EFFECTIVE userRegistry for one host: the caller's own value if
-  # `userRegistry` was given at all (even `null`/`{ }`, both documented as
-  # "no users"), or an auto-discovered one -- via self.discoverUserRegistry
-  # -- when it was OMITTED ENTIRELY and `loginFlakeRef` resolves to a flake
-  # input (an attrset). A bare flake-ref STRING (`"/etc/nixos"`,
-  # `"git+https://..."`) cannot be read at eval time at all -- see
-  # `loginFlakeRef`'s own doc comment -- so those setups keep writing
-  # `userRegistry` by hand, same as before this existed.
+  # The users tree for a build: `{ <username> = <directory>; }`,
+  # discovered from `<ref>/users`. There is no hand-written alternative --
+  # the directory tree IS the declaration -- so this is the only way a
+  # user comes into existence.
   #
-  # `wasGiven`: whether the CALLER's own argument attrset included the
-  # `userRegistry` key at all. `?`-shorthand defaulting cannot distinguish
-  # "omitted" from "explicitly passed the same value the default would
-  # be" (both `null` and `{ }` are already claimed as documented
-  # "disabled" values, so neither can double as a NEW "omitted" sentinel);
-  # every call site instead passes `args ? userRegistry` (mk-system.nix,
-  # mk-home.nix) or its hosts-attrset equivalent (hosts-args.nix).
-  #
-  # Called from THREE sites for one host with login-managed homes
-  # (hosts-args.nix's plan, mk-system.nix's own registry, and once per
-  # login-managed user from mk-home.nix) -- a pure function of the same
-  # inputs each time, so the RESULT never disagrees between them, but the
-  # adoption trace below can fire more than once per host as a result
-  # (accepted: `traceDiscoveredUsers` is about surfacing adoption, not
-  # deduplicating a side effect Nix gives no way to deduplicate across
-  # independently-forced call sites).
-  resolveUserRegistry =
+  # `ref` is the flake input whose `users/` directory to scan: `rootPath`
+  # for a flake's own users, `loginFlakeRef` when the homes live in
+  # another flake (see mk-nixos-system.nix's own doc comment). A STRING
+  # ref cannot be read at evaluation time at all, so it yields no users --
+  # stringFlakeRefWarning says so at the point it is passed.
+  resolveUsers =
     {
-      wasGiven,
-      userRegistry,
-      inputs,
-      loginFlakeRef,
-      hostname,
+      ref,
+      label,
       traceDiscoveredUsers,
     }:
-    if wasGiven then
-      (if userRegistry == null then { } else userRegistry)
+    # A flake input (attrset) or a path both name a real tree. A bare
+    # STRING flake ref ("/etc/nixos", "git+https://...") names something
+    # only resolvable at activation time, so it yields no users --
+    # stringFlakeRefWarning says so where it is passed.
+    if ref == null || (lib.isString ref && !(builtins.hasContext ref)) then
+      { }
     else
       let
-        # Same defaulting as home-manager-bootstrap-module.nix's
-        # effectiveFlakeRef -- duplicated rather than shared, because that
-        # module's own argument shape is its public contract and this
-        # needs the resolved value a layer earlier, before the registry
-        # that module reads even exists.
-        effectiveLoginFlakeRef = if loginFlakeRef != null then loginFlakeRef else (inputs.self or null);
+        # tryEval: `+` on an attrset with no `outPath`/`__toString` (not a
+        # genuine flake input, however it got here) throws immediately --
+        # before discoverUserRegistry's own guard ever sees a `dir` to
+        # check. Same "an unrelated/unpredictable value must not break
+        # evaluation for a caller not even using this" reasoning as
+        # discoverUserRegistry's own tryEval.
+        usersDirProbe = builtins.tryEval (ref + "/users");
+        discovered = if usersDirProbe.success then self.discoverUserRegistry usersDirProbe.value else { };
       in
-      if !(lib.isAttrs effectiveLoginFlakeRef) then
-        { }
+      if discovered == { } || !traceDiscoveredUsers then
+        discovered
       else
-        let
-          # tryEval: `+` on an attrset with no `outPath`/`__toString` (not
-          # a genuine flake input, however it got here) throws immediately
-          # -- before discoverUserRegistry's own guard ever sees a `dir`
-          # to check. Same "an unrelated/unpredictable value must not
-          # break evaluation for a caller not even using this feature"
-          # reasoning as discoverUserRegistry's own tryEval.
-          usersDirProbe = builtins.tryEval (effectiveLoginFlakeRef + "/users");
-          discovered = if usersDirProbe.success then self.discoverUserRegistry usersDirProbe.value else { };
-        in
-        if discovered == { } || !traceDiscoveredUsers then
-          discovered
-        else
-          lib.trace ''
-            nixpkgs-lib-extensions: host `${hostname}`: userRegistry auto-discovered from ${
-              toString (effectiveLoginFlakeRef + "/users")
-            }: ${lib.concatStringsSep ", " (map (lib.removeSuffix "@*") (lib.attrNames discovered))} -- expected? Silence with `traceDiscoveredUsers = false;` (a builder argument, goes where `system`/`patches` do). Unexpected? Set `userRegistry = { };` to disable discovery.
-          '' discovered;
+        lib.trace ''
+          nixpkgs-lib-extensions: ${label}: users discovered in ${toString (ref + "/users")}: ${lib.concatStringsSep ", " (lib.attrNames discovered)} -- expected? Silence with `traceDiscoveredUsers = false;`.
+        '' discovered;
+
 in
 {
   inherit
     resolveUser
     usersFromRegistry
+    filterUsers
     usersWithHome
     loginUsersWithHome
     validateLoginUsers
-    validateRegistryKeys
-    stringPathEntryWarning
     stringFlakeRefWarning
-    resolveUserRegistry
+    resolveUsers
+    discoverHostsForUser
+    entryDirsFor
     ;
 }

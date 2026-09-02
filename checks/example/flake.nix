@@ -5,12 +5,14 @@
 # Start here:
 #   1. hosts/<yourhost>.nix   your machine's real config (the scaffolded
 #                             ones are PLACEHOLDERS -- see below)
-#   2. userRegistry           who exists, and on which hosts
+#   2. users/<name>/          who exists (one directory per user)
 #
-# Layout convention: every registry value is a DIRECTORY containing
+# Layout convention: every user is a DIRECTORY under ./users containing
 #   home.nix           the user's home-manager configuration
 #   configuration.nix  NixOS config for that user (account, groups, ...)
-# (either may be omitted; configuration.nix alone = system-only user).
+#   hosts/<host>/      the same two files, applied on that host only
+# (any may be omitted; configuration.nix alone = system-only user, and a
+# directory with only hosts/ = a user who exists only on those hosts).
 #
 # ---------------------------------------------------------------------
 # Note for readers of the nixpkgs-lib-extensions repo itself: this
@@ -46,23 +48,19 @@
       # overrides it in its own entry -- see `server`.
       system = "x86_64-linux";
 
-      # One registry shared by all hosts. Key forms:
-      #   "<user>@<host>"  that host only
-      #   "<user>@*"       every host; MERGES with a matching "<user>@<host>"
-      #   "<user>"         standalone default, only when NO @-entry matched
+      # Users are declared by the ./users tree -- one directory per user,
+      # no registry attrset anywhere. REPLACE THESE WITH YOUR OWN before
+      # the first `nixos-rebuild switch`: every directory here becomes a
+      # REAL account on the host.
       #
-      # REPLACE THESE WITH YOUR OWN before the first `nixos-rebuild switch`:
-      # every key here becomes a REAL account on the host.
-      userRegistry = {
-        "alice" = ./users/alice; # plain default: applies (alice has no @-entries)
-        "bob@laptop" = ./users/bob; # laptop only
-        "carol@otherhost" = ./users/carol; # a host not in this flake: unused here
-        "dave" = ./users/dave; # home.nix + configuration.nix (groups)
-        "eve" = ./users/eve; # ONLY configuration.nix -> system-only user
-        "frank@*" = ./users/frank-base; # on every host ...
-        "frank@laptop" = ./users/frank-laptop; # ... plus laptop extras (merged)
-        "grace@*" = ./users/grace-base; # on every host
-      };
+      #   users/alice/home.nix                    on every host
+      #   users/dave/{home,configuration}.nix     home + groups, every host
+      #   users/eve/configuration.nix             system-only user (no home)
+      #   users/grace/home.nix                    on every host
+      #   users/frank/{home,configuration}.nix    on every host ...
+      #   users/frank/hosts/laptop/configuration.nix   ... plus laptop extras (merged)
+      #   users/bob/hosts/laptop/home.nix         laptop ONLY (no files of his own)
+      #   users/carol/hosts/otherhost/home.nix    a host not in this flake: unused here
 
       # ONE host list feeds both builders below. The attribute keys are
       # the hostnames; each host's own configuration is found by
@@ -76,7 +74,7 @@
         # extras" the host uses its `extra` slot: a bare key REPLACES what
         # is here, `extra.<key>` ADDS to it.
         _defaults = {
-          inherit inputs system userRegistry;
+          inherit inputs system;
 
           # An input that exports a CATALOG -- many nixosModules /
           # homeModules / overlays and no `default` -- cannot be
@@ -129,10 +127,11 @@
           #   group = "server";
         };
 
-        # A host without any user registry: no users, no bootstrap, no
-        # homes -- the empty registry OVERRIDES the one from `_defaults`.
+        # A host with none of the tree's users: no accounts, no bootstrap,
+        # no homes. `users` selects which of the users/ tree apply here --
+        # omitted means all of them, `[ ]` means none.
         server = {
-          userRegistry = { };
+          users = [ ];
           # A machine on another architecture overrides the default
           # `system` for itself alone:
           #   system = "aarch64-linux";

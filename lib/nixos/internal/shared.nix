@@ -14,7 +14,7 @@
 #
 #   inputs.nix     input-convention introspection (detection, the channel
 #                  conventions, inputContributions classification/selection)
-#   registry.nix   userRegistry resolution (matching, validation, user lists)
+#   registry.nix   users-tree resolution (matching, validation, user lists)
 #   context.nix    the shared evaluation context (mkContext)
 #   mk-system.nix  the mkNixosSystem implementation (mkSystem)
 #   mk-home.nix    the mkHomeConfiguration implementation (mkHome)
@@ -39,6 +39,7 @@
     loginUsersWithHome
     validateLoginUsers
     stringFlakeRefWarning
+    discoverHostsForUser
     ;
   inherit (import ./context.nix { inherit lib self; }) coreArgNames mkContextCore mkContext;
   inherit (import ./mk-system.nix { inherit lib self; }) mkSystem;
@@ -51,6 +52,7 @@
     hostsProblems
     planHosts
     systemsFromPlan
-    homesFromPlan
+    userHomesFromPlan
+    userHomesStandalone
     ;
 }

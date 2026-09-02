@@ -81,11 +81,13 @@ in
     : key reference.
   */
   buildHomeConfigurations =
-    hosts:
-    # Built from a plan, exactly as buildNixosConfigurations is: one split,
-    # one `_defaults` merge, one context core per host. Calling both
-    # builders still plans twice -- `buildConfigurations` is the entry point
-    # that plans ONCE and projects both outputs from it, and is what a flake
-    # exporting nixosConfigurations and homeConfigurations should use.
-    shared.homesFromPlan "buildHomeConfigurations" (shared.planHosts "buildHomeConfigurations" hosts);
+    args:
+    # The user-centric entry point: no `hosts` attrset at all. Users come
+    # from the `users/` tree under `rootPath` (or `loginFlakeRef`, when the
+    # homes live in another flake), and the host dimension exists only
+    # where a user has a `hosts/<host>` override directory. Implemented as
+    # the degenerate one-host plan so it shares every code path (argument
+    # validation, `_defaults` merge, ONE context core) with the fleet
+    # entry points rather than duplicating them.
+    shared.userHomesStandalone "buildHomeConfigurations" args;
 }

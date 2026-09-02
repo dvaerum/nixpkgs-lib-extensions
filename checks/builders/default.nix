@@ -265,7 +265,7 @@ let
   laptop = example.nixosConfigurations.laptop;
   server = example.nixosConfigurations.server;
 
-  aliceHome = example.homeConfigurations."alice@laptop";
+  aliceHome = example.homeConfigurations."alice";
 
   execStart = laptop.config.systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart;
 
@@ -308,7 +308,9 @@ let
       {
         inherit inputs system;
         hostname = "laptop";
-        userRegistry."alice" = exampleDir + "/users/alice";
+        # the standalone module takes a resolved users tree; the builders
+        # hand it one, a direct caller writes it out
+        users.alice = exampleDir + "/users/alice";
         loginHomes = [ "alice" ];
       }
       // args
@@ -381,7 +383,7 @@ let
           # deliberately keyed under a DIFFERENT name than their
           # directory) and breaks if auto-discovered under those raw
           # directory names instead.
-          { userRegistry = { }; } // args
+          { users = [ ]; } // args
         )
       );
 
@@ -396,24 +398,6 @@ let
     "frank"
     "grace"
   ];
-
-  # Helper: does building home configs with this registry throw? The
-  # entry under test is keyed `bad` and listed in loginHomes, so the
-  # throw path (resolving `bad`'s home.nix) is reached by intent, not
-  # by incidental strictness of the hosts-level plumbing.
-  homesThrow =
-    registry:
-    !(builtins.tryEval (
-      builtins.attrNames (
-        myLib.buildHomeConfigurations {
-          laptop = {
-            inherit inputs system;
-            userRegistry = registry;
-            loginHomes = [ "bad" ];
-          };
-        }
-      )
-    )).success;
 
   # Everything a test file may need.
   ctx = {
@@ -433,7 +417,6 @@ let
       custom
       bootstrapModuleFor
       applyBootstrap
-      homesThrow
       mkProbeSystem
       probeCoreOverrideMessage
       ambiguousExportMessage

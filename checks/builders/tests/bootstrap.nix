@@ -28,8 +28,47 @@ in
   # eve is system-only (no home.nix). Parameters are CLI arguments on
   # ExecStart, quoted by escapeSystemdExecArgs (every argument is
   # double-quoted; % and $ are doubled for systemd's specifier syntax).
+  # each login user is passed as `<user>=<attr>`: the flake attribute
+  # resolved at BUILD time (see homeManagerBootstrapModule's attrFor), so
+  # the login script never guesses a name it cannot verify. alice is
+  # host-less here, bob has a hosts/laptop override.
+  # The harness's `self` is a MOCK with only an outPath, so its
+  # homeConfigurations cannot be introspected -- attrFor's documented
+  # fallback keeps the historical `<u>@<host>` form. The resolving path
+  # is covered by bootstrap-attr-resolves-hostless below.
   bootstrap-users-filtered =
-    lib.hasInfix ''"--users" "alice" "bob"'' execStart && !(lib.hasInfix "dave" execStart);
+    lib.hasInfix ''"--user-attrs" "alice=alice@laptop" "bob=bob@laptop"'' execStart
+    && !(lib.hasInfix "dave" execStart);
+
+  # ... and when the target flake's outputs ARE visible, a host-less home
+  # resolves to the bare `<user>` attribute rather than `<user>@<host>`:
+  # exactly the case a hardcoded shell string used to get wrong at login.
+  bootstrap-attr-resolves-hostless =
+    let
+      refWithOutputs = {
+        outPath = toString exampleDir;
+        homeConfigurations = {
+          alice = { };
+        };
+      };
+      unit =
+        (applyBootstrap { loginFlakeRef = refWithOutputs; }).systemd.user.services.home-manager-bootstrap;
+    in
+    lib.hasInfix ''"alice=alice"'' unit.serviceConfig.ExecStart;
+
+  # ... and a flake that exports homeConfigurations but has NEITHER name
+  # is a build-time throw, not a silent login-time failure on one machine
+  bootstrap-attr-missing-throws =
+    !(builtins.tryEval (
+      (applyBootstrap {
+        loginFlakeRef = {
+          outPath = toString exampleDir;
+          homeConfigurations = {
+            someone-else = { };
+          };
+        };
+      }).systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
+    )).success;
   bootstrap-flake-ref-defaults-to-self = lib.hasInfix ''"--flake-ref" "${toString exampleDir}"'' execStart;
 
   # systemd's own escaping, not shell escaping: a flake ref containing a
@@ -53,7 +92,6 @@ in
         inherit inputs system;
         hostname = "evelogin";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-        userRegistry."eve" = exampleDir + "/users/eve";
         loginHomes = [ "eve" ];
       }).config.systemd.user.services ? home-manager-bootstrap
     );
@@ -67,7 +105,6 @@ in
         inherit inputs system;
         hostname = "ghostlogin";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-        userRegistry."alice" = exampleDir + "/users/alice";
         loginHomes = [ "ghost" ];
       };
     in
@@ -110,7 +147,6 @@ in
         inherit inputs system;
         hostname = "evelogin";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-        userRegistry."eve" = exampleDir + "/users/eve";
         loginHomes = [ "eve" ];
       }
     ));
@@ -122,7 +158,6 @@ in
         inherit inputs system;
         hostname = "nowrapper";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-        userRegistry."alice" = exampleDir + "/users/alice";
         loginHomes = [ "alice" ];
         wrapHomeManagerSwitch = false;
       }

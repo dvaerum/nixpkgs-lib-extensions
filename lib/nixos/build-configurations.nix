@@ -76,6 +76,6 @@ in
     in
     {
       nixosConfigurations = shared.systemsFromPlan "buildConfigurations" plan;
-      homeConfigurations = shared.homesFromPlan "buildConfigurations" plan;
+      homeConfigurations = shared.userHomesFromPlan "buildConfigurations" plan;
     };
 }

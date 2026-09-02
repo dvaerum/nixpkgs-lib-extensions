@@ -16,126 +16,77 @@
   ...
 }:
 {
-  # no home-manager input -> no home outputs from the hosts-level builder
-  # (and no error)
+  # no home-manager input -> no home outputs (and no error)
   homes-empty-without-home-manager =
     myLib.buildHomeConfigurations {
-      laptop = {
+      inputs = {
+        inherit nixpkgs;
+        self = inputs.self;
+      };
+      inherit system;
+    } == { };
+
+  # a removed argument (the old hand-written registry) is a typo now, and
+  # throws rather than being silently ignored
+  users-typo-throws =
+    !(builtins.tryEval (
+      builtins.attrNames (
+        myLib.buildHomeConfigurations {
+          inherit inputs system;
+          userRegistry = { };
+        }
+      )
+    )).success;
+
+  # every user with a home.nix gets an output -- there is no per-host
+  # allowlist to remember, and an output nobody forces costs nothing
+  all-users-with-home-get-outputs =
+    let
+      homes = myLib.buildHomeConfigurations {
+        inherit inputs system;
+        traceDiscoveredUsers = false;
+      };
+    in
+    builtins.attrNames homes == [
+      "alice"
+      "bob@laptop"
+      # the STANDALONE builder has no declared host list, so it builds
+      # every host any user has an override for -- including one no NixOS
+      # system in this flake mentions (carol's `otherhost`). The
+      # plan-based path (buildConfigurations) emits only declared hosts.
+      "carol@otherhost"
+      "dave"
+      "frank"
+      "frank@laptop"
+      "grace"
+    ];
+
+  # an explicit homeManager input is honored WITHOUT re-running detection
+  homes-honor-explicit-home-manager =
+    (myLib.buildHomeConfigurations {
+      inputs = {
+        inherit nixpkgs;
+        self = inputs.self;
+      };
+      inherit system;
+      homeManager = inputs.home-manager;
+      traceDiscoveredUsers = false;
+    }) ? "alice";
+
+  # the single-home primitive throws without home-manager, naming the
+  # capability it looked for
+  home-builder-throws-without-home-manager =
+    !(builtins.tryEval (
+      (myLib.mkHomeConfiguration {
         inputs = {
           inherit nixpkgs;
           self = inputs.self;
         };
         inherit system;
-        userRegistry."alice" = exampleDir + "/users/alice";
-        loginHomes = [ "alice" ];
-      };
-    } == { };
-
-  # a loginHomes TYPO used to be silent: no flake output, the home quietly
-  # system-managed instead, and the system still built and booted. The
-  # hosts-level builders see every host's registry, so a name matching no
-  # user anywhere is a typo and throws.
-  login-users-typo-throws =
-    !(builtins.tryEval (
-      builtins.attrNames (
-        myLib.buildHomeConfigurations {
-          laptop = {
-            inherit inputs system;
-            userRegistry."alice" = exampleDir + "/users/alice";
-            loginHomes = [ "alicce" ];
-          };
-        }
-      )
+        username = "alice";
+      }).activationPackage
     )).success;
 
-  # ... while a name that simply does not apply to THIS host stays legal:
-  # one shared loginHomes in _defaults across a fleet is the documented way
-  # to use it, so bob (a user on laptop only) must not break server
-  login-users-unmatched-on-one-host-ok =
-    builtins.attrNames (
-      myLib.buildHomeConfigurations {
-        _defaults = {
-          inherit inputs system;
-          loginHomes = [
-            "alice"
-            "bob"
-          ];
-        };
-        laptop = {
-          userRegistry = {
-            "alice" = exampleDir + "/users/alice";
-            "bob@laptop" = exampleDir + "/users/bob";
-          };
-        };
-        server = {
-          userRegistry."alice" = exampleDir + "/users/alice";
-        };
-      }
-    ) == [
-      "alice@laptop"
-      "alice@server"
-      "bob@laptop"
-    ];
-
-  # `userRegistry = null` is a documented value: a null-registry host in
-  # the same plan as a loginHomes host must not crash the plan-wide
-  # loginHomes validation (it read the RAW argument, and null slipped
-  # through `or` into lib.attrNames as a bare type error)
-  null-registry-host-beside-login-host =
-    builtins.attrNames (
-      myLib.buildHomeConfigurations {
-        _defaults = {
-          inherit inputs system;
-        };
-        laptop = {
-          userRegistry."alice" = exampleDir + "/users/alice";
-          loginHomes = [ "alice" ];
-        };
-        bare = {
-          userRegistry = null;
-        };
-      }
-    ) == [ "alice@laptop" ];
-
-  # an explicit `homeManager` is honored by the hosts-level builder too: it
-  # exists to BYPASS capability detection, so the per-host gate must not
-  # re-run detection over `inputs` and silently return { }
-  homes-honor-explicit-home-manager =
-    builtins.attrNames (
-      myLib.buildHomeConfigurations {
-        laptop = {
-          inputs = {
-            inherit nixpkgs;
-            self = inputs.self;
-          };
-          inherit system;
-          homeManager = inputs.home-manager;
-          userRegistry."alice" = exampleDir + "/users/alice";
-          loginHomes = [ "alice" ];
-        };
-      }
-    ) == [ "alice@laptop" ];
-
-  # ... but the per-user builder THROWS: one explicitly requested home
-  # that cannot be built is an error, not an empty result
-  home-builder-throws-without-home-manager =
-    !(builtins.tryEval (
-      builtins.attrNames (
-        myLib.mkHomeConfiguration {
-          inputs = {
-            inherit nixpkgs;
-            self = inputs.self;
-          };
-          inherit system;
-          hostname = "laptop";
-          username = "alice";
-          userRegistry."alice" = exampleDir + "/users/alice";
-        }
-      )
-    )).success;
-
-  # LOGIN-managed homes REALLY evaluate through home-manager's module
-  # system (real input, not a stub), with the builder's defaults applied
   home-eval-username = aliceHome.config.home.username == "alice";
   home-eval-home-directory = aliceHome.config.home.homeDirectory == "/home/alice";
   # alice's home.nix PINS stateVersion (as the template should): the pin
@@ -153,7 +104,8 @@
         inherit inputs system;
         hostname = "laptop";
         username = "unpinned";
-        userRegistry."unpinned" = fixturesDir + "/unpinned-home";
+        users = null;
+        rootPath = fixturesDir + "/tree-unpinned";
       };
       warning = lib.findFirst (w: lib.hasInfix "home.stateVersion" w) null probe.config.warnings;
     in
@@ -176,7 +128,8 @@
         inherit inputs system;
         hostname = "laptop";
         username = "unpinned";
-        userRegistry."unpinned" = fixturesDir + "/unpinned-home";
+        users = null;
+        rootPath = fixturesDir + "/tree-unpinned";
         homeModules = [
           (
             { lib, ... }:
@@ -199,7 +152,8 @@
         inherit inputs system;
         hostname = "laptop";
         username = "unpinned";
-        userRegistry."unpinned" = fixturesDir + "/unpinned-home";
+        users = null;
+        rootPath = fixturesDir + "/tree-unpinned";
         homeModules = [
           (
             { lib, ... }:
@@ -222,7 +176,6 @@
           inherit inputs system;
           hostname = "laptop";
           username = "eve";
-          userRegistry."eve" = exampleDir + "/users/eve";
         }
       )
     )).success;
@@ -235,10 +188,6 @@
         inherit inputs system;
         hostname = "laptop";
         username = "alice";
-        userRegistry = {
-          "alice" = exampleDir + "/users/alice";
-          "dave" = exampleDir + "/users/dave";
-        };
         homeModules = [
           (
             { username, config, ... }:
@@ -251,7 +200,7 @@
       };
     in
     probe.config.home.sessionVariables.WHOAMI == "alice"
-    && probe.config.home.sessionVariables.ALL_USERS == "alice,dave";
+    && probe.config.home.sessionVariables.ALL_USERS == "alice,bob,dave,eve,frank,grace";
 
   # SYSTEM-managed homes are built into the system via home-manager's
   # NixOS module: frank's wildcard entry merges there too
@@ -265,11 +214,11 @@
     !(mkProbeSystem {
       inherit inputs system;
       hostname = "hmopts";
+      users = null;
       modules = [
         (exampleDir + "/hosts/server/configuration.nix")
         { home-manager.useGlobalPkgs = false; }
       ];
-      userRegistry."dave" = exampleDir + "/users/dave";
     }).config.home-manager.useGlobalPkgs;
   # dave's home.nix pins stateVersion; the pin wins over the builder's
   # default and no warning appears in his SYSTEM-managed home
@@ -287,7 +236,8 @@
           inherit inputs system;
           hostname = "unpinnedhost";
           modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-          userRegistry."unpinned" = fixturesDir + "/unpinned-home";
+          users = null;
+          rootPath = fixturesDir + "/tree-unpinned";
         }).config.home-manager.users.unpinned;
     in
     builtins.any (w: lib.hasInfix "home.stateVersion" w && lib.hasInfix "`unpinned`" w) user.warnings
@@ -298,8 +248,8 @@
     (mkProbeSystem {
       inherit inputs system;
       hostname = "whoami";
+      users = null;
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-      userRegistry."dave" = exampleDir + "/users/dave";
       homeModules = [
         ({ username, ... }: { home.sessionVariables.WHOAMI = username; })
       ];
@@ -328,7 +278,6 @@
         inherit system;
         hostname = "nohm";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-        userRegistry."alice" = exampleDir + "/users/alice";
       }).options ? home-manager
     );
 }

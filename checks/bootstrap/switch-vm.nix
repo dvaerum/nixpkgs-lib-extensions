@@ -125,7 +125,7 @@ pkgs.testers.runNixOSTest {
           inputs = { inherit home-manager; };
           inherit system;
           hostname = "fullvm";
-          userRegistry."alice" = ../example/users/alice;
+          users.alice = ../example/users/alice;
           loginHomes = [ "alice" ];
           loginFlakeRef = testFlake;
         })

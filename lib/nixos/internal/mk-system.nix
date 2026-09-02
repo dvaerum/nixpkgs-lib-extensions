@@ -25,7 +25,8 @@ let
     usersFromRegistry
     usersWithHome
     loginUsersWithHome
-    resolveUserRegistry
+    resolveUsers
+    filterUsers
     ;
   inherit (import ./priorities.nix { inherit lib; }) builderDefaultPriority mkBuilderDefault;
 in
@@ -38,7 +39,6 @@ in
       system,
       modules ? [ ],
       userModule ? self.normalUserModule,
-      userRegistry ? { },
       loginHomes ? [ ],
       homeModules ? [ ],
       loginFlakeRef ? null,
@@ -68,39 +68,45 @@ in
       # `nixpkgsLibExtensions.*` options (plus `hostname` for the home
       # variant, where no networking.hostName exists).
       extOptionValues = {
-        inherit group tags users;
+        inherit group tags;
+        users = hostUsers;
         inherit (ctx) inputPkgs channels;
       };
 
-      registry = resolveUserRegistry {
-        wasGiven = args ? userRegistry;
-        inherit
-          userRegistry
-          inputs
-          loginFlakeRef
-          hostname
-          traceDiscoveredUsers
-          ;
-      };
+      # The users tree. A plan hands one in already-resolved so a fleet
+      # shares ONE scan; a direct call scans `rootPath` (or
+      # `loginFlakeRef`, when the homes live in another flake) itself.
+      discoveredTree =
+        if args ? usersTree then
+          args.usersTree
+        else
+          resolveUsers {
+            ref = if loginFlakeRef != null then loginFlakeRef else (args.rootPath or (inputs.self or null));
+            label = "host `${hostname}`";
+            inherit traceDiscoveredUsers;
+          };
+      # a host's own `users` list narrows the tree (`[ ]` = no users here)
+      userTree = filterUsers "mkNixosSystem" hostname (args.users or null) discoveredTree;
 
-      # The host's users, derived from the registry keys ("<user>@<host>"
-      # for this host plus plain "<user>" fallback entries). `loginHomes`
-      # selects a SUBSET of them whose homes are login-managed; everyone
-      # else's home is system-managed. Disjoint by construction.
-      users = usersFromRegistry registry hostname;
+      # The host's users: everyone whose directory applies here -- their
+      # own, plus anyone existing only via a `hosts/<hostname>` override
+      # for THIS host. `loginHomes` selects a SUBSET whose homes are
+      # login-managed; everyone else's home is system-managed. Disjoint by
+      # construction.
+      hostUsers = usersFromRegistry userTree hostname;
 
-      perUserModules = lib.optionals (userModule != null) (lib.forEach users userModule);
+      perUserModules = lib.optionals (userModule != null) (lib.forEach hostUsers userModule);
 
-      # Every matched registry directory may ship a configuration.nix
+      # Every matched user directory may ship a configuration.nix
       # (e.g. creating the user's account and groups); all of them are
       # applied to the system automatically -- for login-managed users too.
-      userNixosConfigs = lib.concatMap (u: (resolveUser registry hostname u).nixosModules) users;
+      userNixosConfigs = lib.concatMap (u: (resolveUser userTree hostname u).nixosModules) hostUsers;
 
       # SYSTEM-MANAGED HOMES: the home.nix of every user NOT in
       # `loginHomes` is wired into the system via home-manager's NixOS
       # module -- homes ship with the system and activate on
       # nixos-rebuild switch. No flake outputs, no bootstrap involved.
-      systemUsersWithHome = lib.filter (u: !(lib.elem u loginHomes)) (usersWithHome registry hostname);
+      systemUsersWithHome = lib.filter (u: !(lib.elem u loginHomes)) (usersWithHome userTree hostname);
       hmNixosModule =
         if home-manager == null then
           null
@@ -140,7 +146,7 @@ in
                 # `username` as a module arg (extraSpecialArgs cannot
                 # vary per user)
                 _module.args.username = u;
-                imports = (resolveUser registry hostname u).homeModules;
+                imports = (resolveUser userTree hostname u).homeModules;
               });
             };
           }
@@ -186,7 +192,7 @@ in
           loginFlakeRef
           loginReactivateEveryLogin
           ;
-        userRegistry = registry;
+        users = userTree;
         # the context's pick (honoring the homeManager override), so the
         # bootstrap cannot detect a DIFFERENT input than the system homes
         homeManager = home-manager;
@@ -208,7 +214,7 @@ in
       wantHomeManagerSwitchWrapper =
         wrapHomeManagerSwitch
         && homeManagerSwitchPkg != null
-        && loginUsersWithHome registry hostname loginHomes != [ ];
+        && loginUsersWithHome userTree hostname loginHomes != [ ];
       homeManagerSwitchWrapperModule = {
         _file = ../mk-nixos-system.nix;
         environment.systemPackages = lib.optional wantHomeManagerSwitchWrapper (

@@ -59,8 +59,9 @@ in
     system
     : The system double, e.g. `"x86_64-linux"`.
 
-    userRegistry
-    : The user registry (as in `mkNixosSystem`). Default `{ }`.
+    users
+    : The users tree (`{ <username> = <directory>; }`, as `mkNixosSystem`
+    : resolves it). Default `{ }`.
 
     loginHomes
     : The usernames whose homes are login-managed; only these are
@@ -88,7 +89,7 @@ in
       inputs,
       hostname,
       system,
-      userRegistry ? { },
+      users ? { },
       loginHomes ? [ ],
       loginFlakeRef ? null,
       loginReactivateEveryLogin ? false,
@@ -112,9 +113,34 @@ in
       effectiveFlakeRef = warnStringFlakeRef (
         if loginFlakeRef != null then loginFlakeRef else (inputs.self or null)
       );
-      registry = if userRegistry == null then { } else userRegistry;
       # login-managed users with an actual home.nix on this host
-      usersHome = shared.loginUsersWithHome registry hostname loginHomes;
+      usersHome = shared.loginUsersWithHome users hostname loginHomes;
+
+      # WHICH flake attribute each user's home is exported under. A
+      # host-agnostic user is `homeConfigurations."<u>"`; one with a
+      # `hosts/<hostname>` override is `"<u>@<hostname>"`. Resolved HERE,
+      # at Nix evaluation time, rather than reconstructed by the login
+      # script: the script cannot see the target flake's outputs, so a
+      # name it guesses wrong fails silently at someone's next login on
+      # one machine. `?` on a real flake input is cheap and forces no
+      # home. A STRING loginFlakeRef is not introspectable at all, so it
+      # keeps the historical `<u>@<hostname>` form.
+      attrFor =
+        u:
+        # Only decide from outputs we can actually SEE. A string ref, or an
+        # input whose `homeConfigurations` is not readable here (a mock, or
+        # a flake whose outputs this evaluation does not force), keeps the
+        # historical `<u>@<hostname>` form rather than guessing; the throw
+        # is reserved for the one case we can prove wrong -- the outputs
+        # exist and contain neither name.
+        if !(lib.isAttrs effectiveFlakeRef) || !(effectiveFlakeRef ? homeConfigurations) then
+          "${u}@${hostname}"
+        else if effectiveFlakeRef.homeConfigurations ? "${u}@${hostname}" then
+          "${u}@${hostname}"
+        else if effectiveFlakeRef.homeConfigurations ? ${u} then
+          u
+        else
+          throw "homeManagerBootstrapModule: host `${hostname}`: `${toString effectiveFlakeRef}` exports homeConfigurations, but neither `${u}@${hostname}` nor `${u}` is among them, so the login bootstrap would have nothing to activate for `${u}`. Give `${u}` a home.nix in that flake's users/ tree (optionally under hosts/${hostname}/), or drop them from loginHomes.";
     in
     # `_file` points eval errors of this generated module at this file
     # instead of an anonymous <unknown-file> location.
@@ -177,8 +203,8 @@ in
                     hostname
                   ]
                   ++ lib.optional loginReactivateEveryLogin "--reactivate-every-login"
-                  ++ [ "--users" ]
-                  ++ usersHome
+                  ++ [ "--user-attrs" ]
+                  ++ map (u: "${u}=${attrFor u}") usersHome
                 );
               };
             };

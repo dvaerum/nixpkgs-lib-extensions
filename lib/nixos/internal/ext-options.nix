@@ -133,7 +133,9 @@ in
         }:
         let
           relies = options.home.stateVersion.highestPrio >= builderDefaultPriority;
-          msg = "nixpkgs-lib-extensions: host `${hostname}`: the home of `${username}` does not pin `home.stateVersion` (no definition beats the builder's default priority -- a `lib.mkOptionDefault` definition is still unpinned), so it follows the CURRENT nixpkgs release (now ${lib.trivial.release}) and changes meaning on every nixpkgs bump. Pin it in that user's home.nix (`home.stateVersion = \"${lib.trivial.release}\";`), or fleet-wide via a `homeModules = [ { home.stateVersion = \"${lib.trivial.release}\"; } ];` entry in `_defaults` (every host) or a `_groups` entry.";
+          msg = "nixpkgs-lib-extensions: ${
+            if hostname == null then "the host-less home" else "host `${hostname}`: the home"
+          } of `${username}` does not pin `home.stateVersion` (no definition beats the builder's default priority -- a `lib.mkOptionDefault` definition is still unpinned), so it follows the CURRENT nixpkgs release (now ${lib.trivial.release}) and changes meaning on every nixpkgs bump. Pin it in that user's home.nix (`home.stateVersion = \"${lib.trivial.release}\";`), or fleet-wide via a `homeModules = [ { home.stateVersion = \"${lib.trivial.release}\"; } ];` entry in `_defaults` (every host) or a `_groups` entry.";
         in
         {
           home.stateVersion = mkBuilderDefault (lib.warn msg lib.trivial.release);
@@ -193,14 +195,17 @@ in
         }
         // {
           hostname = mkOption {
-            type = types.str;
+            type = types.nullOr types.str;
             readOnly = true;
             default = hostname;
-            defaultText = literalMD "the builder's `hostname` argument";
+            defaultText = literalMD "the builder's `hostname` argument, or `null` for a host-less home";
             description = ''
-              The host this home configuration is built for (the builder's
-              `hostname` argument). Read-only. NixOS modules read
-              `config.networking.hostName` instead.
+              The host this home configuration is built for, or `null` for
+              a HOST-LESS home -- one built from a user's directory alone,
+              with no `hosts/<host>/` override applying, and exported as
+              `homeConfigurations."<user>"` rather than
+              `homeConfigurations."<user>@<host>"`. Read-only. NixOS
+              modules read `config.networking.hostName` instead.
             '';
           };
         };

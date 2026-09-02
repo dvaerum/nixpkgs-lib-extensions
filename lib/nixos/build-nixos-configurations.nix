@@ -31,9 +31,9 @@ in
     `group` must name one of its entries (unknown names throw); without
     `_groups`, `group` is the free-form classification it always was.
 
-    The same hosts attrset is designed to also feed
-    `buildHomeConfigurations`, producing the matching `homeConfigurations`
-    outputs the login bootstrap needs -- define it once, pass it to both.
+    Users are declared by the `users/` directory tree (see
+    `mkNixosSystem`'s own `users` argument), not by an attrset here; a
+    host's `users` key only SELECTS which of them apply to it.
 
     # Example
 
@@ -42,7 +42,7 @@ in
     # extLib = inputs.nixpkgs-lib-extensions.lib
     nixosConfigurations = extLib.buildNixosConfigurations {
       _defaults = {
-        inherit inputs system userRegistry;
+        inherit inputs system;
         modules = [ ./common/base.nix ];
       };
       # each host's config is found by convention:
@@ -53,8 +53,8 @@ in
         extra.modules = [ ./common/laptop-extras.nix ];
       };
       server = {
-        # per-argument override: replaces the registry entirely
-        userRegistry = { };
+        # none of the users/ tree applies to this host
+        users = [ ];
       };
     };
     =>
@@ -91,7 +91,8 @@ in
     : - `rootPath`
     : - `modules`
     : - `userModule`
-    : - `userRegistry`
+    : - `users` (which of the users/ tree apply to this host;
+    :   omitted = all of them, `[ ]` = none)
     : - `loginHomes`
     : - `homeModules` (applies to BOTH mechanisms: system-managed
     :   homes here, login-managed homes in `buildHomeConfigurations`)

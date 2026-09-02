@@ -40,7 +40,7 @@
           # pick up checks/example/users/ (frank-base/frank-laptop are
           # named differently from their registry key -- see registry.nix's
           # autoDiscoverRoot comment for why that breaks auto-discovery)
-          userRegistry = { };
+          users = [ ];
         }).config.system.build.toplevel.drvPath;
       noNixosSystem = inputs.nixpkgs // {
         lib = builtins.removeAttrs inputs.nixpkgs.lib [ "nixosSystem" ];

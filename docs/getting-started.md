@@ -7,9 +7,9 @@ and the workflow.
 
 ## What you get
 
-- One **registry** declares your users: who exists, on which hosts,
-  what their home looks like, and their system-level config (groups,
-  account settings).
+- A **`users/` directory tree** declares your users: one directory per
+  user holds their home config, their system-level config (groups,
+  account settings), and any per-host overrides.
 - Each **host** is one attrset entry; its machine config is found by
   file convention.
 - Login accounts are **created automatically**, each with a private
@@ -26,16 +26,14 @@ The pieces above, at a glance:
 
 ```mermaid
 flowchart TD
-    Auto["loginFlakeRef's users/ directory"]
-    Reg["userRegistry<br/>who exists + what their home/system config looks like"]
+    Tree["users/ tree<br/>one directory per user (+ optional hosts/&lt;host&gt;/)"]
     Hosts["hosts attrset<br/>_defaults + _groups + per-host entries"]
     Build(["buildConfigurations"])
     Nix["nixosConfigurations.&lt;host&gt;<br/>one full system per host"]
-    Home["homeConfigurations.&lt;user&gt;@&lt;host&gt;<br/>per login-managed home"]
+    Home["homeConfigurations.&lt;user&gt;<br/>(and &lt;user&gt;@&lt;host&gt; where an override exists)"]
     Deployed(["running host"])
 
-    Auto -. "auto-discovered when<br/>userRegistry is omitted" .-> Reg
-    Reg --> Build
+    Tree --> Build
     Hosts --> Build
     Build --> Nix
     Build --> Home
@@ -62,25 +60,25 @@ git init && git add .
 You now have:
 
 ```
-flake.nix              two hosts, one registry
+flake.nix              two hosts; users come from users/
 hosts/
   laptop.nix           host config, file form
   server/
     configuration.nix  host config, directory form
 users/
-  alice/               plain entry: on every host
+  alice/               home.nix -- on every host
     home.nix
   dave/                home AND system config
     home.nix
     configuration.nix
   eve/                 system-only user (no home)
     configuration.nix
-  frank-base/          wildcard entry (frank@*)
+  frank/               on every host ...
     home.nix
     configuration.nix
-  frank-laptop/        per-host extras (frank@laptop)
-    configuration.nix
-  bob/ carol/ grace-base/     further key forms, see the registry
+    hosts/laptop/      ... plus these extras, merged, on laptop
+      configuration.nix
+  bob/ carol/ grace/   further shapes, see the users tree
 ```
 
 **Make it real before building**, in two places:
@@ -91,10 +89,10 @@ users/
    `hosts/laptop.nix` with your machine's actual config first,
    typically an import of its `hardware-configuration.nix` plus a boot
    loader.
-2. The scaffolded **registry** creates six real accounts (alice, bob,
-   dave, eve, frank, grace) with their groups and, for the
-   `loginHomes`, their bootstrap services. Replace those entries with
-   your own users before the first switch.
+2. The scaffolded **users/ tree** creates six real accounts (alice,
+   bob, dave, eve, frank, grace) with their groups and, for the
+   `loginHomes`, their bootstrap services. Replace those directories
+   with your own users before the first switch.
 
 A host file then looks like:
 
@@ -115,38 +113,39 @@ nixos-rebuild switch --flake .#laptop
 
 This builds the system INCLUDING the homes of every user not listed
 in `loginHomes` -- those activate right there, with the switch. Homes
-of `loginHomes` are exported per user and host instead
-(e.g. `homeConfigurations."alice@laptop"`) and applied later: on each
-user's first login, by the bootstrap service. Either way you normally
+of `loginHomes` are exported as flake outputs instead
+(`homeConfigurations."alice"`, or `"alice@laptop"` where she has a
+per-host override) and applied later: on each user's first login, by
+the bootstrap service. Either way you normally
 never run `home-manager` by hand.
 
-## The registry
+## The users tree
 
-The heart of the setup -- one attrset shared by all hosts, passed to
-the builders as `userRegistry` (NOT to be confused with the flake's
-`homeConfigurations` OUTPUT -- the per-`user@host` home-manager
-configs the builders assemble FROM this registry, covered in
-[Hosts](#hosts) below):
+Users are declared by a **directory tree**, not an attrset. One
+directory per user under `users/`, and that is the whole declaration:
 
-```nix
-userRegistry = {
-  "alice"        = ./users/alice;
-  "bob@laptop"   = ./users/bob;
-  "frank@*"      = ./users/frank-base;
-  "frank@laptop" = ./users/frank-laptop;
-};
+```
+users/
+  alice/
+    home.nix             alice's home-manager config, on every host
+  dave/
+    home.nix
+    configuration.nix    NixOS config for dave: groups, account tweaks
+  eve/
+    configuration.nix    system-only user: an account, no home
+  frank/
+    home.nix             applies everywhere ...
+    configuration.nix
+    hosts/
+      laptop/
+        configuration.nix   ... plus this, MERGED, on `laptop` only
+  bob/
+    hosts/
+      laptop/
+        home.nix         bob exists on `laptop` and nowhere else
 ```
 
-Key forms:
-
-| Key form      | Applies |
-|---------------|---------|
-| `"user@host"` | on that host only |
-| `"user@*"`    | on every host; MERGES with a matching `"user@host"` |
-| `"user"`      | standalone default, used only when NO @-entry matched -- never merged with @-entries, and a shadowed plain entry prints a warning |
-| `hosts/<host>/` inside a `"user@*"` directory | auto-detected per-host override, same effect as an explicit `"user@<host>"` entry -- see below |
-
-Every value must be a **directory** containing one or both of:
+Each directory may contain one or both of:
 
 - `home.nix` -- the user's home-manager configuration
 - `configuration.nix` -- NixOS config for that user: extra groups,
@@ -155,92 +154,86 @@ Every value must be a **directory** containing one or both of:
 A directory with only `configuration.nix` is a **system-only user**:
 account and groups, but no home configuration and no bootstrap.
 
-A `"user@*"` entry's directory is also scanned for a `hosts/<hostname>`
-subdirectory -- the same convention `hosts/<hostname>.nix` uses at the
-flake root ([Hosts](#hosts) below), one level down -- and merges it in
-automatically, exactly like an explicit `"user@<hostname>"` entry would:
+One rule covers every case:
 
-```
-users/frank-base/
-  home.nix           # "frank@*": every host
-  hosts/
-    laptop/
-      home.nix       # auto-detected: merges in ONLY on `laptop`,
-                      # as if "frank@laptop" pointed here
-```
-
-An explicit `"user@<hostname>"` key and an auto-detected `hosts/<hostname>`
-folder both existing for the same user and host is ambiguous and
-**throws**, naming both paths -- delete one to resolve it.
-
-Put together, resolving a user U on host H looks like this:
+> A user's directory applies on **every** host. A `hosts/<hostname>/`
+> subdirectory applies on **that** host and **merges** on top. A user
+> with *only* `hosts/` subdirectories exists on those hosts and nowhere
+> else.
 
 ```mermaid
 flowchart TD
-    Q1{"'U@*' entry?"}
-    Q2{"host-specific entry for H?<br/>(explicit 'U@H', or an auto-detected<br/>hosts/H/ folder inside 'U@*')"}
-    Q1 --> Q2
-    Q2 -->|"both explicit AND<br/>auto-detected exist"| Throw["🛑 throws -- ambiguous,<br/>delete one"]
-    Q2 -->|"one of them, or neither"| Merge["merge whatever matched<br/>('U@*' + the host-specific one, if any)"]
-    Merge --> AnyQ{"anything matched?"}
-    AnyQ -->|yes| R1["result = the merged @-entries<br/>(a plain 'U' entry, if present,<br/>is ignored -- with a warning)"]
-    AnyQ -->|no| PlainQ{"plain 'U' entry?"}
-    PlainQ -->|yes| R2["result = the plain entry"]
-    PlainQ -->|no| R3["U is not a user on H"]
+    A(["resolving user U on host H"]) --> B{"users/U/ has home.nix<br/>or configuration.nix?"}
+    B -->|yes| C["that applies"]
+    B -->|no| D["nothing applies yet"]
+    C --> E{"users/U/hosts/H/ exists?"}
+    D --> E
+    E -->|yes| F["it MERGES on top<br/>(host-specific over shared)"]
+    E -->|no| G["shared config only"]
+    F --> H(["result"])
+    G --> H
 ```
 
-The registry keys define the host's users -- there is no separate
-`users` argument anywhere.
+That produces two shapes of home output:
 
-### Auto-discovery
+| What the user has | Outputs |
+|---|---|
+| `home.nix` only | `homeConfigurations."alice"` -- one home, usable on any machine |
+| `home.nix` + `hosts/laptop/home.nix` | **both** `"frank"` and `"frank@laptop"` |
+| only `hosts/laptop/home.nix` | `"bob@laptop"` only |
+| only `configuration.nix` | no home output (account only) |
 
-Writing `userRegistry` by hand is one extra attrset a caller normally
-doesn't need to maintain by itself: when it is **omitted entirely**
-(not `null`, not `{ }` -- genuinely absent from the builder call) and
-`loginFlakeRef` resolves to a flake input, the builders discover it
-instead, from that input's `users/` directory: each subdirectory
-shipping `home.nix`/`configuration.nix` becomes a `"<name>@*"` entry
-(anything else in `users/` -- a malformed subdirectory, a dotfile, a
-stray file -- is skipped; see `discoverUserRegistry` in `docs/lib.md`
-for exactly which of those warn).
+Both keys when both exist is deliberate: `"frank"` is the
+default-anywhere profile, buildable on a machine the tree has never
+heard of, and `"frank@laptop"` is that profile with the laptop
+override merged in. Adding one machine-specific override must not
+silently remove the ability to `home-manager switch --flake .#frank`
+everywhere else.
 
-This is what makes a **shared, multi-flake home-manager setup** work
-without a config-side registry at all: point `loginFlakeRef` at the
-flake that owns the `users/` directory (the default, `inputs.self`,
-already does this for a single-flake setup), and every system that
-imports it picks up its users automatically:
+### Where the tree is read from
+
+`rootPath` (default: your flake, `inputs.self`) -- or `loginFlakeRef`
+when the homes live in **another** flake. That second form is what
+makes a shared, multi-flake setup work with no per-consumer wiring:
 
 ```nix
 # home-manager-config/flake.nix -- owns users/dennis, users/root, ...
-# no userRegistry export needed; the users/ directory IS the registry
+# the users/ directory IS the declaration; nothing to export
 
-# the consuming flake -- userRegistry omitted entirely
+# the consuming NixOS flake
 mkNixosSystem {
   loginFlakeRef = inputs.home-manager-config;
   # ...
 };
 ```
 
-Each host announces what it adopted (once per host that actually
-discovered a non-empty registry -- never for a host supplying its own
-`userRegistry`, or whose scan found nothing):
+Each build announces what it found (silence it with
+`traceDiscoveredUsers = false;`):
 
 ```
-trace: nixpkgs-lib-extensions: host `laptop`: userRegistry
-auto-discovered from /nix/store/.../users: dennis, root -- expected?
-Silence with `traceDiscoveredUsers = false;` (a builder argument, goes
-where `system`/`patches` do). Unexpected? Set `userRegistry = { };` to
-disable discovery.
+trace: nixpkgs-lib-extensions: buildConfigurations: users discovered in
+/nix/store/.../users: dennis, root -- expected? Silence with
+`traceDiscoveredUsers = false;`.
 ```
 
-Set `userRegistry = { };` on a host to opt out and keep writing the
-registry by hand there; set the builder argument
-`traceDiscoveredUsers = false;` to silence the announcement without
-disabling discovery itself. `loginFlakeRef` as a flake-ref STRING
-(`"/etc/nixos"`, a mutable checkout -- see [Two home
-mechanisms](#two-home-mechanisms)) cannot be read this way at eval
-time at all, so those setups keep writing `userRegistry` explicitly,
-same as before this existed.
+A `loginFlakeRef` that is a flake-ref **string** (`"/etc/nixos"`, a
+mutable checkout -- see [Two home mechanisms](#two-home-mechanisms))
+cannot be read at evaluation time, so no users are discovered from it.
+
+### Selecting which users apply to a host
+
+By default every user in the tree applies to every host. A host's
+`users` argument narrows that:
+
+```nix
+hosts = {
+  laptop = { };                      # every user in the tree
+  server = { users = [ ]; };         # none of them
+  build  = { users = [ "ci" ]; };    # just this one
+};
+```
+
+A name that is not in the tree is a typo and throws.
 
 ## Hosts
 
@@ -271,17 +264,12 @@ Each host is one entry in the hosts attrset you hand to
       extLib = nixpkgs-lib-extensions.lib;
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
-      userRegistry = {
-        # the registry from the previous section
-        "alice" = ./users/alice;
-      };
       # ONE host list for both outputs
       hosts = {
         # shared by every host; a host
         # entry overrides per argument
         _defaults = {
-          inherit inputs system
-            userRegistry;
+          inherit inputs system;
           # alice's home activates on
           # her first login; all other
           # homes ship with the system
@@ -289,9 +277,9 @@ Each host is one entry in the hosts attrset you hand to
         };
         laptop = { };
         server = {
-          # override: no registry,
-          # so no users on server
-          userRegistry = { };
+          # none of the users/ tree
+          # applies to this host
+          users = [ ];
         };
       };
     in
@@ -431,7 +419,7 @@ mechanisms; `loginHomes` selects which:
 flowchart TD
     A(["a user's home.nix"]) --> B{"listed in loginHomes?"}
     B -->|"no (default)"| C["built INTO the system<br/>(home-manager's NixOS module)"]
-    B -->|"yes"| D["exported as a flake output<br/>homeConfigurations.'user@host'"]
+    B -->|"yes"| D["exported as a flake output<br/>homeConfigurations.'user'<br/>(or 'user@host' with an override)"]
     C --> E(["activates with<br/>nixos-rebuild switch"])
     D --> F(["activated on the user's<br/>FIRST LOGIN by the<br/>bootstrap service"])
 ```
@@ -513,8 +501,8 @@ A complete flake:
     let
       extLib = nixpkgs-lib-extensions.lib;
       system = "x86_64-linux";
-      userRegistry = {
-        "alice" = ./users/alice;
+      users = {
+        alice = ./users/alice;
       };
     in
     {
@@ -535,8 +523,7 @@ A complete flake:
 
             # installs the login service
             (extLib.homeManagerBootstrapModule {
-              inherit inputs system
-                userRegistry;
+              inherit inputs system users;
               hostname = "laptop";
               loginHomes = [ "alice" ];
               # loginReactivateEveryLogin =
@@ -548,10 +535,9 @@ A complete flake:
 
       # the homes the bootstrap activates:
       # "alice@laptop" MUST exist here
-      homeConfigurations."alice@laptop" =
+      homeConfigurations."alice" =
         extLib.mkHomeConfiguration {
-          inherit inputs system
-            userRegistry;
+          inherit inputs system;
           hostname = "laptop";
           username = "alice";
         };
@@ -616,7 +602,7 @@ every host) or on a single host entry:
 ```nix
 hosts = {
   _defaults = {
-    inherit inputs system userRegistry;
+    inherit inputs system;
 
     inputContributions = {
       # these entries, auto-imported in this order
@@ -926,23 +912,9 @@ merged option value, also labeling the boot menu via
 
 - **Untracked files are invisible to flakes.** `git add` new user
   directories and host files, or they are silently skipped.
-- Registry values should be **path values** (`./users/alice`), not
-  hand-typed absolute path strings (`"/home/me/users/alice"`): such a
-  string escapes the flake's store copy and only WARNS here, though
-  Nix's own pure evaluation (`nix flake check`, CI, any real build) can
-  refuse to read it outright elsewhere in the chain -- treat the
-  warning as something to fix, not ignore. See the `userRegistry`
-  argument in `docs/lib.md` (`mkNixosSystem`) for why, and for the one
-  exception: a string built by concatenating onto a flake input (e.g.
-  `"alice@*" = inputs.home-manager-config + "/users/alice";`) is
-  accepted WITHOUT a warning. Prefer [auto-discovery](#auto-discovery)
-  over that concatenated form when the whole `users/` directory should
-  come from the other flake; reach for it only for a single one-off
-  entry.
-- A plain `"user"` entry is IGNORED (with a warning) as soon as a
-  `"user@*"` or `"user@<thishost>"` entry exists -- an @-entry naming
-  some OTHER host does not shadow it -- import its directory explicitly from
-  an @-entry if you want to reuse it.
+- A user directory that contains neither `home.nix` nor
+  `configuration.nix` (and no `hosts/`) is skipped with a warning, not
+  silently ignored -- usually a typo in a filename.
 - "Every login" means every systemd user-manager instance, not every
   terminal window: systemd starts ONE `--user` instance per user at
   their first session of the day and reuses it for every session

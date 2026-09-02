@@ -34,12 +34,9 @@ let
     hostname = "patched";
     modules = [ ../checks/example/hosts/server/configuration.nix ];
     patches = [ markerPatch ];
-    # unrelated to patching -- explicit so `inputs.self`'s userRegistry
-    # auto-discovery (loginFlakeRef's default) does not pick up
-    # checks/example/users/ (frank-base/frank-laptop are named differently
-    # from their registry key -- see builders/tests/registry.nix's
-    # autoDiscoverRoot comment for why that breaks auto-discovery)
-    userRegistry = { };
+    # unrelated to patching -- no users here, so this check does not pay
+    # for evaluating checks/example's users tree
+    users = [ ];
   };
 
   # A variant nixpkgs-* input must NOT be patched: a nixpkgs PR diff
@@ -55,7 +52,7 @@ let
     hostname = "patchedvariant";
     modules = [ ../checks/example/hosts/server/configuration.nix ];
     patches = [ markerPatch ];
-    userRegistry = { }; # see `patched` above for why
+    users = [ ]; # see `patched` above for why
   };
 
   # A `patches` element that is a DIRECTORY auto-expands via
@@ -71,7 +68,7 @@ let
     hostname = "patchedfromdir";
     modules = [ ../checks/example/hosts/server/configuration.nix ];
     patches = [ ../checks/fixtures/nixpkgs-patching-dir ];
-    userRegistry = { }; # see `patched` above for why
+    users = [ ]; # see `patched` above for why
   };
 
   # A `patches` directory that expands to `[ ]` (nothing applicable inside
@@ -87,7 +84,7 @@ let
     hostname = "emptydirpatched";
     modules = [ ../checks/example/hosts/server/configuration.nix ];
     patches = [ ../checks/fixtures/nixpkgs-patching-empty-dir ];
-    userRegistry = { }; # see `patched` above for why
+    users = [ ]; # see `patched` above for why
   };
 
   assertions = {
