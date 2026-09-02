@@ -25,11 +25,11 @@ in
     let
       hosts = {
         _defaults = {
-          inherit inputs system userRegistry;
+          inherit inputs system;
           loginHomes = [ "alice" ];
         };
         laptop = { };
-        server = { userRegistry = { }; };
+        server = { users = [ ]; };
       };
     in
     {
@@ -38,32 +38,19 @@ in
     }
     ```
 
-    NixOS-only arguments in the attrset (`modules`, `userModule`, ...)
-    are accepted and ignored here, so one hosts attrset can feed both
-    build functions (`homeModules` applies on BOTH sides: to the
-    login homes built here and to the system-managed homes in
-    `buildNixosConfigurations`). Key collisions between hosts are
-    impossible: every produced key carries its own `@<hostname>` suffix.
-
     # Example
 
     ```nix
     # extLib = inputs.nixpkgs-lib-extensions.lib
+    # with users/alice/home.nix, users/frank/home.nix and
+    # users/frank/hosts/laptop/home.nix on disk:
     extLib.buildHomeConfigurations {
-      _defaults = {
-        inherit inputs system;
-        userRegistry = {
-          "alice" = ./users/alice;
-          "bob"   = ./users/bob; # system-managed: no output
-        };
-        loginHomes = [ "alice" ];
-      };
-      laptop = { };
-      desktop = { };
+      inherit inputs system;
     }
     =>
-    { "alice@laptop" = <homeManagerConfiguration>;
-      "alice@desktop" = <homeManagerConfiguration>; }
+    { "alice"        = <homeManagerConfiguration>;   # usable anywhere
+      "frank"        = <homeManagerConfiguration>;   # ditto
+      "frank@laptop" = <homeManagerConfiguration>; } # + the laptop override
     ```
 
     # Type

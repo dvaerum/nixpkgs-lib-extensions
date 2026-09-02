@@ -2,11 +2,12 @@
 { lib, ... }:
 {
   /**
-    Auto-discover a `userRegistry` from a `users/` directory: one
-    entry per subdirectory that looks like a user.
-    You will usually NOT call this directly -- `mkNixosSystem`'s own
-    `userRegistry` argument already does this automatically when it is
-    omitted and `loginFlakeRef` names a flake input (see its doc comment).
+    Scan a `users/` directory into `{ <username> = <directory>; }`: one
+    entry per subdirectory that looks like a user. This is how every
+    builder learns who exists, so you will usually NOT call it directly
+    -- `mkNixosSystem` and friends scan `rootPath` (or `loginFlakeRef`)
+    themselves. Call it for something convention cannot do: scanning a
+    differently-named directory, or filtering the result before use.
     Call it yourself only for something that convention cannot do: scanning
     a differently-named directory, or filtering/extending the result before
     use (`discoverUserRegistry dir // { extra = ./local-user; }`).

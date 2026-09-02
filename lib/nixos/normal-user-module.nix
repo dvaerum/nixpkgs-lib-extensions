@@ -9,7 +9,7 @@
     own group.
 
     This is the default `userModule` of `mkNixosSystem`, so
-    every user derived from the `userRegistry` gets a login
+    every user derived from the users tree gets a login
     account automatically. Pass your own function when accounts need more,
     or `userModule = null` to disable account creation.
 
@@ -95,9 +95,9 @@
             {
               assertion = !(normalAccount && config.users.users.${username}.isSystemUser);
               message = ''
-                nixpkgs-lib-extensions: user `${username}` is declared `isSystemUser = true`, but this host's `userModule` (by default `normalUserModule`) also makes every userRegistry user a NORMAL account, and NixOS allows only one of the two.
+                nixpkgs-lib-extensions: user `${username}` is declared `isSystemUser = true`, but this host's `userModule` (by default `normalUserModule`) also makes every user from the users tree a NORMAL account, and NixOS allows only one of the two.
                 Fix it by one of:
-                  - dropping `${username}` from the userRegistry, if the account is not a person;
+                  - removing `users/${username}/` from the users tree, if the account is not a person;
                   - pinning a uid below 1000 for `${username}`, which this module leaves alone;
                   - passing `userModule = null` and creating the accounts yourself.
               '';

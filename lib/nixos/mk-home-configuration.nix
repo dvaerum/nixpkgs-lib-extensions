@@ -17,13 +17,13 @@ in
         inherit inputs system;
         hostname = "laptop";
         username = "alice";
-        userRegistry."alice" = ./users/alice;
       };
     ```
 
-    The user's `home.nix` files come from the `userRegistry` entries
-    matching the host (`"<user>@<host>"` and `"<user>@*"` merge; plain
-    `"<user>"` is the standalone fallback). Companion `configuration.nix`
+    The user's `home.nix` files come from the users tree: their own
+    `users/<user>/home.nix`, plus `users/<user>/hosts/<host>/home.nix`
+    merged on top when a `hostname` is given and that directory exists.
+    Companion `configuration.nix`
     files are ignored here — they are system configuration, imported by
     `mkNixosSystem`. Shares the package set, `specialArgs`
     and auto-collected home-manager modules with the other builders (it
@@ -44,10 +44,9 @@ in
       hostname = "laptop";
       system   = "x86_64-linux";
       username = "alice";
-      userRegistry = {
-        "alice@*"      = ./users/alice;
-        "alice@laptop" = ./users/alice-laptop; # merged in on laptop
-      };
+      # built from users/alice/home.nix, plus
+      # users/alice/hosts/laptop/home.nix merged on top if it exists.
+      # Omit `hostname` for the host-less home instead.
     }
     =>
     <homeManagerConfiguration for alice@laptop>
@@ -74,12 +73,17 @@ in
     system
     : The system double, e.g. `"x86_64-linux"`.
 
-    userRegistry
-    : The user registry (same shape as in `mkNixosSystem`);
-    : only the entries matching `username` on `hostname` are used here.
-    : Default `{ }`.
-    : NOTE: in a git-backed flake, `git add` new files or they are
-    : invisible to the flake and skipped silently.
+    users
+    : WHICH of the users tree applies -- omitted means all of them, a
+    : list names exactly those wanted, and an unknown name THROWS. Users
+    : are declared by DIRECTORIES under `users/` (read from `rootPath`,
+    : default `inputs.self`, or from `loginFlakeRef`): this home is built
+    : from `users/<username>/home.nix`, plus
+    : `users/<username>/hosts/<hostname>/home.nix` merged on top when
+    : `hostname` is given and that directory exists. Omitting `hostname`
+    : builds the HOST-LESS home -- the user's own files alone, with no
+    : `hosts/` override applying and `nixpkgsLibExtensions.hostname` set
+    : to `null`.
 
     homeModules
     : home-manager modules added to the home configuration, on top of those

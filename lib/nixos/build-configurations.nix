@@ -40,11 +40,10 @@ in
         _defaults = {
           inherit inputs;
           system = "x86_64-linux";
-          userRegistry."alice" = ./users/alice;
           loginHomes = [ "alice" ];
         };
         laptop = { };
-        server = { userRegistry = { }; };
+        server = { users = [ ]; };
       };
     =>
     {

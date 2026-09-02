@@ -667,11 +667,10 @@ outputs =
     _defaults = {
       inherit inputs;
       system = "x86_64-linux";
-      userRegistry."alice" = ./users/alice;
       loginHomes = [ "alice" ];
     };
     laptop = { };
-    server = { userRegistry = { }; };
+    server = { users = [ ]; };
   };
 =>
 {
@@ -721,11 +720,11 @@ produced set is exactly what the login bootstrap activates
 let
   hosts = {
     _defaults = {
-      inherit inputs system userRegistry;
+      inherit inputs system;
       loginHomes = [ "alice" ];
     };
     laptop = { };
-    server = { userRegistry = { }; };
+    server = { users = [ ]; };
   };
 in
 {
@@ -734,32 +733,19 @@ in
 }
 ```
 
-NixOS-only arguments in the attrset (`modules`, `userModule`, ...)
-are accepted and ignored here, so one hosts attrset can feed both
-build functions (`homeModules` applies on BOTH sides: to the
-login homes built here and to the system-managed homes in
-`buildNixosConfigurations`). Key collisions between hosts are
-impossible: every produced key carries its own `@<hostname>` suffix.
-
 ### Example
 
 ```nix
 # extLib = inputs.nixpkgs-lib-extensions.lib
+# with users/alice/home.nix, users/frank/home.nix and
+# users/frank/hosts/laptop/home.nix on disk:
 extLib.buildHomeConfigurations {
-  _defaults = {
-    inherit inputs system;
-    userRegistry = {
-      "alice" = ./users/alice;
-      "bob"   = ./users/bob; # system-managed: no output
-    };
-    loginHomes = [ "alice" ];
-  };
-  laptop = { };
-  desktop = { };
+  inherit inputs system;
 }
 =>
-{ "alice@laptop" = <homeManagerConfiguration>;
-  "alice@desktop" = <homeManagerConfiguration>; }
+{ "alice"        = <homeManagerConfiguration>;   # usable anywhere
+  "frank"        = <homeManagerConfiguration>;   # ditto
+  "frank@laptop" = <homeManagerConfiguration>; } # + the laptop override
 ```
 
 ### Type
@@ -903,11 +889,12 @@ buildNixosConfigurations ::
 
 ## `lib.nixos.discoverUserRegistry`
 
-Auto-discover a `userRegistry` from a `users/` directory: one
-entry per subdirectory that looks like a user.
-You will usually NOT call this directly -- `mkNixosSystem`'s own
-`userRegistry` argument already does this automatically when it is
-omitted and `loginFlakeRef` names a flake input (see its doc comment).
+Scan a `users/` directory into `{ <username> = <directory>; }`: one
+entry per subdirectory that looks like a user. This is how every
+builder learns who exists, so you will usually NOT call it directly
+-- `mkNixosSystem` and friends scan `rootPath` (or `loginFlakeRef`)
+themselves. Call it for something convention cannot do: scanning a
+differently-named directory, or filtering the result before use.
 Call it yourself only for something that convention cannot do: scanning
 a differently-named directory, or filtering/extending the result before
 use (`discoverUserRegistry dir // { extra = ./local-user; }`).
@@ -959,7 +946,7 @@ background (so login is never hard-blocked). First-login-only by default.
 `mkNixosSystem` includes this module automatically when it
 has `loginHomes`, so it normally does not need to be wired up by hand —
 direct use is for custom setups that build their NixOS systems some
-other way. It is driven by the `userRegistry` filtered by `loginHomes`
+other way. It is driven by a resolved users tree filtered by `loginHomes`
 (the same arguments the builders take) but is otherwise independent of
 the builders. Self-gating: when no login user matches, the home-manager
 input is missing or the flake reference is unset, the module is empty.
@@ -975,7 +962,7 @@ input is missing or the flake reference is unset, the module is empty.
       inherit inputs;
       hostname = "laptop";
       system   = "x86_64-linux";
-      userRegistry = { "alice" = ./users/alice; };
+      users = { alice = ./users/alice; };
       loginHomes = [ "alice" ];
     })
   ];
@@ -1046,13 +1033,13 @@ homeConfigurations."alice@laptop" =
     inherit inputs system;
     hostname = "laptop";
     username = "alice";
-    userRegistry."alice" = ./users/alice;
   };
 ```
 
-The user's `home.nix` files come from the `userRegistry` entries
-matching the host (`"<user>@<host>"` and `"<user>@*"` merge; plain
-`"<user>"` is the standalone fallback). Companion `configuration.nix`
+The user's `home.nix` files come from the users tree: their own
+`users/<user>/home.nix`, plus `users/<user>/hosts/<host>/home.nix`
+merged on top when a `hostname` is given and that directory exists.
+Companion `configuration.nix`
 files are ignored here — they are system configuration, imported by
 `mkNixosSystem`. Shares the package set, `specialArgs`
 and auto-collected home-manager modules with the other builders (it
@@ -1073,10 +1060,9 @@ extLib.mkHomeConfiguration {
   hostname = "laptop";
   system   = "x86_64-linux";
   username = "alice";
-  userRegistry = {
-    "alice@*"      = ./users/alice;
-    "alice@laptop" = ./users/alice-laptop; # merged in on laptop
-  };
+  # built from users/alice/home.nix, plus
+  # users/alice/hosts/laptop/home.nix merged on top if it exists.
+  # Omit `hostname` for the host-less home instead.
 }
 =>
 <homeManagerConfiguration for alice@laptop>
@@ -1103,12 +1089,17 @@ mkHomeConfiguration :: Attribute -> HomeManagerConfiguration
 - **system**
   The system double, e.g. `"x86_64-linux"`.
 
-- **userRegistry**
-  The user registry (same shape as in `mkNixosSystem`);
-  only the entries matching `username` on `hostname` are used here.
-  Default `{ }`.
-  NOTE: in a git-backed flake, `git add` new files or they are
-  invisible to the flake and skipped silently.
+- **users**
+  WHICH of the users tree applies -- omitted means all of them, a
+  list names exactly those wanted, and an unknown name THROWS. Users
+  are declared by DIRECTORIES under `users/` (read from `rootPath`,
+  default `inputs.self`, or from `loginFlakeRef`): this home is built
+  from `users/<username>/home.nix`, plus
+  `users/<username>/hosts/<hostname>/home.nix` merged on top when
+  `hostname` is given and that directory exists. Omitting `hostname`
+  builds the HOST-LESS home -- the user's own files alone, with no
+  `hosts/` override applying and `nixpkgsLibExtensions.hostname` set
+  to `null`.
 
 - **homeModules**
   home-manager modules added to the home configuration, on top of those
@@ -1208,10 +1199,10 @@ Setting `group` groups hosts one folder deeper: the lookup then
 happens under `hosts/<group>/` instead of `hosts/` (`hostFolder`
 overrides the folder segment without touching the classification).
 
-The host's users come from ONE `userRegistry` — every user gets an
-account (unless `userModule = null`, or the account is a system one
-with a uid below 1000) and their `configuration.nix` imported into
-the system. How
+The host's users come from the `users/` DIRECTORY TREE (see the
+`users` argument) — every user gets an account (unless
+`userModule = null`, or the account is a system one with a uid below
+1000) and their `configuration.nix` imported into the system. How
 each user's `home.nix` is activated is selected by `loginHomes`:
 
 - not listed (the default) — SYSTEM-managed home: wired into the
@@ -1220,8 +1211,10 @@ each user's `home.nix` is activated is selected by `loginHomes`:
   switch`. No flake outputs, no bootstrap.
 - listed in `loginHomes` — LOGIN-managed home: activated on first
   login by the bootstrap (`homeManagerBootstrapModule`) running
-  `home-manager switch --flake <loginFlakeRef>#<user>@<host>`; the
-  flake must export those `homeConfigurations` outputs (built by
+  `home-manager switch` against that flake's matching
+  `homeConfigurations` output (`<user>`, or `<user>@<host>` where the
+  user has a `hosts/<host>/` override -- resolved at evaluation
+  time); the flake must export those outputs (built by
   `buildHomeConfigurations` from the same hosts attrset).
 
 A home is managed by exactly one mechanism, by construction.
@@ -1238,15 +1231,14 @@ extLib.mkNixosSystem {
   # ./hosts/laptop.nix (or ./hosts/laptop/configuration.nix) is
   # imported automatically; `modules` is only for anything extra.
 
-  # ALL users: accounts + configuration.nix, and home.nix activated
-  # with the system (home-manager NixOS module) unless listed in
-  # loginHomes. Every value is a DIRECTORY with home.nix and/or
-  # configuration.nix.
-  userRegistry = {
-    "alice@*"      = ./users/alice;        # on every host
-    "alice@laptop" = ./users/alice-laptop; # merged in on laptop
-    "bob"          = ./users/bob;          # only when no bob@... matches
-  };
+  # Users are the ./users tree, discovered automatically -- nothing
+  # to list here. Every users/<name>/ directory gets an account,
+  # its configuration.nix, and its home.nix activated with the
+  # system, unless listed in loginHomes:
+  #   users/alice/home.nix                  on every host
+  #   users/alice/hosts/laptop/home.nix     merged in on laptop
+  #   users/bob/home.nix
+  #
   # bob's home.nix activates on his first login instead (needs the
   # homeConfigurations outputs from buildHomeConfigurations)
   loginHomes = [ "bob" ];
@@ -1290,64 +1282,54 @@ mkNixosSystem :: Attribute -> NixosSystem
   `extra.modules = [ ... ];` rather than replacing it.
 
 - **userModule**
-  A function `username -> NixOS module`, applied for each user derived
-  from the `userRegistry`. Defaults to `normalUserModule`, which creates
+  A function `username -> NixOS module`, applied for each user the
+  users tree gives this host. Defaults to `normalUserModule`, which creates
   a normal login account per user; pass your own function for richer
   accounts, or `null` to disable account creation entirely.
 
-- **userRegistry**
-  THE user registry: every host user, whatever their home mechanism.
-  Every value must be a DIRECTORY containing `home.nix` (the user's
-  home-manager config) and/or `configuration.nix` (NixOS config for
-  that user: the account, its groups, ...). `configuration.nix` files
-  are imported into the system automatically. `home.nix` files are
-  wired into `home-manager.users.<user>` via home-manager's NixOS
-  module -- built and activated WITH the system on `nixos-rebuild
-  switch` (`useGlobalPkgs`/`useUserPackages` default to true,
-  overridable; each home gets `home.stateVersion` defaulted to the
-  CURRENT nixpkgs release, with a WARNING for any home relying on
-  that moving default -- pin it in the user's `home.nix` or fleet-wide
-  via `homeModules` -- and receives `username` as a module
-  argument) -- unless the user is listed in `loginHomes`. Prefer
-  path values over absolute path strings: a CONTEXT-FREE string escapes
-  the flake (never copied to the store, fails under pure evaluation)
-  and warns. A string built by concatenating onto a flake INPUT
-  (`inputs.foo + "/users/alice"`) is not the same hazard -- it carries
-  store context and is pure-eval-safe -- and is accepted without
-  warning. A directory with only a `configuration.nix` is a system-only user
-  (account, no home). Keys select where an entry applies:
-    `"<user>@<host>"`  this host only
-    `"<user>@*"`       every host; MERGES with a matching `"<user>@<host>"`
-    `"<user>"`         standalone default, used only when NO @-entry
-                       matched -- never merged with @-entries (a shadowed
-                       plain entry triggers an eval warning; import its
-                       directory explicitly from an @-entry to reuse it)
-  Example: with `"alice@*"` and `"alice@laptop"` both defined, both
-  apply on laptop; a plain `"alice"` would then never be used anywhere.
-  A `"<user>@*"` entry's directory is ALSO scanned for a
-  `hosts/<hostname>` subdirectory -- the SAME convention
-  `hosts/<hostname>.nix` uses at the flake root, one level down -- and
-  merges it in exactly like an explicit `"<user>@<hostname>"` entry
-  would. An explicit `"<user>@<hostname>"` key and an auto-detected
-  `hosts/<hostname>` folder both existing for the same user+host is
-  ambiguous and THROWS, naming both paths.
-  The keys define the host's users (exposed as the
-  `nixpkgsLibExtensions.users` option).
-  `null` or `{ }` disables it.
-  OMITTED ENTIRELY (not `null`, not `{ }` -- genuinely absent), it
-  auto-discovers instead: when `loginFlakeRef` resolves to a flake
-  input, every subdirectory of that input's `users/` directory shipping
-  `home.nix`/`configuration.nix` becomes a `"<name>@*"` entry (see
-  `discoverUserRegistry`). A `loginFlakeRef` flake-ref STRING (a
-  mutable checkout, not an input) cannot be read this way -- those
-  setups still write `userRegistry` explicitly. Adoption is announced
-  per host via `traceDiscoveredUsers` (default `true`); set
-  `userRegistry = { };` to disable discovery outright.
+- **users**
+  WHICH of the users tree applies to this host. Users themselves are
+  declared by DIRECTORIES, not by this argument -- see the `users/`
+  tree convention below -- so this only selects among them: omitted
+  (the default) means every user in the tree, `[ ]` means none, and a
+  list names exactly those wanted. A name that is not in the tree is a
+  typo and THROWS.
+  
+  The tree is read from `rootPath` (default: your flake,
+  `inputs.self`), or from `loginFlakeRef` when the homes live in
+  another flake. Each `users/<name>/` directory may contain `home.nix`
+  (the user's home-manager config) and/or `configuration.nix` (NixOS
+  config for that user: the account, its groups, ...), plus
+  `hosts/<hostname>/` subdirectories carrying the same two files for
+  one host only:
+  
+  - a user's own files apply on EVERY host;
+  - a `hosts/<hostname>/` subdirectory applies on that host and MERGES
+    on top of them;
+  - a user with ONLY `hosts/` subdirectories exists on those hosts and
+    nowhere else;
+  - a directory with only `configuration.nix` is a system-only user
+    (account, no home).
+  
+  `configuration.nix` files are imported into the system
+  automatically. `home.nix` files are wired into
+  `home-manager.users.<user>` via home-manager's NixOS module -- built
+  and activated WITH the system on `nixos-rebuild switch`
+  (`useGlobalPkgs`/`useUserPackages` default to true, overridable;
+  each home gets `home.stateVersion` defaulted to the CURRENT nixpkgs
+  release, with a WARNING for any home relying on that moving default
+  -- pin it in the user's `home.nix` or fleet-wide via `homeModules`
+  -- and receives `username` as a module argument) -- unless the user
+  is listed in `loginHomes`.
+  
+  The tree defines the host's users (exposed as the
+  `nixpkgsLibExtensions.users` option), and what it found is announced
+  via `traceDiscoveredUsers` (default `true`).
   WARNING: in a git-backed flake only TRACKED files exist -- `git add` a
   new home.nix/configuration.nix or it is skipped silently.
 
 - **loginHomes**
-  List of usernames (from `userRegistry`) whose `home.nix` is
+  List of usernames (from the users tree) whose `home.nix` is
   LOGIN-managed instead of system-managed: not part of the system,
   activated on the user's first login by the bootstrap via
   `home-manager switch --flake <loginFlakeRef>#<user>@<host>` -- the
@@ -1358,7 +1340,7 @@ mkNixosSystem :: Attribute -> NixosSystem
   like this (the list is usually shared through `_defaults` across
   hosts, so "not on this host" is normal) -- but the hosts-attrset
   builders see every host at once, and a name that matches no
-  registry user on ANY host is a typo and THROWS there. Default
+  user on ANY host is a typo and THROWS there. Default
   `[ ]` (every home is system-managed).
 
 - **loginFlakeRef**
@@ -1373,20 +1355,18 @@ mkNixosSystem :: Attribute -> NixosSystem
   next rebuild. Point it at a mutable checkout (e.g. `"/etc/nixos"`
   or `"git+https://..."`) to make the bootstrap build from the live
   tree instead -- a real, supported capability (not eval-time
-  knowable, so `userRegistry` auto-discovery never applies to it;
-  passing one WARNS, naming the trade-off, not because it is wrong).
+  knowable, so the users tree cannot be scanned from it; passing one
+  WARNS, naming the trade-off, not because it is wrong).
   Irrelevant without `loginHomes` users.
   Default `inputs.self`.
 
 - **traceDiscoveredUsers**
-  Whether `userRegistry` auto-discovery (see its own entry above)
-  announces what it adopted: `host \`<name>\`: userRegistry
-  auto-discovered from <ref>/users: <names>`, once per host that
-  actually adopted one (never printed for a host that supplies its own
-  `userRegistry`, or whose scan found nothing). May print more than
-  once per host -- the registry is independently resolved at each of
-  several internal call sites, and Nix has no way to deduplicate a
-  trace across them. Default `true`.
+  Whether scanning the users tree (see the `users` argument)
+  announces what it found: `users discovered in <ref>/users:
+  <names>`. Nothing is printed when the scan finds no users. May
+  print more than once when a build resolves the tree at more than
+  one entry point, which Nix gives no way to deduplicate.
+  Default `true`.
 
 - **loginReactivateEveryLogin**
   Bootstrap re-activates on every login instead of only the first.
@@ -1550,7 +1530,7 @@ shared `users` group) -- so by default a user is only a member of their
 own group.
 
 This is the default `userModule` of `mkNixosSystem`, so
-every user derived from the `userRegistry` gets a login
+every user derived from the users tree gets a login
 account automatically. Pass your own function when accounts need more,
 or `userModule = null` to disable account creation.
 

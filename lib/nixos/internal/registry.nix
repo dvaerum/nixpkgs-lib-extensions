@@ -175,7 +175,7 @@ let
   # Apply a host's own `users` filter to the tree: omitted (null) means
   # every user in the tree applies -- the default -- while a list selects
   # exactly those, and `[ ]` gives a host with no users at all (what an
-  # empty `userRegistry` used to say). Names that are not in the tree are
+  # host with no users used to be spelled). Names not in the tree are
   # a typo and throw, same bar as `loginHomes`.
   filterUsers =
     fnName: hostname: selection: tree:

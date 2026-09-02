@@ -13,7 +13,7 @@ in
     `mkNixosSystem` includes this module automatically when it
     has `loginHomes`, so it normally does not need to be wired up by hand —
     direct use is for custom setups that build their NixOS systems some
-    other way. It is driven by the `userRegistry` filtered by `loginHomes`
+    other way. It is driven by a resolved users tree filtered by `loginHomes`
     (the same arguments the builders take) but is otherwise independent of
     the builders. Self-gating: when no login user matches, the home-manager
     input is missing or the flake reference is unset, the module is empty.
@@ -29,7 +29,7 @@ in
           inherit inputs;
           hostname = "laptop";
           system   = "x86_64-linux";
-          userRegistry = { "alice" = ./users/alice; };
+          users = { alice = ./users/alice; };
           loginHomes = [ "alice" ];
         })
       ];
