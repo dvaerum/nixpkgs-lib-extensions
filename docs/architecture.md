@@ -57,40 +57,42 @@ without importing it.
 
 ## From a hosts attrset to systems and homes
 
+```mermaid
+flowchart TD
+    Call(["buildConfigurations hosts<br/>(or buildNixosConfigurations /<br/>buildHomeConfigurations alone)"])
+    Plan["planHosts<br/>(hosts-args.nix)"]
+    PlanData["plan = { &lt;hostname&gt;: { args; core; registry; } }"]
+    Systems["systemsFromPlan"]
+    Homes["homesFromPlan"]
+    MkSystem["mkSystem core args<br/>(mk-system.nix)"]
+    MkHome["mkHome core args<br/>(mk-home.nix, per login user@host)"]
+
+    Call --> Plan --> PlanData
+    PlanData --> Systems --> MkSystem
+    PlanData --> Homes --> MkHome
 ```
-buildConfigurations hosts        (or buildNixosConfigurations /
-        |                         buildHomeConfigurations alone)
-        v
-planHosts                        hosts-args.nix
-  1 splitHostsArgs: validate every key against the allowlists,
-    split off _defaults and _groups; ALL complaints are collected
-    and thrown together
-  2 merge per host: _defaults, then the host's _groups layer
-    (selected by effectiveGroup), then the host entry; the host's
-    `extra` slot ADDS on top (lists concatenate, attrsets merge)
-  3 core sharing: hosts are grouped into equivalence classes over
-    the CORE arguments (coreArgNames -- derived from mkContextCore's
-    formals, never hand-listed); ONE mkContextCore per class
-        |
-        v
-plan = { <hostname> = { args; core; registry; }; }
-        |
-        +--> systemsFromPlan ------> mkSystem core args     (per host)
-        |                              mk-system.nix
-        |                              - mkContext core: lib, pkgs,
-        |                                specialArgs, collected modules
-        |                              - route A: nixpkgs.lib.nixosSystem
-        |                                (unpatched nixpkgs flake)
-        |                                route B: eval-config from the
-        |                                selected tree (patched, or no
-        |                                lib.nixosSystem); a check pins
-        |                                both routes to the same drv
-        |
-        +--> homesFromPlan --------> mkHome core args       (per login
-                                       mk-home.nix           user@host)
-                                       - same mkContext core
-                                       - homeManagerConfiguration
-```
+
+`planHosts` does three things:
+
+1. `splitHostsArgs`: validate every key against the allowlists,
+   split off `_defaults` and `_groups`; ALL complaints are collected
+   and thrown together.
+2. merge per host: `_defaults`, then the host's `_groups` layer
+   (selected by `effectiveGroup`), then the host entry; the host's
+   `extra` slot ADDS on top (lists concatenate, attrsets merge).
+3. core sharing: hosts are grouped into equivalence classes over the
+   CORE arguments (`coreArgNames` -- derived from `mkContextCore`'s
+   formals, never hand-listed); ONE `mkContextCore` per class.
+
+`systemsFromPlan` calls `mkSystem core args` per host: it builds the
+context (`mkContext core`: lib, pkgs, specialArgs, collected modules)
+and picks one of two evaluation routes -- route A,
+`nixpkgs.lib.nixosSystem`, for an unpatched nixpkgs flake; route B,
+`eval-config` imported from the selected tree, for a patched tree or a
+nixpkgs input exposing no `lib.nixosSystem` -- a check pins both
+routes to the same derivation. `homesFromPlan` calls `mkHome core args`
+per login-managed `user@host`, sharing the same `mkContext` core and
+producing a `homeManagerConfiguration`.
 
 The direct builders (`mkNixosSystem`, `mkHomeConfiguration`) validate
 their arguments and call the same `mkSystem`/`mkHome` with

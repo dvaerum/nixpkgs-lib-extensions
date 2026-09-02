@@ -22,6 +22,27 @@ and the workflow.
 - NixOS modules, home-manager modules, overlays and lib extensions
   exported by your flake inputs are **wired in automatically**.
 
+The pieces above, at a glance:
+
+```mermaid
+flowchart TD
+    Auto["loginFlakeRef's users/ directory"]
+    Reg["userRegistry<br/>who exists + what their home/system config looks like"]
+    Hosts["hosts attrset<br/>_defaults + _groups + per-host entries"]
+    Build(["buildConfigurations"])
+    Nix["nixosConfigurations.&lt;host&gt;<br/>one full system per host"]
+    Home["homeConfigurations.&lt;user&gt;@&lt;host&gt;<br/>per login-managed home"]
+    Deployed(["running host"])
+
+    Auto -. "auto-discovered when<br/>userRegistry is omitted" .-> Reg
+    Reg --> Build
+    Hosts --> Build
+    Build --> Nix
+    Build --> Home
+    Nix -- "nixos-rebuild switch" --> Deployed
+    Home -- "home-manager switch,<br/>on first login" --> Deployed
+```
+
 ## Quick start
 
 Everything here is flakes-based, so Nix must have the `nix-command`
@@ -151,6 +172,22 @@ users/frank-base/
 An explicit `"user@<hostname>"` key and an auto-detected `hosts/<hostname>`
 folder both existing for the same user and host is ambiguous and
 **throws**, naming both paths -- delete one to resolve it.
+
+Put together, resolving a user U on host H looks like this:
+
+```mermaid
+flowchart TD
+    Q1{"'U@*' entry?"}
+    Q2{"host-specific entry for H?<br/>(explicit 'U@H', or an auto-detected<br/>hosts/H/ folder inside 'U@*')"}
+    Q1 --> Q2
+    Q2 -->|"both explicit AND<br/>auto-detected exist"| Throw["🛑 throws -- ambiguous,<br/>delete one"]
+    Q2 -->|"one of them, or neither"| Merge["merge whatever matched<br/>('U@*' + the host-specific one, if any)"]
+    Merge --> AnyQ{"anything matched?"}
+    AnyQ -->|yes| R1["result = the merged @-entries<br/>(a plain 'U' entry, if present,<br/>is ignored -- with a warning)"]
+    AnyQ -->|no| PlainQ{"plain 'U' entry?"}
+    PlainQ -->|yes| R2["result = the plain entry"]
+    PlainQ -->|no| R3["U is not a user on H"]
+```
 
 The registry keys define the host's users -- there is no separate
 `users` argument anywhere.
@@ -390,18 +427,13 @@ Disable account creation entirely with `userModule = null;`
 Every registry user's `home.nix` is activated by exactly one of two
 mechanisms; `loginHomes` selects which:
 
-```
-                     home.nix of a user
-                             |
-              in loginHomes? |
-             no              |             yes
-              v                             v
-  built INTO the system         built as the flake output
-  (home-manager NixOS           homeConfigurations
-   module); activates on         ."user@host" (by
-  nixos-rebuild switch          buildHomeConfigurations);
-                                activated on FIRST LOGIN
-                                by the bootstrap service
+```mermaid
+flowchart TD
+    A(["a user's home.nix"]) --> B{"listed in loginHomes?"}
+    B -->|"no (default)"| C["built INTO the system<br/>(home-manager's NixOS module)"]
+    B -->|"yes"| D["exported as a flake output<br/>homeConfigurations.'user@host'"]
+    C --> E(["activates with<br/>nixos-rebuild switch"])
+    D --> F(["activated on the user's<br/>FIRST LOGIN by the<br/>bootstrap service"])
 ```
 
 System-managed (the default) means the home is built together with
