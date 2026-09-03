@@ -180,6 +180,13 @@
             pkgs = nixpkgs.legacyPackages.${system};
             inherit nixpkgs myLib;
           };
+          # mechanical documentation rules (examples, references,
+          # anchors, indentation) -- see the file's own header for what
+          # the two name-pinning checks above deliberately do NOT cover
+          docs-integrity = import ./checks/docs-integrity.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            inherit self;
+          };
           docs-up-to-date = import ./checks/docs-up-to-date.nix {
             pkgs = nixpkgs.legacyPackages.${system};
             inherit self;
