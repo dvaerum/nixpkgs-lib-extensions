@@ -87,6 +87,12 @@ in
     : `inputs.self` is the immutable store copy of your flake the system
     : was built from (homes match the last `nixos-rebuild`); use a mutable
     : reference like `"/etc/nixos"` to build homes from a live checkout.
+    : This module always resolves against ONE flake shared by every
+    : login-managed user -- unlike `mkNixosSystem`'s own `loginFlakeRef`
+    : (which also selects account/`configuration.nix` sources and accepts
+    : a LIST of them), a list value here THROWS if any login-managed user
+    : actually needs resolving: there is no per-user tree to pick from at
+    : this level.
     : Default `inputs.self`.
 
     loginReactivateEveryLogin
@@ -122,11 +128,23 @@ in
           lib.warn (shared.stringFlakeRefWarning hostname loginFlakeRef) v
         else
           v;
-      effectiveFlakeRef = warnStringFlakeRef (
-        if loginFlakeRef != null then loginFlakeRef else (inputs.self or null)
-      );
       # login-managed users with an actual home.nix on this host
       usersHome = shared.loginUsersWithHome users hostname loginHomes;
+
+      # `loginFlakeRefSources` (registry.nix) lets DIFFERENT users live in
+      # DIFFERENT trees for account/configuration.nix discovery, but this
+      # module resolves ONE effectiveFlakeRef/attrFor pair shared by every
+      # user in usersHome -- there is no per-user tree here to pick from.
+      # Fail loudly rather than silently falling back to attrFor's
+      # historical `<u>@<hostname>` guess against what could be the wrong
+      # tree entirely. Only matters when there is an actual login-managed
+      # user to resolve on THIS host -- a fleet-wide `loginHomes` that
+      # simply doesn't apply here is unaffected.
+      effectiveFlakeRef =
+        if lib.isList loginFlakeRef && usersHome != [ ] then
+          throw "homeManagerBootstrapModule: host `${hostname}`: loginFlakeRef is a list (multiple users trees), which the login bootstrap cannot resolve per-user -- it activates every loginHomes user against ONE flake. Keep ${lib.concatStringsSep ", " usersHome} system-managed instead (drop them from loginHomes), or use a single, non-list loginFlakeRef for this host."
+        else
+          warnStringFlakeRef (if loginFlakeRef != null then loginFlakeRef else (inputs.self or null));
 
       # WHICH flake attribute each user's home is exported under. A
       # host-agnostic user is `homeConfigurations."<u>"`; one with a

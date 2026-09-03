@@ -81,7 +81,10 @@ in
     : This function builds the ONE user named by `username`, so there is
     : nothing to select. Users
     : are declared by DIRECTORIES under `users/` (read from `rootPath`,
-    : default `inputs.self`, or from `loginFlakeRef`): this home is built
+    : default `inputs.self`, optionally combined with `loginFlakeRef` --
+    : same forms as `mkNixosSystem`'s own `loginFlakeRef` entry, though
+    : its trust dimension is moot here: this builder only ever reads one
+    : user's `home.nix`, never a `configuration.nix`): this home is built
     : from `users/<username>/home.nix`, plus
     : `users/<username>/hosts/<hostname>/home.nix` merged on top when
     : `hostname` is given and that directory exists. Omitting `hostname`

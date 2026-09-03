@@ -227,6 +227,45 @@ A `loginFlakeRef` that is a flake-ref **string** (`"/etc/nixos"`, a
 mutable checkout -- see [Two home mechanisms](#two-home-mechanisms))
 cannot be read at evaluation time, so no users are discovered from it.
 
+### Combining several trees on one host
+
+A single `loginFlakeRef` value (as above) **replaces** `rootPath`'s
+tree entirely -- for the common "all my homes live in one other flake"
+case. To instead **add** users from a tree you do not fully control
+alongside your own -- say `dennis` lives in this flake, and `per`/`bo`
+live in a separate repo -- give `loginFlakeRef` a **list**:
+
+```nix
+mkNixosSystem {
+  # rootPath's own tree (dennis, here) always applies and is always
+  # trusted; loginFlakeRef only decides what gets ADDED to it.
+  loginFlakeRef = [
+    inputs.per-bo-flake                                    # untrusted (default)
+    { source = inputs.per-bo-flake; allowNixosConfig = true; }  # explicitly trusted
+  ];
+};
+```
+
+`allowNixosConfig` governs ONE thing: whether that source's
+`configuration.nix` files are imported. They run with full,
+unrestricted NixOS module authority -- `security.*`, arbitrary
+`imports`, anything -- so a repo you don't fully control does not get
+that by default. `home.nix` and the account itself are never gated by
+it: an untrusted user still gets a real account and their home applies
+normally, just not their own `configuration.nix` content. **This
+default is `false` everywhere `loginFlakeRef` is used, including a
+bare, non-list value** -- a deliberate breaking-change default, since
+no trust concept existed before it. The same username discovered in
+more than one source throws (ambiguous -- pick one source per user).
+
+This is a separate concern from the login bootstrap: `loginFlakeRef`
+as a list only affects account/`configuration.nix`/`home.nix`
+discovery for **system-managed** users. The login bootstrap itself
+still resolves one shared flake for every `loginHomes` user on a host,
+so a list `loginFlakeRef` on a host with `loginHomes` users throws at
+build time -- keep multi-tree users system-managed, or use a single
+value on a host with login-managed users.
+
 ### Selecting which users apply to a host
 
 By default every user in the tree applies to every host. A host's
@@ -949,6 +988,12 @@ merged option value, also labeling the boot menu via
   `loginFlakeRef`) must be set -- all are required, and the service
   is simply absent otherwise. Users NOT in `loginHomes` never touch
   the bootstrap: their homes activate with `nixos-rebuild switch`.
+- A `loginFlakeRef` **list** (see [Combining several trees on one
+  host](#combining-several-trees-on-one-host)) throws at build time if
+  the host also has a `loginHomes` user needing resolution -- the
+  bootstrap always resolves one shared flake for every login-managed
+  user, so there is no per-user tree to pick from at that level. Keep
+  multi-tree users system-managed, or use a single value here.
 - A `loginHomes` name is only checked across the WHOLE hosts attrset:
   a name the tree does not have at all throws (typo), but a name
   that merely does not apply to some host is legal there -- one shared

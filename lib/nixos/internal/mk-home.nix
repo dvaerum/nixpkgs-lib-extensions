@@ -13,6 +13,7 @@ let
     resolveUser
     usersFromRegistry
     resolveUsers
+    loginFlakeRefSources
     ;
 in
 {
@@ -39,18 +40,26 @@ in
         ;
 
       # The users tree: scanned from `loginFlakeRef` when the homes live
-      # in another flake, else `rootPath` (this flake). `users` may also
-      # be handed in already-resolved by a plan, which is how a fleet
-      # shares one scan across every host and home.
+      # in another flake (loginFlakeRefSources handles its null/list/
+      # replace forms the same way mk-system.nix does), else `rootPath`
+      # (this flake). `usersTree` may also be handed in already-resolved
+      # by a plan, which is how a fleet shares one scan across every host
+      # and home. A home.nix never gets configuration.nix's NixOS module
+      # authority, so the trust dimension (untrustedUsers) is meaningless
+      # here -- only `.tree` is used.
       userTree =
-        if args ? usersTree then
-          args.usersTree
-        else
-          resolveUsers {
-            ref = args.loginFlakeRef or (args.rootPath or (inputs.self or null));
-            label = if hostname == null then "${username}" else "${username}@${hostname}";
-            traceDiscoveredUsers = args.traceDiscoveredUsers or true;
-          };
+        (
+          if args ? usersTree then
+            args.usersTree
+          else
+            resolveUsers {
+              sources = loginFlakeRefSources (args.loginFlakeRef or null) (
+                args.rootPath or (inputs.self or null)
+              );
+              label = if hostname == null then "${username}" else "${username}@${hostname}";
+              traceDiscoveredUsers = args.traceDiscoveredUsers or true;
+            }
+        ).tree;
       registryHomeModules = (resolveUser userTree hostname username).homeModules;
     in
     (

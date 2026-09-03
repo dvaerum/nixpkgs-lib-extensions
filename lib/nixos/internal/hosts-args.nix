@@ -17,6 +17,7 @@ let
     loginUsersWithHome
     resolveUser
     resolveUsers
+    loginFlakeRefSources
     discoverHostsForUser
     filterUsers
     ;
@@ -357,12 +358,13 @@ let
       # normally shares `_defaults`' inputs/loginFlakeRef, so scanning per
       # host would repeat identical work and (worse) repeat the discovery
       # trace once per host for one real scan.
+      # `{ tree; untrustedUsers; }` -- the shape resolveUsers returns --
+      # shared as-is via `registry`/`args.usersTree` below; mk-system.nix
+      # and mk-home.nix each unwrap what they need.
       usersTree = resolveUsers {
-        ref =
-          if (split.defaults.loginFlakeRef or null) != null then
-            split.defaults.loginFlakeRef
-          else
-            (split.defaults.rootPath or (split.defaults.inputs.self or null));
+        sources = loginFlakeRefSources (split.defaults.loginFlakeRef or null) (
+          split.defaults.rootPath or (split.defaults.inputs.self or null)
+        );
         label = fnName;
         traceDiscoveredUsers = split.defaults.traceDiscoveredUsers or true;
       };
@@ -515,7 +517,11 @@ let
       lib.attrValues (
         lib.mapAttrs (hostname: p: {
           inherit hostname;
-          registry = p.registry;
+          # bare tree -- validateLoginUsers/registryUserNames want
+          # `{ username = path; }`, not the `{ tree; untrustedUsers; }`
+          # wrapper p.registry carries (trust is irrelevant to a
+          # loginHomes typo check).
+          registry = p.registry.tree;
           loginHomes = p.args.loginHomes or [ ];
         }) plan
       )
@@ -544,22 +550,25 @@ let
     let
       checked = validateBuilderArgs fnName [ ] args;
       core = mkContextCore checked;
-      tree = resolveUsers {
-        ref =
-          if (checked.loginFlakeRef or null) != null then
-            checked.loginFlakeRef
-          else
-            (checked.rootPath or (checked.inputs.self or null));
+      # `resolved` is the `{ tree; untrustedUsers; }` shape resolveUsers
+      # returns -- handed to mkHome as-is (it only reads `.tree`); `tree`
+      # below is the bare `{ username = path; }` map this function's own
+      # bare/pairs discovery needs.
+      resolved = resolveUsers {
+        sources = loginFlakeRefSources (checked.loginFlakeRef or null) (
+          checked.rootPath or (checked.inputs.self or null)
+        );
         label = fnName;
         traceDiscoveredUsers = checked.traceDiscoveredUsers or true;
       };
+      tree = resolved.tree;
       homeFor =
         username: hostname:
         mkHome core (
           checked
           // {
             inherit username hostname;
-            usersTree = tree;
+            usersTree = resolved;
           }
         );
       bare = lib.filter (u: (resolveUser tree null u).homeModules != [ ]) (lib.attrNames tree);
@@ -615,7 +624,19 @@ let
     lib.seq (planLoginUsers fnName plan) (
       let
         anyHost = lib.head (lib.attrNames plan);
-        tree = if plan == { } then { } else plan.${anyHost}.registry;
+        # `registry` is the plan's shared `{ tree; untrustedUsers; }`
+        # (identical object on every host -- one scan for the whole
+        # plan, see planHosts); `tree` is the bare map this function's
+        # own discovery below needs.
+        registry =
+          if plan == { } then
+            {
+              tree = { };
+              untrustedUsers = [ ];
+            }
+          else
+            plan.${anyHost}.registry;
+        tree = registry.tree;
         # a plan whose hosts have no home-manager contributes nothing; an
         # explicit `homeManager` counts as having one WITHOUT re-running
         # detection -- that argument exists to bypass it.
@@ -631,7 +652,7 @@ let
               // {
                 username = u;
                 hostname = null;
-                usersTree = tree;
+                usersTree = registry;
               }
             );
           }) (lib.filter (u: (resolveUser tree null u).homeModules != [ ]) (lib.attrNames tree))
@@ -664,7 +685,7 @@ let
                   // {
                     username = u;
                     inherit hostname;
-                    usersTree = tree;
+                    usersTree = registry;
                   }
                 );
               }) (lib.filter (u: (resolveUser hostTree hostname u).homeModules != [ ]) usersHere)

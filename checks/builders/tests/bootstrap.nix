@@ -15,6 +15,7 @@
   applyBootstrap,
   repoDir,
   exampleDir,
+  fixturesDir,
   ...
 }:
 let
@@ -162,4 +163,27 @@ in
         wrapHomeManagerSwitch = false;
       }
     ));
+
+  # ── list loginFlakeRef: out of scope for the login bootstrap ──
+  # per-user tree resolution (loginFlakeRefSources) only exists on the
+  # account/mkNixosSystem side; this module still resolves ONE
+  # effectiveFlakeRef shared by every loginHomes user, so a list here has
+  # no single flake to activate against. Must fail loudly, not silently
+  # guess against the wrong tree (see effectiveFlakeRef's own comment).
+  bootstrap-list-loginflakeref-with-loginhomes-throws =
+    !(builtins.tryEval (
+      (applyBootstrap {
+        loginFlakeRef = [ (fixturesDir + "/tree-per") ];
+      }).systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
+    )).success;
+  # ... but only when there is an actual login-managed user to resolve on
+  # THIS host -- a list loginFlakeRef alongside loginHomes that simply
+  # doesn't apply here (nobody in loginHomes has a home) is unaffected:
+  # the module self-gates to `{ }` the same as any other missing
+  # prerequisite (bootstrap-gates-without-home-manager above), not a throw.
+  bootstrap-list-loginflakeref-without-loginhomes-is-fine =
+    applyBootstrap {
+      loginFlakeRef = [ (fixturesDir + "/tree-per") ];
+      loginHomes = [ ];
+    } == { };
 }

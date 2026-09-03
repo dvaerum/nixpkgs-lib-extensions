@@ -27,6 +27,7 @@ let
     loginUsersWithHome
     resolveUsers
     filterUsers
+    loginFlakeRefSources
     ;
   inherit (import ./priorities.nix { inherit lib; }) builderDefaultPriority mkBuilderDefault;
 in
@@ -73,20 +74,28 @@ in
         inherit (ctx) inputPkgs channels;
       };
 
-      # The users tree. A plan hands one in already-resolved so a fleet
-      # shares ONE scan; a direct call scans `rootPath` (or
-      # `loginFlakeRef`, when the homes live in another flake) itself.
+      # The users tree. A plan hands one in already-resolved (as
+      # `{ tree; untrustedUsers; }`, the shape resolveUsers returns) so a
+      # fleet shares ONE scan; a direct call scans rootPath/loginFlakeRef
+      # itself -- loginFlakeRefSources turns loginFlakeRef into the
+      # ordered, trust-tagged source list resolveUsers scans (see its own
+      # doc comment in registry.nix for the null/list/replace forms).
       discoveredTree =
         if args ? usersTree then
           args.usersTree
         else
           resolveUsers {
-            ref = if loginFlakeRef != null then loginFlakeRef else (args.rootPath or (inputs.self or null));
+            sources = loginFlakeRefSources loginFlakeRef (args.rootPath or (inputs.self or null));
             label = "host `${hostname}`";
             inherit traceDiscoveredUsers;
           };
       # a host's own `users` list narrows the tree (`[ ]` = no users here)
-      userTree = filterUsers "mkNixosSystem" hostname (args.users or null) discoveredTree;
+      userTree = filterUsers "mkNixosSystem" hostname (args.users or null) discoveredTree.tree;
+      # Usernames whose source had `allowNixosConfig` unset/false --
+      # their configuration.nix is dropped in userNixosConfigs below,
+      # even though they still get an account (userModule) and their
+      # home.nix (system-managed home) applies normally.
+      untrustedUsers = discoveredTree.untrustedUsers;
 
       # The host's users: everyone whose directory applies here -- their
       # own, plus anyone existing only via a `hosts/<hostname>` override
@@ -99,8 +108,13 @@ in
 
       # Every matched user directory may ship a configuration.nix
       # (e.g. creating the user's account and groups); all of them are
-      # applied to the system automatically -- for login-managed users too.
-      userNixosConfigs = lib.concatMap (u: (resolveUser userTree hostname u).nixosModules) hostUsers;
+      # applied to the system automatically -- for login-managed users too
+      # -- EXCEPT an untrusted user's (see loginFlakeRefSources): that
+      # file gets full, unrestricted NixOS module authority, so a source
+      # this host does not fully trust does not get it by default.
+      userNixosConfigs = lib.concatMap (
+        u: if lib.elem u untrustedUsers then [ ] else (resolveUser userTree hostname u).nixosModules
+      ) hostUsers;
 
       # SYSTEM-MANAGED HOMES: the home.nix of every user NOT in
       # `loginHomes` is wired into the system via home-manager's NixOS

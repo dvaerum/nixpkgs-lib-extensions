@@ -257,45 +257,143 @@ let
         }.
       '';
 
-  # The users tree for a build: `{ <username> = <directory>; }`,
-  # discovered from `<ref>/users`. There is no hand-written alternative --
-  # the directory tree IS the declaration -- so this is the only way a
-  # user comes into existence.
+  # Turn the raw `loginFlakeRef` argument into the ordered list of
+  # `{ source; trusted; }` pairs `resolveUsers` scans. `rootPath` is
+  # ALWAYS in that list and ALWAYS trusted -- it's your own flake, there
+  # is nothing to withhold from it -- the three forms below only decide
+  # what `loginFlakeRef` itself contributes:
   #
-  # `ref` is the flake input whose `users/` directory to scan: `rootPath`
-  # for a flake's own users, `loginFlakeRef` when the homes live in
-  # another flake (see mk-nixos-system.nix's own doc comment). A STRING
-  # ref cannot be read at evaluation time at all, so it yields no users --
-  # stringFlakeRefWarning says so at the point it is passed.
+  #   null          -> nothing extra; rootPath alone (today's default).
+  #   a LIST         -> rootPath PLUS every list entry -- each entry
+  #                     untrusted unless wrapped
+  #                     `{ source; allowNixosConfig = true; }`.
+  #   anything else  -> REPLACES rootPath outright (the pre-existing
+  #                     "instead of" meaning, unchanged) -- untrusted
+  #                     unless wrapped the same way.
+  #
+  # Trust governs ONE thing: whether a source's `configuration.nix`
+  # files are imported at all (mk-system.nix's `userNixosConfigs`) --
+  # they run with FULL, unrestricted NixOS module authority, so a source
+  # you do not fully control should not get that by default. `home.nix`
+  # carries no such authority (it only ever reaches that one user's own
+  # home-manager home), so trust never gates it.
+  normalizeSource =
+    value:
+    # A wrapper `{ source; allowNixosConfig; }` is told apart from a real
+    # flake-input attrset by the `source` key -- the same "detect by
+    # shape, not by type" convention this library already uses for the
+    # home-manager input's capability detection. A real flake exporting
+    # its own top-level `source` attribute would collide with this, but
+    # no standard flake output uses that name.
+    if lib.isAttrs value && value ? source then
+      {
+        source = value.source;
+        trusted = value.allowNixosConfig or false;
+      }
+    else
+      {
+        source = value;
+        trusted = false;
+      };
+
+  loginFlakeRefSources =
+    loginFlakeRef: rootPath:
+    if loginFlakeRef == null then
+      [
+        {
+          source = rootPath;
+          trusted = true;
+        }
+      ]
+    else if lib.isList loginFlakeRef then
+      [
+        {
+          source = rootPath;
+          trusted = true;
+        }
+      ]
+      ++ map normalizeSource loginFlakeRef
+    else
+      [ (normalizeSource loginFlakeRef) ];
+
+  # The users tree for a build: `{ tree = { <username> = <directory>; };
+  # untrustedUsers = [ <username> ... ]; }`, discovered from every
+  # `<source>/users` in `sources` (see loginFlakeRefSources above) and
+  # merged into ONE tree. There is no hand-written alternative -- the
+  # directory tree IS the declaration -- so this is the only way a user
+  # comes into existence.
+  #
+  # A STRING source cannot be read at evaluation time at all, so it
+  # yields no users -- stringFlakeRefWarning says so at the point it is
+  # passed. The SAME username discovered from more than one source is an
+  # error: two trees silently deciding who wins would be exactly the
+  # ambiguity this library throws on everywhere else (filterUsers'
+  # unknown-name throw, hostsProblems' reserved-key throw, ...).
   resolveUsers =
     {
-      ref,
+      sources,
       label,
       traceDiscoveredUsers,
     }:
-    # A flake input (attrset) or a path both name a real tree. A bare
-    # STRING flake ref ("/etc/nixos", "git+https://...") names something
-    # only resolvable at activation time, so it yields no users --
-    # stringFlakeRefWarning says so where it is passed.
-    if ref == null || (lib.isString ref && !(builtins.hasContext ref)) then
-      { }
+    let
+      scanOne =
+        { source, trusted }:
+        # A flake input (attrset) or a path both name a real tree. A bare
+        # STRING flake ref ("/etc/nixos", "git+https://...") names
+        # something only resolvable at activation time, so it yields no
+        # users -- stringFlakeRefWarning says so where it is passed.
+        if source == null || (lib.isString source && !(builtins.hasContext source)) then
+          {
+            discovered = { };
+            inherit trusted;
+            usersDir = null;
+          }
+        else
+          let
+            # tryEval: `+` on an attrset with no `outPath`/`__toString`
+            # (not a genuine flake input, however it got here) throws
+            # immediately -- before discoverUserRegistry's own guard
+            # ever sees a `dir` to check. Same "an unrelated/unpredictable
+            # value must not break evaluation for a caller not even
+            # using this" reasoning as discoverUserRegistry's own tryEval.
+            usersDirProbe = builtins.tryEval (source + "/users");
+            discovered = if usersDirProbe.success then self.discoverUserRegistry usersDirProbe.value else { };
+          in
+          {
+            inherit discovered trusted;
+            usersDir = if usersDirProbe.success then usersDirProbe.value else null;
+          };
+
+      scanned = map scanOne sources;
+
+      allNames = lib.concatMap (s: lib.attrNames s.discovered) scanned;
+      duplicates = lib.unique (lib.filter (n: lib.count (m: m == n) allNames > 1) allNames);
+    in
+    if duplicates != [ ] then
+      throw ''
+        ${label}: ${lib.concatStringsSep ", " duplicates} ${
+          if lib.length duplicates == 1 then "is a user" else "are users"
+        } in more than one users tree (rootPath and/or a loginFlakeRef entry) -- ambiguous, pick one source per username.
+      ''
     else
       let
-        # tryEval: `+` on an attrset with no `outPath`/`__toString` (not a
-        # genuine flake input, however it got here) throws immediately --
-        # before discoverUserRegistry's own guard ever sees a `dir` to
-        # check. Same "an unrelated/unpredictable value must not break
-        # evaluation for a caller not even using this" reasoning as
-        # discoverUserRegistry's own tryEval.
-        usersDirProbe = builtins.tryEval (ref + "/users");
-        discovered = if usersDirProbe.success then self.discoverUserRegistry usersDirProbe.value else { };
+        tree = lib.foldl' (acc: s: acc // s.discovered) { } scanned;
+        untrustedUsers = lib.concatMap (s: if s.trusted then [ ] else lib.attrNames s.discovered) scanned;
+        result = {
+          inherit tree untrustedUsers;
+        };
+        traceMsgs =
+          if !traceDiscoveredUsers then
+            [ ]
+          else
+            map (
+              s:
+              "nixpkgs-lib-extensions: ${label}: users discovered in ${toString s.usersDir}: ${lib.concatStringsSep ", " (lib.attrNames s.discovered)}${
+                if s.trusted then "" else " (untrusted: configuration.nix ignored)"
+              } -- expected? Silence with `traceDiscoveredUsers = false;`."
+            ) (lib.filter (s: s.discovered != { } && s.usersDir != null) scanned);
       in
-      if discovered == { } || !traceDiscoveredUsers then
-        discovered
-      else
-        lib.trace ''
-          nixpkgs-lib-extensions: ${label}: users discovered in ${toString (ref + "/users")}: ${lib.concatStringsSep ", " (lib.attrNames discovered)} -- expected? Silence with `traceDiscoveredUsers = false;`.
-        '' discovered;
+      lib.foldl' (acc: msg: lib.trace msg acc) result traceMsgs;
 
 in
 {
@@ -308,6 +406,7 @@ in
     validateLoginUsers
     stringFlakeRefWarning
     resolveUsers
+    loginFlakeRefSources
     discoverHostsForUser
     entryDirsFor
     ;

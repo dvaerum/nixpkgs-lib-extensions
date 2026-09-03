@@ -1033,6 +1033,12 @@ homeManagerBootstrapModule :: Attribute -> Module
   `inputs.self` is the immutable store copy of your flake the system
   was built from (homes match the last `nixos-rebuild`); use a mutable
   reference like `"/etc/nixos"` to build homes from a live checkout.
+  This module always resolves against ONE flake shared by every
+  login-managed user -- unlike `mkNixosSystem`'s own `loginFlakeRef`
+  (which also selects account/`configuration.nix` sources and accepts
+  a LIST of them), a list value here THROWS if any login-managed user
+  actually needs resolving: there is no per-user tree to pick from at
+  this level.
   Default `inputs.self`.
 
 - **loginReactivateEveryLogin**
@@ -1122,7 +1128,10 @@ mkHomeConfiguration :: Attribute -> HomeManagerConfiguration
   This function builds the ONE user named by `username`, so there is
   nothing to select. Users
   are declared by DIRECTORIES under `users/` (read from `rootPath`,
-  default `inputs.self`, or from `loginFlakeRef`): this home is built
+  default `inputs.self`, optionally combined with `loginFlakeRef` --
+  same forms as `mkNixosSystem`'s own `loginFlakeRef` entry, though
+  its trust dimension is moot here: this builder only ever reads one
+  user's `home.nix`, never a `configuration.nix`): this home is built
   from `users/<username>/home.nix`, plus
   `users/<username>/hosts/<hostname>/home.nix` merged on top when
   `hostname` is given and that directory exists. Omitting `hostname`
@@ -1328,8 +1337,11 @@ mkNixosSystem :: Attribute -> NixosSystem
   the tree itself and are unaffected.
   
   The tree is read from `rootPath` (default: your flake,
-  `inputs.self`), or from `loginFlakeRef` when the homes live in
-  another flake. Each `users/<name>/` directory may contain `home.nix`
+  `inputs.self`) -- always trusted, always included -- and
+  optionally combined with one or more additional trees via
+  `loginFlakeRef` (see its own entry below for the forms and the
+  per-tree trust decision). Each `users/<name>/` directory may
+  contain `home.nix`
   (the user's home-manager config) and/or `configuration.nix` (NixOS
   config for that user: the account, its groups, ...), plus
   `hosts/<hostname>/` subdirectories carrying the same two files for
@@ -1378,20 +1390,48 @@ mkNixosSystem :: Attribute -> NixosSystem
   `[ ]` (every home is system-managed).
 
 - **loginFlakeRef**
-  Where the login bootstrap finds the home configurations of
-  `loginHomes` users: on first login it runs `home-manager switch`
-  against that flake's matching output -- `"<user>@<hostname>"` when
-  the user has a `hosts/<hostname>/` override, else `"<user>"`,
-  decided when the system is built.
-  The default `inputs.self` is the IMMUTABLE store copy of your flake
-  that the running system was built from -- homes then always match
-  the last `nixos-rebuild`, but local edits are invisible until the
-  next rebuild. Point it at a mutable checkout (e.g. `"/etc/nixos"`
-  or `"git+https://..."`) to make the bootstrap build from the live
-  tree instead -- a real, supported capability (not eval-time
-  knowable, so the users tree cannot be scanned from it; passing one
-  WARNS, naming the trade-off, not because it is wrong).
-  Irrelevant without `loginHomes` users.
+  TWO separate jobs: which ADDITIONAL users tree(s) this host draws
+  accounts/`configuration.nix`/`home.nix` from (beyond `rootPath`'s
+  own, which always applies), and where the login bootstrap finds
+  `loginHomes` users' home configurations at first login.
+  
+  As a users-tree source, three forms:
+  
+  - `null` (default): nothing extra -- `rootPath` alone.
+  - a LIST: `rootPath`'s tree PLUS every entry, each either a bare
+    flake ref/path or `{ source; allowNixosConfig ? false; }`.
+  - anything else (a bare ref, or the same wrapper): REPLACES
+    `rootPath` outright -- the pre-existing single-source form,
+    unchanged in that respect.
+  
+  `allowNixosConfig` governs ONE thing: whether that source's
+  `configuration.nix` files are imported at all. They run with FULL,
+  unrestricted NixOS module authority -- arbitrary `imports`,
+  `security.*`, `systemd.services`, anything -- so a source you do
+  not fully control should not get that by default. It DEFAULTS TO
+  `false` for every form above, including a bare singular value: a
+  deliberate breaking-change default (there was no trust concept
+  before this existed). `home.nix` and the account itself
+  (`userModule`) are never gated by trust -- only `configuration.nix`.
+  
+  As the login-bootstrap target: on first login it runs
+  `home-manager switch` against that flake's matching output --
+  `"<user>@<hostname>"` when the user has a `hosts/<hostname>/`
+  override, else `"<user>"`, decided when the system is built. This
+  half assumes ONE flake shared by every `loginHomes` user on the
+  host -- a LIST value here throws at build time if any `loginHomes`
+  user actually needs resolving (per-user tree resolution for the
+  login bootstrap is not implemented; keep such users system-managed,
+  or use a single, non-list value for a host with login-managed
+  users). The default `inputs.self` is the IMMUTABLE store copy of
+  your flake that the running system was built from -- homes then
+  always match the last `nixos-rebuild`, but local edits are
+  invisible until the next rebuild. Point it at a mutable checkout
+  (e.g. `"/etc/nixos"` or `"git+https://..."`) to make the bootstrap
+  build from the live tree instead -- a real, supported capability
+  (not eval-time knowable, so the users tree cannot be scanned from
+  it either; passing one WARNS, naming the trade-off, not because it
+  is wrong).
   Default `inputs.self`.
 
 - **traceDiscoveredUsers**
