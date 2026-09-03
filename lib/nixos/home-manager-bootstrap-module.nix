@@ -117,6 +117,18 @@ in
       home-manager = if homeManager != null then homeManager else shared.detectHomeManager inputs;
       homeManagerPkg =
         if home-manager == null then null else home-manager.packages.${system}.home-manager;
+      # `loginFlakeRefSources`'s wrapper form, unwrapped: a singular
+      # `{ source; allowNixosConfig; }` names the SOURCE at `.source`, not
+      # itself a flake ref. This module never touches configuration.nix,
+      # so the trust flag is irrelevant here -- only the activation
+      # target matters. A LIST is handled separately below (effectiveFlakeRef);
+      # `singularRef` is meaningless (and unused) in that case.
+      singularRef =
+        let
+          v = if loginFlakeRef != null then loginFlakeRef else (inputs.self or null);
+        in
+        if lib.isAttrs v && v ? source then v.source else v;
+
       # A STRING loginFlakeRef (not a flake input) is a deliberate escape
       # hatch -- see its own doc comment and stringFlakeRefWarning's comment
       # (registry.nix) for why it's warned rather than rejected. A real,
@@ -124,8 +136,8 @@ in
       # both a bare path string and full flake-ref syntax), not a mistake.
       warnStringFlakeRef =
         v:
-        if lib.isString loginFlakeRef then
-          lib.warn (shared.stringFlakeRefWarning hostname loginFlakeRef) v
+        if lib.isString singularRef then
+          lib.warn (shared.stringFlakeRefWarning hostname singularRef) v
         else
           v;
       # login-managed users with an actual home.nix on this host
@@ -143,8 +155,11 @@ in
       effectiveFlakeRef =
         if lib.isList loginFlakeRef && usersHome != [ ] then
           throw "homeManagerBootstrapModule: host `${hostname}`: loginFlakeRef is a list (multiple users trees), which the login bootstrap cannot resolve per-user -- it activates every loginHomes user against ONE flake. Keep ${lib.concatStringsSep ", " usersHome} system-managed instead (drop them from loginHomes), or use a single, non-list loginFlakeRef for this host."
+        else if lib.isList loginFlakeRef then
+          # never forced further: usersHome == [ ] short-circuits below
+          loginFlakeRef
         else
-          warnStringFlakeRef (if loginFlakeRef != null then loginFlakeRef else (inputs.self or null));
+          warnStringFlakeRef singularRef;
 
       # WHICH flake attribute each user's home is exported under. A
       # host-agnostic user is `homeConfigurations."<u>"`; one with a

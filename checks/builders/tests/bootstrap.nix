@@ -164,6 +164,24 @@ in
       }
     ));
 
+  # a wrapped singular loginFlakeRef (`{ source; allowNixosConfig; }`)
+  # must resolve the same as its bare `.source` -- a real consumer
+  # (nixos-developer-system) wraps a singular value to opt
+  # configuration.nix in WHILE ALSO using loginHomes; that combination
+  # broke (`cannot coerce a set to a string`) before this module learned
+  # to unwrap it, caught by that repo's own `nixos-rebuild build`, not by
+  # this suite -- hence this test.
+  bootstrap-wrapped-singular-resolves-source =
+    lib.hasInfix ''"--flake-ref" "${toString exampleDir}"''
+      (
+        (applyBootstrap {
+          loginFlakeRef = {
+            source = exampleDir;
+            allowNixosConfig = true;
+          };
+        }).systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
+      );
+
   # ── list loginFlakeRef: out of scope for the login bootstrap ──
   # per-user tree resolution (loginFlakeRefSources) only exists on the
   # account/mkNixosSystem side; this module still resolves ONE
