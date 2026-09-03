@@ -38,8 +38,10 @@ Highlights:
   (NixOS config: account, groups, ...). A `users/<name>/hosts/<host>/`
   subdirectory holds the same two files for one host, merged on top
   there; a user with only `hosts/` subdirectories exists on those hosts
-  alone. A host's `users` argument selects which of the tree apply to
-  it (omitted = all, `[ ]` = none).
+  alone. A host's `users` argument selects which of the tree get an
+  account and a `"<user>@<host>"` home on it (omitted = all, `[ ]` =
+  none); the tree's host-less `"<user>"` homes are unaffected either
+  way.
 - Home outputs are keyed by user: `homeConfigurations."alice"` (usable
   on any machine) and `"alice@laptop"` where she has a per-host
   override.

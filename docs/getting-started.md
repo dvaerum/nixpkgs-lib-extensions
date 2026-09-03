@@ -240,7 +240,12 @@ hosts = {
 };
 ```
 
-A name that is not in the tree is a typo and throws.
+A name that is not in the tree is a typo and throws. This narrows the
+host's ACCOUNTS and its `"<user>@<host>"` homes; the host-less
+`"<user>"` outputs come from the tree itself and are unaffected --
+`server = { users = [ ]; };` still exports a host-less home for every
+user in the tree, it just has no `server` account or `"<user>@server"`
+override.
 
 ## Hosts
 
@@ -947,11 +952,14 @@ merged option value, also labeling the boot menu via
 - A `loginHomes` name is only checked across the WHOLE hosts attrset:
   a name the tree does not have at all throws (typo), but a name
   that merely does not apply to some host is legal there -- one shared
-  list in `_defaults` is the normal shape. In a DIRECT
-  `mkNixosSystem`/`mkHomeConfiguration` call there
-  is only one host in view, so unknown names are silently ignored --
-  and `buildHomeConfigurations`, which has no hosts attrset at all,
-  does not run the check either.
+  list in `_defaults` is the normal shape. A DIRECT `mkNixosSystem`
+  call has only one host in view, so unknown names are silently
+  ignored there too. `mkHomeConfiguration` accepts `loginHomes` (the
+  argument allowlist is shared with `mkNixosSystem`) but never reads
+  it -- it builds the one named `username`, so there is no
+  system-vs-login split to make; the argument is inert, not merely
+  unchecked. `buildHomeConfigurations`, which has no hosts attrset at
+  all, does not run the check either.
 - Switching mechanisms (moving a user out of `loginHomes` and back, or
   changing `loginFlakeRef`, or the hostname for a `<user>@<host>` home)
   is safe on the bootstrap side:
