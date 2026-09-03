@@ -54,8 +54,10 @@ in
     # Arguments
 
     (arguments)
-    : The same flat argument set `mkHomeConfiguration` takes, minus the
-    : per-home `username`/`hostname` (those come from the tree). In
+    : The same flat argument set `mkHomeConfiguration` takes. `username`
+    : is rejected -- this builds every user in the tree, not one -- while
+    : `hostname` is accepted and ignored, since each home's host comes
+    : from the tree. In
     : practice: `inputs`, `system`, and any of `rootPath`/`loginFlakeRef`
     : (where to read the tree), `homeModules`, `specialArgs`, `overlays`,
     : `nixpkgsConfig`, `traceDiscoveredUsers`, ... -- validated against

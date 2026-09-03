@@ -607,7 +607,9 @@ let
   # A `"<user>@<host>"` home is built against THAT host's core -- the same
   # `mkContextCore` thunk `systemsFromPlan` uses for its system, so it
   # costs no extra nixpkgs evaluation. A host-less home uses the
-  # defaults-class core.
+  # core of whichever host sorts first -- they share one core class in
+  # the common case, and a host-less home has no host of its own to take
+  # one from.
   userHomesFromPlan =
     fnName: plan:
     lib.seq (planLoginUsers fnName plan) (
@@ -643,6 +645,8 @@ let
             p = plan.${hostname};
             # a host's own `users` filter narrows its homes as well as its
             # accounts, so `users = [ ]` really means "nothing here"
+            # `users` is the host's own SELECTION list (a list of names),
+            # not the tree -- the tree arrives as `p.registry` above.
             hostTree = filterUsers fnName hostname (p.args.users or null) tree;
             usersHere = lib.filter (u: lib.elem hostname (discoverHostsForUser (hostTree.${u} or null))) (
               lib.attrNames hostTree

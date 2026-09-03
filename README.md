@@ -75,7 +75,7 @@ namespaced duplicates exist for discoverability.
   notes that go with it, such as the hybrid-MBR case some bootroms
   need: the Raspberry Pi 3's bootrom only understands MBR partition
   tables, not the GPT this library uses, so a hybrid MBR overlays an
-  MBR-compatible view of the boot partition on top of the GPT disk.
+  MBR-compatible view of the firmware partition on top of the GPT disk.
   `legacyBoot = true` automates it; the README also documents the
   manual fallback.
 - `importIfNix` / `importIfNixOr`: friendly to git-crypt (see

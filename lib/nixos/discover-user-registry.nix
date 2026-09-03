@@ -17,7 +17,7 @@
     | -------------------------------------------------------- | ------ |
     | subdirectory with `home.nix` and/or `configuration.nix`   | becomes `<name> = <path>;` |
     | subdirectory with only a `hosts/` subdirectory            | also a user -- one who exists only on the hosts named there |
-    | subdirectory with NEITHER file                            | ignored, WITH a warning naming the directory -- a scan guessed wrong, so it degrades to a warning rather than a throw |
+    | subdirectory with neither file AND no `hosts/`            | ignored, WITH a warning naming the directory -- a scan guessed wrong, so it degrades to a warning rather than a throw |
     | a dotfile or dot-directory (`.gitkeep`, `.git`, ...)      | ignored, no warning |
     | anything else (a plain file, `README.md`, ...)            | ignored, no warning -- only a directory could ever be a user, so a stray file is not a mistake worth flagging |
 
@@ -116,7 +116,7 @@
 
       warnMsg =
         e:
-        "nixpkgs-lib-extensions: discoverUserRegistry ${toString dir}/${e.name}: a directory with neither home.nix nor configuration.nix, ignoring it as a user.";
+        "nixpkgs-lib-extensions: discoverUserRegistry ${toString dir}/${e.name}: a directory with neither home.nix nor configuration.nix nor a hosts/ subdirectory, ignoring it as a user.";
     in
     lib.foldl' (acc: e: lib.warn (warnMsg e) acc) registry malformed;
 }

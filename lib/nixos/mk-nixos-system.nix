@@ -177,7 +177,9 @@ in
     : tree convention below -- so this only selects among them: omitted
     : (the default) means every user in the tree, `[ ]` means none, and a
     : list names exactly those wanted. A name that is not in the tree is a
-    : typo and THROWS.
+    : typo and THROWS. This narrows the host's ACCOUNTS and its
+    : `"<user>@<host>"` homes; the host-less `"<user>"` outputs come from
+    : the tree itself and are unaffected.
     :
     : The tree is read from `rootPath` (default: your flake,
     : `inputs.self`), or from `loginFlakeRef` when the homes live in

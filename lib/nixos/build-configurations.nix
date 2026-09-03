@@ -9,7 +9,7 @@ in
     from ONE hosts attrset, in one call — the entry point most consuming
     flakes want.
 
-    `buildNixosConfigurations` and `buildHomeConfigurations` produce the
+    `buildNixosConfigurations` and the home half produce the
     two halves separately and are still available; this function is the
     two of them over a single shared plan. Prefer it, for two reasons
     beyond brevity:
@@ -64,9 +64,10 @@ in
     # Arguments
 
     hosts
-    : The same attrset `buildNixosConfigurations` and
-    : `buildHomeConfigurations` accept — same allowlists, same `_defaults`
-    : semantics. See `buildNixosConfigurations` for the full key reference.
+    : The same attrset `buildNixosConfigurations` accepts — same
+    : allowlists, same `_defaults`/`_groups` semantics. See there for the
+    : full key reference. (`buildHomeConfigurations` does NOT take this
+    : shape: it is a flat argument set and rejects `_defaults`.)
   */
   buildConfigurations =
     hosts:

@@ -650,7 +650,7 @@ Build a whole flake's `nixosConfigurations` AND `homeConfigurations`
 from ONE hosts attrset, in one call — the entry point most consuming
 flakes want.
 
-`buildNixosConfigurations` and `buildHomeConfigurations` produce the
+`buildNixosConfigurations` and the home half produce the
 two halves separately and are still available; this function is the
 two of them over a single shared plan. Prefer it, for two reasons
 beyond brevity:
@@ -705,9 +705,10 @@ buildConfigurations ::
 ### Arguments
 
 - **hosts**
-  The same attrset `buildNixosConfigurations` and
-  `buildHomeConfigurations` accept — same allowlists, same `_defaults`
-  semantics. See `buildNixosConfigurations` for the full key reference.
+  The same attrset `buildNixosConfigurations` accepts — same
+  allowlists, same `_defaults`/`_groups` semantics. See there for the
+  full key reference. (`buildHomeConfigurations` does NOT take this
+  shape: it is a flat argument set and rejects `_defaults`.)
 
 
 
@@ -763,8 +764,10 @@ buildHomeConfigurations ::
 ### Arguments
 
 - **(arguments)**
-  The same flat argument set `mkHomeConfiguration` takes, minus the
-  per-home `username`/`hostname` (those come from the tree). In
+  The same flat argument set `mkHomeConfiguration` takes. `username`
+  is rejected -- this builds every user in the tree, not one -- while
+  `hostname` is accepted and ignored, since each home's host comes
+  from the tree. In
   practice: `inputs`, `system`, and any of `rootPath`/`loginFlakeRef`
   (where to read the tree), `homeModules`, `specialArgs`, `overlays`,
   `nixpkgsConfig`, `traceDiscoveredUsers`, ... -- validated against
@@ -913,7 +916,7 @@ tree; the "registry" in the name is historical.
 | -------------------------------------------------------- | ------ |
 | subdirectory with `home.nix` and/or `configuration.nix`   | becomes `<name> = <path>;` |
 | subdirectory with only a `hosts/` subdirectory            | also a user -- one who exists only on the hosts named there |
-| subdirectory with NEITHER file                            | ignored, WITH a warning naming the directory -- a scan guessed wrong, so it degrades to a warning rather than a throw |
+| subdirectory with neither file AND no `hosts/`            | ignored, WITH a warning naming the directory -- a scan guessed wrong, so it degrades to a warning rather than a throw |
 | a dotfile or dot-directory (`.gitkeep`, `.git`, ...)      | ignored, no warning |
 | anything else (a plain file, `README.md`, ...)            | ignored, no warning -- only a directory could ever be a user, so a stray file is not a mistake worth flagging |
 
@@ -1320,7 +1323,9 @@ mkNixosSystem :: Attribute -> NixosSystem
   tree convention below -- so this only selects among them: omitted
   (the default) means every user in the tree, `[ ]` means none, and a
   list names exactly those wanted. A name that is not in the tree is a
-  typo and THROWS.
+  typo and THROWS. This narrows the host's ACCOUNTS and its
+  `"<user>@<host>"` homes; the host-less `"<user>"` outputs come from
+  the tree itself and are unaffected.
   
   The tree is read from `rootPath` (default: your flake,
   `inputs.self`), or from `loginFlakeRef` when the homes live in
@@ -1650,7 +1655,8 @@ stringToTitle ""
 
 Run a shell command detached from the caller, in a fresh
 `systemd-run --user` transient unit, following its journal for
-interactive output and propagating success or failure (exit 0/1, read from the unit's `Result`). Built for
+interactive output and propagating success or failure (exit 0/1) from the unit's `Result` --
+an unreadable/empty `Result` is treated as success. Built for
 commands whose own effects can restart the unit the CALLER is running
 in -- `home-manager switch` is the motivating case (see
 `interceptingWrapper`): its activation restarts every user unit whose
