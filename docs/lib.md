@@ -461,9 +461,7 @@ configuration evaluates in both places.
 Accepted: a regular file with the `.nix` suffix whose content parses as
 Nix, or a directory whose `default.nix` does. Symlinks are followed
 and classified by what they resolve to (a link to a valid `.nix` file
-imports like its target).
-Symlinks are followed and classified by what they resolve to. A
-DANGLING link is NOT handled: `builtins.pathExists` returns true for
+imports like its target). A DANGLING link is NOT handled: `builtins.pathExists` returns true for
 one, so it passes the guard and then aborts evaluation when the path
 is realized -- uncatchably, since the failure is a primop error, not
 a `throw`. `discoverPatches` documents the same gap; fixing it needs
@@ -573,72 +571,72 @@ readIfPlain :: pkgs -> Path -> String
 ## `lib.imports.readIfPlainOr`
 
 Read a path as plain text, but only when it is NOT still git-crypt
-    ciphertext; otherwise return `default` instead of aborting evaluation.
-    `readIfPlain` is the same function with the default fixed to `""`.
+ciphertext; otherwise return `default` instead of aborting evaluation.
+`readIfPlain` is the same function with the default fixed to `""`.
 
-    Companion to `importIfNixOr`/`importIfNix` for files that are not Nix
-    -- a plain secret, token, or config value protected by git-crypt
-    (which encrypts individual files in a git repo transparently -- a
-    checkout without the decryption key sees raw ciphertext instead of
-    the file's real content). Locally (key present) git-crypt's smudge
-    filter has already replaced the working-tree file with real
-    plaintext, and this returns it as a string. On a checkout without the
-    key, the working-tree file is still git-crypt's raw ciphertext --
-    `builtins.readFile` on that would likely THROW (its bytes are not
-    valid UTF-8) rather than return usable garbage, so the ciphertext is
-    detected BEFORE ever calling `readFile` on it.
+Companion to `importIfNixOr`/`importIfNix` for files that are not Nix
+-- a plain secret, token, or config value protected by git-crypt
+(which encrypts individual files in a git repo transparently -- a
+checkout without the decryption key sees raw ciphertext instead of
+the file's real content). Locally (key present) git-crypt's smudge
+filter has already replaced the working-tree file with real
+plaintext, and this returns it as a string. On a checkout without the
+key, the working-tree file is still git-crypt's raw ciphertext --
+`builtins.readFile` on that would likely THROW (its bytes are not
+valid UTF-8) rather than return usable garbage, so the ciphertext is
+detected BEFORE ever calling `readFile` on it.
 
-    Detection does not depend on the plaintext's content being valid Nix
-    (there may be none to parse): a git-crypt-encrypted file always
-    begins with the same fixed 10-byte header (a NUL byte, `GITCRYPT`,
-    another NUL byte), whatever the plaintext underneath actually is.
-    That header is checked byte-for-byte in a small derivation
-    (import-from-derivation, `preferLocalBuild`) -- IFD, like
-    `importIfNixOr`'s parse probe, just testing a fixed magic value
-    instead of running a Nix parser.
+Detection does not depend on the plaintext's content being valid Nix
+(there may be none to parse): a git-crypt-encrypted file always
+begins with the same fixed 10-byte header (a NUL byte, `GITCRYPT`,
+another NUL byte), whatever the plaintext underneath actually is.
+That header is checked byte-for-byte in a small derivation
+(import-from-derivation, `preferLocalBuild`) -- IFD, like
+`importIfNixOr`'s parse probe, just testing a fixed magic value
+instead of running a Nix parser.
 
-    Accepted: a regular file whose first bytes are not that header.
-    Symlinks are followed and classified by what they resolve to (a link
+Accepted: a regular file whose first bytes are not that header.
+Symlinks are followed and classified by what they resolve to (a link
 to such a file reads like its target).
-    Symlinks are followed and classified by what they resolve to. A
-    DANGLING link is NOT handled: `builtins.pathExists` returns true for
-    one, so it passes the guard and then aborts evaluation when the path
-    is realized -- uncatchably, since the failure is a primop error, not
-    a `throw`. `discoverPatches` documents the same gap; fixing it needs
-    a way to distinguish "link exists" from "target exists" that Nix
-    does not currently expose.
+Symlinks are followed and classified by what they resolve to. A
+DANGLING link is NOT handled: `builtins.pathExists` returns true for
+one, so it passes the guard and then aborts evaluation when the path
+is realized -- uncatchably, since the failure is a primop error, not
+a `throw`. `discoverPatches` documents the same gap; fixing it needs
+a way to distinguish "link exists" from "target exists" that Nix
+does not currently expose.
 
-    Everything else -- a missing path, a directory, or
-    genuine git-crypt ciphertext -- yields `default` WITH an evaluation
-    warning naming the reason, so a skipped read is never a silent
-    mystery.
+Everything else -- a missing path, a directory, or
+genuine git-crypt ciphertext -- yields `default` WITH an evaluation
+warning naming the reason, so a skipped read is never a silent
+mystery.
 
-    # Example
+### Example
 
-    ```nix
-    # extLib = inputs.nixpkgs-lib-extensions.lib
-    extLib.readIfPlainOr pkgs ./api-token.txt ""
-    # locally (key present)    => "sk-abc123...\n"
-    # on CI (still encrypted)  => "" (warns)
-    ```
+```nix
+# extLib = inputs.nixpkgs-lib-extensions.lib
+extLib.readIfPlainOr pkgs ./api-token.txt ""
+# locally (key present)    => "sk-abc123...\n"
+# on CI (still encrypted)  => "" (warns)
+```
 
-    # Type
+### Type
 
-    ```
-    readIfPlainOr :: pkgs -> Path -> String -> String
-    ```
+```
+readIfPlainOr :: pkgs -> Path -> String -> String
+```
 
-    # Arguments
+### Arguments
 
-    pkgs
-    : A package set used to build the header-check probe (IFD).
+- **pkgs**
+  A package set used to build the header-check probe (IFD).
 
-    path
-    : The path (or absolute path string) to inspect and maybe read.
+- **path**
+  The path (or absolute path string) to inspect and maybe read.
 
-    default
-    : The value returned (with a warning) when `path` is still
-    : git-crypt ciphertext, missing, or not a regular file.
+- **default**
+  The value returned (with a warning) when `path` is still
+  git-crypt ciphertext, missing, or not a regular file.
 
 
 ---
@@ -701,7 +699,7 @@ outputs =
 buildConfigurations ::
   { <hostname> = Attribute; }
   -> { nixosConfigurations = { <hostname> = NixosSystem; };
-       homeConfigurations = { "<user>@<hostname>" = HomeManagerConfiguration; }; }
+       homeConfigurations = { "<user>" | "<user>@<hostname>" = HomeManagerConfiguration; }; }
 ```
 
 ### Arguments
@@ -867,7 +865,8 @@ buildNixosConfigurations ::
     omitted = all of them, `[ ]` = none)
   - `loginHomes`
   - `homeModules` (applies to BOTH mechanisms: system-managed
-    homes here, login-managed homes in `buildHomeConfigurations`)
+    homes here, and login-managed homes too when this same hosts
+    attrset goes through `buildConfigurations`)
   - `loginFlakeRef`
   - `loginReactivateEveryLogin`
   - `traceDiscoveredUsers`
@@ -1022,7 +1021,10 @@ homeManagerBootstrapModule :: Attribute -> Module
   `homeConfigurations."<user>@<host>"` or `."<user>"` output. Which
   one is used is decided at EVALUATION time by looking at that
   flake's actual outputs: the host-suffixed name wins when present,
-  else the bare one, and exporting neither is a build-time throw.
+  else the bare one, and a flake that exports `homeConfigurations`
+  holding neither throws during evaluation. Two cases cannot be
+  introspected and keep the `<user>@<host>` form: a flake-ref
+  STRING, and a flake exporting no `homeConfigurations` at all.
   A flake-ref STRING cannot be introspected, so it keeps the
   historical `<user>@<host>` form. The default
   `inputs.self` is the immutable store copy of your flake the system
@@ -1044,7 +1046,7 @@ homeManagerBootstrapModule :: Attribute -> Module
 
 Build ONE user's standalone home-manager configuration for one host —
 the single-user primitive underneath `buildHomeConfigurations`, which
-calls it for every login-managed user of every host. Use it directly
+calls it for every user in the tree. Use it directly
 to export an individual home:
 
 ```nix
@@ -1372,10 +1374,10 @@ mkNixosSystem :: Attribute -> NixosSystem
 
 - **loginFlakeRef**
   Where the login bootstrap finds the home configurations of
-  `loginHomes` users: on first login it runs
-  `home-manager switch --flake <loginFlakeRef>#<user>@<hostname>`, so the
-  flake at this reference must export
-  `homeConfigurations."<user>@<hostname>"`.
+  `loginHomes` users: on first login it runs `home-manager switch`
+  against that flake's matching output -- `"<user>@<hostname>"` when
+  the user has a `hosts/<hostname>/` override, else `"<user>"`,
+  decided when the system is built.
   The default `inputs.self` is the IMMUTABLE store copy of your flake
   that the running system was built from -- homes then always match
   the last `nixos-rebuild`, but local edits are invisible until the
@@ -1776,7 +1778,7 @@ interceptingWrapper :: pkgs -> Attribute -> Derivation
 - **shouldDetach**
   Raw shell syntax for the condition to detach on, checked against the
   wrapper's own positional parameters (`$1`, `$@`, ...) -- e.g.
-  `''[ "${1:-}" = "switch" ]''`. True routes through `detachedRun`;
+  `''[ "''${1:-}" = "switch" ]''`. True routes through `detachedRun`;
   false `exec`s the real binary with the same arguments. Not a
   Nix-modeled argv list: Nix cannot see the caller's real arguments,
   only shell can, at the moment the wrapper actually runs.

@@ -78,7 +78,10 @@ in
     : `homeConfigurations."<user>@<host>"` or `."<user>"` output. Which
     : one is used is decided at EVALUATION time by looking at that
     : flake's actual outputs: the host-suffixed name wins when present,
-    : else the bare one, and exporting neither is a build-time throw.
+    : else the bare one, and a flake that exports `homeConfigurations`
+    : holding neither throws during evaluation. Two cases cannot be
+    : introspected and keep the `<user>@<host>` form: a flake-ref
+    : STRING, and a flake exporting no `homeConfigurations` at all.
     : A flake-ref STRING cannot be introspected, so it keeps the
     : historical `<user>@<host>` form. The default
     : `inputs.self` is the immutable store copy of your flake the system

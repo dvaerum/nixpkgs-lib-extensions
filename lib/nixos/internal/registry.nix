@@ -174,8 +174,8 @@ let
 
   # Apply a host's own `users` filter to the tree: omitted (null) means
   # every user in the tree applies -- the default -- while a list selects
-  # exactly those, and `[ ]` gives a host with no users at all (what an
-  # host with no users used to be spelled). Names not in the tree are
+  # exactly those, and `[ ]` gives a host with no users at all. Names
+  # not in the tree are
   # a typo and throw, same bar as `loginHomes`.
   filterUsers =
     fnName: hostname: selection: tree:
@@ -201,18 +201,14 @@ let
     );
 
   # The login-managed users that actually ship a home.nix on this host:
-  # `loginHomes` filtered down to usersWithHome. Exactly the set that gets
-  # a "<user>@<host>" flake output (buildHomeConfigurations) and that the
-  # login bootstrap activates (homeManagerBootstrapModule).
+  # `loginHomes` filtered down to usersWithHome: exactly the set the
+  # login bootstrap activates (homeManagerBootstrapModule). NOT the set
+  # that gets flake outputs -- every user with a home.nix gets one of
+  # those, in or out of loginHomes.
   loginUsersWithHome =
     users: hostname: loginHomes:
     lib.filter (u: lib.elem u loginHomes) (usersWithHome users hostname);
 
-  # Every user NAME these registries mention, taken from the keys and
-  # ignoring which host each key targets. Deliberately not
-  # `usersFromRegistry`: a `"bob@laptop"` entry means the registry knows
-  # bob, even in a call that only builds `server`. The question this
-  # answers is "is this a user at all", not "does it apply here".
   # Every user NAME these user trees mention. Deliberately the union
   # across trees rather than per-host: the question this answers is "is
   # this a user at all", not "does it apply here".
@@ -233,7 +229,7 @@ let
   # silently system-managed, and the system still builds and boots, so
   # nothing ever tells you.
   #
-  # A name is only an error when NO registry mentions it at all: a name
+  # A name is only an error when the tree does not have it at all: a name
   # that simply does not apply to a given host stays legal, because one
   # shared `loginHomes` in `_defaults` across a fleet -- and per-host
   # `hosts/<host>/` override directories -- are the documented way to

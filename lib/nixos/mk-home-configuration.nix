@@ -8,7 +8,7 @@ in
   /**
     Build ONE user's standalone home-manager configuration for one host —
     the single-user primitive underneath `buildHomeConfigurations`, which
-    calls it for every login-managed user of every host. Use it directly
+    calls it for every user in the tree. Use it directly
     to export an individual home:
 
     ```nix

@@ -11,7 +11,7 @@
 #   mkContext      the per-host layer on top (mySpecialArguments); its
 #                  FIRST parameter is the core -- `null` to compute one,
 #                  or one planHosts already built, which is how
-#                  buildNixosConfigurations/buildHomeConfigurations share
+#                  buildNixosConfigurations/buildConfigurations share
 #                  ONE core across all hosts agreeing on the core arguments
 { lib, self, ... }:
 let

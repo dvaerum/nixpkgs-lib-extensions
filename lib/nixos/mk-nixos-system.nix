@@ -231,10 +231,10 @@ in
 
     loginFlakeRef
     : Where the login bootstrap finds the home configurations of
-    : `loginHomes` users: on first login it runs
-    : `home-manager switch --flake <loginFlakeRef>#<user>@<hostname>`, so the
-    : flake at this reference must export
-    : `homeConfigurations."<user>@<hostname>"`.
+    : `loginHomes` users: on first login it runs `home-manager switch`
+    : against that flake's matching output -- `"<user>@<hostname>"` when
+    : the user has a `hosts/<hostname>/` override, else `"<user>"`,
+    : decided when the system is built.
     : The default `inputs.self` is the IMMUTABLE store copy of your flake
     : that the running system was built from -- homes then always match
     : the last `nixos-rebuild`, but local edits are invisible until the

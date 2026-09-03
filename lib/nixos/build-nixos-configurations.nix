@@ -95,7 +95,8 @@ in
     :   omitted = all of them, `[ ]` = none)
     : - `loginHomes`
     : - `homeModules` (applies to BOTH mechanisms: system-managed
-    :   homes here, login-managed homes in `buildHomeConfigurations`)
+    :   homes here, and login-managed homes too when this same hosts
+    :   attrset goes through `buildConfigurations`)
     : - `loginFlakeRef`
     : - `loginReactivateEveryLogin`
     : - `traceDiscoveredUsers`

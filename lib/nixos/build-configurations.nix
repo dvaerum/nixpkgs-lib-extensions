@@ -58,7 +58,7 @@ in
     buildConfigurations ::
       { <hostname> = Attribute; }
       -> { nixosConfigurations = { <hostname> = NixosSystem; };
-           homeConfigurations = { "<user>@<hostname>" = HomeManagerConfiguration; }; }
+           homeConfigurations = { "<user>" | "<user>@<hostname>" = HomeManagerConfiguration; }; }
     ```
 
     # Arguments

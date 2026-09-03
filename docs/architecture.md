@@ -55,10 +55,12 @@ docs/lib.md         GENERATED from doc comments (scripts/gen-docs.sh);
                     `nix run .#gen-docs` rebuilds it, a check diffs it
 ```
 
-Every file under `lib/` takes one calling convention,
+Every file the loader names takes one calling convention,
 `{ lib, self, ... }`: nixpkgs' `lib`, and `self` -- the fully
 assembled extension lib (a fixed point), so a file can call a sibling
-without importing it.
+without importing it. (`lib/default.nix` is the loader itself, and
+`internal/bootstrap-script.nix` is a builder helper called
+`{ pkgs, homeManager }` -- neither goes through that convention.)
 
 ## From a hosts attrset to systems and homes
 
@@ -76,7 +78,7 @@ flowchart TD
 
     Call --> Plan --> PlanData
     PlanData --> Systems --> MkSystem
-    PlanData --> Homes --> MkHome
+    PlanData -- "buildConfigurations only" --> Homes --> MkHome
     Standalone --> Stand2 --> MkHome
 ```
 
@@ -100,7 +102,8 @@ and picks one of two evaluation routes -- route A,
 nixpkgs input exposing no `lib.nixosSystem` -- a check pins both
 routes to the same derivation. `userHomesFromPlan` calls `mkHome core args`
 per user -- a host-less `"<user>"` home from their directory alone,
-plus `"<user>@<host>"` for each `hosts/<host>/` override -- sharing the
+plus `"<user>@<host>"` for each `hosts/<host>/` override WHOSE HOST THE
+PLAN DECLARES -- sharing the
 same `mkContext` core and producing `homeManagerConfiguration`s.
 
 `buildHomeConfigurations` does NOT go through the plan: it is a flat

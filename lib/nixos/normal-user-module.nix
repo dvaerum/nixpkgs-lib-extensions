@@ -87,7 +87,7 @@
           };
           users.groups = lib.mkIf normalAccount { ${username} = { }; };
 
-          # Without this, declaring `isSystemUser = true` for a registry
+          # Without this, declaring `isSystemUser = true` for a tree
           # user fails with NixOS's own "exactly one of isSystemUser and
           # isNormalUser must be set" -- true, but it never mentions that
           # something else set isNormalUser, let alone what to do about it.

@@ -23,7 +23,7 @@ let
   inherit (import ./inputs.nix { inherit lib self; }) detectHomeManager;
 
   # ONE hosts attrset is meant to feed BOTH buildNixosConfigurations and
-  # buildHomeConfigurations, so both validate against the same allowlists:
+  # buildConfigurations, so both validate against the same allowlists:
   # arguments only one side uses (modules, userModule, ...) are accepted
   # everywhere and ignored by the other side; homeModules is used by
   # BOTH (system-managed and login-managed homes).
@@ -309,7 +309,8 @@ let
     else
       badReserved ++ badDefaults ++ badGroups ++ badGroupRefs ++ badHostShapes ++ badHostKeys;
 
-  # Validate a hosts attrset (the shared input of both build* functions)
+  # Validate a hosts attrset (the input of buildNixosConfigurations and
+  # buildConfigurations)
   # and split it into { defaults, hostEntries }. The throwing face of
   # hostsProblems -- same division of labor as
   # builderArgProblems/validateBuilderArgs -- so the thrown text and the
@@ -499,7 +500,7 @@ let
       # Normalized ONCE here so every consumer of the plan sees the
       # SAME tree for every consumer of the plan, scanned ONCE (see
       # `usersTree` above) rather than per host -- mk-system.nix/mk-home.nix
-      # take it from here via `args.users` instead of rescanning.
+      # take it from here via `args.usersTree` instead of rescanning.
       registry = usersTree;
     }) mergedArgs;
 
@@ -520,9 +521,10 @@ let
       )
     );
 
-  # The two projections of a plan. Kept here so buildNixosConfigurations,
-  # buildHomeConfigurations and buildConfigurations are literally the same
-  # code applied to the same plan.
+  # The two projections of a plan. Kept here so buildNixosConfigurations
+  # and buildConfigurations are literally the same code applied to the
+  # same plan. buildHomeConfigurations does NOT plan -- see
+  # userHomesStandalone above.
   systemsFromPlan =
     fnName: plan:
     lib.seq (planLoginUsers fnName plan) (

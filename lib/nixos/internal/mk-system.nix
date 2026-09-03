@@ -180,8 +180,8 @@ in
 
       # LOGIN-MANAGED HOMES: for `loginHomes` the bootstrap runs
       # `home-manager switch --flake <loginFlakeRef>#<user>@<host>` on
-      # first login -- the flake must export those homeConfigurations
-      # outputs (see buildHomeConfigurations). Self-gating: empty module
+      # first login, against whichever of `<user>@<host>` / `<user>` that
+      # flake exports (homeManagerBootstrapModule's attrFor decides). Self-gating: empty module
       # when no login user matches or no home-manager input exists.
       bootstrapModule = self.homeManagerBootstrapModule {
         inherit

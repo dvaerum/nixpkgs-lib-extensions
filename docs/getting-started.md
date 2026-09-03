@@ -116,11 +116,13 @@ This builds the system INCLUDING the homes of every user not listed in
 listed in `loginHomes` are left out of the system and activated on
 their first login by the bootstrap service instead.
 
-Independently of that split, EVERY user with a `home.nix` is also
-exported as a flake output -- `homeConfigurations."alice"`, or
-`"alice@laptop"` where she has a per-host override. For a `loginHomes`
-user that output is what the bootstrap applies; for everyone else it is
-simply also buildable by hand. Either way you normally never run
+Independently of that split, a user with a `home.nix` of their own is
+also exported as a flake output -- `homeConfigurations."alice"`, plus
+`"alice@laptop"` where she has a per-host override for a host this
+flake declares (both keys exist when both apply; a user whose ONLY
+override is for an undeclared host gets nothing here). For a
+`loginHomes` user that output is what the bootstrap applies; for
+everyone else it is simply also buildable by hand. Either way you normally never run
 `home-manager` yourself.
 
 ## The users tree
@@ -173,7 +175,7 @@ flowchart TD
     C --> E{"users/U/hosts/H/ exists?"}
     D --> E
     E -->|yes| F["it MERGES on top<br/>(host-specific over shared)"]
-    E -->|no| G["shared config only"]
+    E -->|no| G["whatever applied above --<br/>and if that was nothing,<br/>U is not on H at all"]
     F --> H(["result"])
     G --> H
 ```
@@ -183,8 +185,9 @@ That produces two shapes of home output:
 | What the user has | Outputs |
 |---|---|
 | `home.nix` only | `homeConfigurations."alice"` -- one home, usable on any machine |
-| `home.nix` + `hosts/laptop/home.nix` | **both** `"frank"` and `"frank@laptop"` |
+| `home.nix` + any `hosts/laptop/` override | **both** `"frank"` and `"frank@laptop"` (frank's override is a `configuration.nix`) |
 | only `hosts/laptop/home.nix` | `"bob@laptop"` only |
+| only `configuration.nix` in `hosts/laptop/` | no home, but an account on `laptop` |
 | only `configuration.nix` | no home output (account only) |
 
 Both keys when both exist is deliberate: `"frank"` is the
@@ -318,7 +321,7 @@ dimension from the tree alone -- so it also emits a `"<user>@<host>"`
 home for any `users/<user>/hosts/<host>/` directory, including hosts
 this flake never declares.
 
-Its return value is an ordinary attrset -- `{ nixosConfigurations =
+`buildConfigurations`'s return value is an ordinary attrset -- `{ nixosConfigurations =
 ...; homeConfigurations = ...; }`, nothing more -- so it composes with
 `//` exactly like hand-written outputs, as in the `devShells`/`packages`
 merge above. Nothing about using the builders confines your flake to
@@ -428,7 +431,7 @@ mechanisms; `loginHomes` selects which:
 flowchart TD
     A(["a user's home.nix"]) --> B{"listed in loginHomes?"}
     B -->|"no (default)"| C["built INTO the system<br/>(home-manager's NixOS module)<br/>-- the flake output exists too,<br/>nothing consumes it"]
-    B -->|"yes"| D["exported as a flake output<br/>homeConfigurations.'user'<br/>(or 'user@host' with an override)"]
+    B -->|"yes"| D["left OUT of the system;<br/>activated at login from<br/>the flake output"]
     C --> E(["activates with<br/>nixos-rebuild switch"])
     D --> F(["activated on the user's<br/>FIRST LOGIN by the<br/>bootstrap service"])
 ```
@@ -479,10 +482,12 @@ mid-activation. Set `wrapHomeManagerSwitch = false;` to opt out.
 For login users your flake must export a home configuration for every
 host where they appear. The bootstrap activates
 `<loginFlakeRef>#<user>@X` or `#<user>` -- whichever that flake really
-exports, decided when the system is BUILT. A flake exporting neither
-fails the build, naming the user. (Only a flake-ref STRING cannot be
-introspected that way; there a missing output surfaces at first login
-as "flake ... does not provide attribute homeConfigurations...".) The skeleton above covers it:
+exports, decided when the system is BUILT. A flake that exports
+`homeConfigurations` but neither name fails the build, naming the user.
+Two cases cannot be introspected and keep the `<user>@<host>` form: a
+flake-ref STRING, and a flake exporting no `homeConfigurations` at all.
+There a missing output surfaces at first login as "flake ... does not
+provide attribute homeConfigurations...". The skeleton above covers it:
 `buildConfigurations hosts` produces the homeConfigurations half from
 that same host list. (The underlying single-user function is
 `mkHomeConfiguration`, if you need one specific home.)
@@ -771,7 +776,9 @@ module argument.
 Anything you pass as `specialArgs = { ... };` is merged alongside the
 builder's own (a host adds to it with `extra.specialArgs`). The
 builder-owned names and the option-backed ones (`hostname`, `tags`,
-`group`, `users`, `inputPkgs`, `channels`, `username`) are reserved:
+`group`, `users`, `inputPkgs`, `channels`, `username`) are reserved --
+as are the module-system's own `pkgs`, `lib`, `config`, `options` and
+`modulesPath`:
 redefining one throws -- it would change only what modules see, not
 what the builder did. Set the corresponding builder argument instead.
 `pkgs` is deliberately not a specialArg -- modules receive it from the
@@ -853,7 +860,8 @@ build from a patched COPY of the nixpkgs source. Save the PR's diff
 into your repo:
 
 ```
-curl -L -o patches/pr-12345.diff \
+mkdir -p patches
+curl -L -o patches/pr-12345.patch \
   https://github.com/NixOS/nixpkgs/pull/12345.diff
 git add patches/
 ```
@@ -862,7 +870,7 @@ and point the host at it:
 
 ```nix
 laptop = {
-  patches = [ ./patches/pr-12345.diff ];
+  patches = [ ./patches/pr-12345.patch ];
 };
 ```
 
@@ -945,7 +953,8 @@ merged option value, also labeling the boot menu via
   and `buildHomeConfigurations`, which has no hosts attrset at all,
   does not run the check either.
 - Switching mechanisms (moving a user out of `loginHomes` and back, or
-  changing `loginFlakeRef`/the hostname) is safe on the bootstrap side:
+  changing `loginFlakeRef`, or the hostname for a `<user>@<host>` home)
+  is safe on the bootstrap side:
   the stamp records the exact activation parameters, and a stamp whose
   content no longer matches counts as absent, so the next login
   re-runs. What nothing cleans up automatically: a user moved from

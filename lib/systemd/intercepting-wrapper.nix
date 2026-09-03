@@ -54,7 +54,7 @@
     shouldDetach
     : Raw shell syntax for the condition to detach on, checked against the
     : wrapper's own positional parameters (`$1`, `$@`, ...) -- e.g.
-    : `''[ "${1:-}" = "switch" ]''`. True routes through `detachedRun`;
+    : `''[ "''${1:-}" = "switch" ]''`. True routes through `detachedRun`;
     : false `exec`s the real binary with the same arguments. Not a
     : Nix-modeled argv list: Nix cannot see the caller's real arguments,
     : only shell can, at the moment the wrapper actually runs.

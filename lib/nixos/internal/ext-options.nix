@@ -64,7 +64,7 @@ let
         defaultText = literalMD "derived from the users tree";
         description = ''
           The host's users, derived from the users tree
-          keys. Read-only -- the registry is the single source.
+          keys. Read-only -- the users tree is the single source.
         '';
       };
       inputPkgs = mkOption {
