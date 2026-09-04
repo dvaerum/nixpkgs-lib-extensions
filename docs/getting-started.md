@@ -231,17 +231,20 @@ cannot be read at evaluation time, so no users are discovered from it.
 
 A single `loginFlakeRef` value (as above) **replaces** `rootPath`'s
 tree entirely -- for the common "all my homes live in one other flake"
-case. To instead **add** users from a tree you do not fully control
-alongside your own -- say `dennis` lives in this flake, and `per`/`bo`
-live in a separate repo -- give `loginFlakeRef` a **list**:
+case. To instead **add** users from one or more trees you do not fully
+control alongside your own -- say `dennis` lives in this flake, `per`
+lives in one repo, and `bo` in another -- give `loginFlakeRef` a
+**list**:
 
 ```nix
 mkNixosSystem {
   # rootPath's own tree (dennis, here) always applies and is always
-  # trusted; loginFlakeRef only decides what gets ADDED to it.
+  # trusted; loginFlakeRef only decides what gets ADDED to it. Two
+  # DIFFERENT sources here -- the same source named twice would make
+  # every username in it ambiguous (see the collision throw below).
   loginFlakeRef = [
-    inputs.per-bo-flake                                    # untrusted (default)
-    { source = inputs.per-bo-flake; allowNixosConfig = true; }  # explicitly trusted
+    inputs.per-flake                                    # untrusted (default)
+    { source = inputs.bo-flake; allowNixosConfig = true; }  # explicitly trusted
   ];
 };
 ```
@@ -262,9 +265,11 @@ This is a separate concern from the login bootstrap: `loginFlakeRef`
 as a list only affects account/`configuration.nix`/`home.nix`
 discovery for **system-managed** users. The login bootstrap itself
 still resolves one shared flake for every `loginHomes` user on a host,
-so a list `loginFlakeRef` on a host with `loginHomes` users throws at
-build time -- keep multi-tree users system-managed, or use a single
-value on a host with login-managed users.
+so a list `loginFlakeRef` throws at build time if the host also has a
+`loginHomes` user actually needing resolution there (naming someone in
+`loginHomes` who has no home on this host does not trigger it) -- keep
+multi-tree users system-managed, or use a single value on a host with
+login-managed users.
 
 ### Selecting which users apply to a host
 

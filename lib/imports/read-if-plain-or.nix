@@ -29,9 +29,8 @@
 
     Accepted: a regular file whose first bytes are not that header.
     Symlinks are followed and classified by what they resolve to (a link
-    to such a file reads like its target).
-    Symlinks are followed and classified by what they resolve to. A
-    DANGLING link is NOT handled: `builtins.pathExists` returns true for
+    to such a file reads like its target). A DANGLING link is NOT
+    handled: `builtins.pathExists` returns true for
     one, so it passes the guard and then aborts evaluation when the path
     is realized -- uncatchably, since the failure is a primop error, not
     a `throw`. `discoverPatches` documents the same gap; fixing it needs

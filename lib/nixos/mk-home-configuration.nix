@@ -106,7 +106,7 @@ in
     that moving default, naming the two pin recipes: the user's own
     `home.nix`, or fleet-wide via a shared `homeModules` entry.
 
-    nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions
+    nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions, traceDiscoveredUsers
     : Shared options (see `mkNixosSystem`).
   */
   # The long definition-list term above must stay on ONE line: gen-docs

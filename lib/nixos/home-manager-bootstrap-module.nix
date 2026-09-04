@@ -81,9 +81,7 @@ in
     : else the bare one, and a flake that exports `homeConfigurations`
     : holding neither throws during evaluation. Two cases cannot be
     : introspected and keep the `<user>@<host>` form: a flake-ref
-    : STRING, and a flake exporting no `homeConfigurations` at all.
-    : A flake-ref STRING cannot be introspected, so it keeps the
-    : historical `<user>@<host>` form. The default
+    : STRING, and a flake exporting no `homeConfigurations` at all. The default
     : `inputs.self` is the immutable store copy of your flake the system
     : was built from (homes match the last `nixos-rebuild`); use a mutable
     : reference like `"/etc/nixos"` to build homes from a live checkout.

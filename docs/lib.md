@@ -597,9 +597,8 @@ instead of running a Nix parser.
 
 Accepted: a regular file whose first bytes are not that header.
 Symlinks are followed and classified by what they resolve to (a link
-to such a file reads like its target).
-Symlinks are followed and classified by what they resolve to. A
-DANGLING link is NOT handled: `builtins.pathExists` returns true for
+to such a file reads like its target). A DANGLING link is NOT
+handled: `builtins.pathExists` returns true for
 one, so it passes the guard and then aborts evaluation when the path
 is realized -- uncatchably, since the failure is a primop error, not
 a `throw`. `discoverPatches` documents the same gap; fixing it needs
@@ -1027,9 +1026,7 @@ homeManagerBootstrapModule :: Attribute -> Module
   else the bare one, and a flake that exports `homeConfigurations`
   holding neither throws during evaluation. Two cases cannot be
   introspected and keep the `<user>@<host>` form: a flake-ref
-  STRING, and a flake exporting no `homeConfigurations` at all.
-  A flake-ref STRING cannot be introspected, so it keeps the
-  historical `<user>@<host>` form. The default
+  STRING, and a flake exporting no `homeConfigurations` at all. The default
   `inputs.self` is the immutable store copy of your flake the system
   was built from (homes match the last `nixos-rebuild`); use a mutable
   reference like `"/etc/nixos"` to build homes from a live checkout.
@@ -1153,7 +1150,7 @@ nixpkgs release, with a WARNING for any home actually relying on
 that moving default, naming the two pin recipes: the user's own
 `home.nix`, or fleet-wide via a shared `homeModules` entry.
 
-- **nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions**
+- **nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions, traceDiscoveredUsers**
   Shared options (see `mkNixosSystem`).
 
 
@@ -1413,6 +1410,8 @@ mkNixosSystem :: Attribute -> NixosSystem
   deliberate breaking-change default (there was no trust concept
   before this existed). `home.nix` and the account itself
   (`userModule`) are never gated by trust -- only `configuration.nix`.
+  The same username discovered from more than one source (rootPath
+  and/or a list entry) throws -- ambiguous, pick one source per user.
   
   As the login-bootstrap target: on first login it runs
   `home-manager switch` against that flake's matching output --

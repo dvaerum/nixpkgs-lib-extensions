@@ -258,6 +258,8 @@ in
     : deliberate breaking-change default (there was no trust concept
     : before this existed). `home.nix` and the account itself
     : (`userModule`) are never gated by trust -- only `configuration.nix`.
+    : The same username discovered from more than one source (rootPath
+    : and/or a list entry) throws -- ambiguous, pick one source per user.
     :
     : As the login-bootstrap target: on first login it runs
     : `home-manager switch` against that flake's matching output --
