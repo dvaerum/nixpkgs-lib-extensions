@@ -74,6 +74,21 @@ fi
 
 config_dir="${XDG_CONFIG_HOME:-${HOME}/.config}/hm-auto-upgrade"
 
+# Never let nix serve a CACHED view of the ref we are supposed to be
+# tracking. A `git+https://`/`github:` ref carrying no rev is cached for
+# `tarball-ttl` (default 3600s), so a run started within an hour of the
+# last fetch applies whatever was current THEN and reports success --
+# an auto-upgrade that silently installs an hour-old revision is worse
+# than one that fails, because nothing says it happened. Verified: a
+# push followed by an immediate run resolved the previous commit until
+# the TTL was bypassed.
+#
+# Set through NIX_CONFIG rather than a CLI flag so it reaches every nix
+# subprocess uniformly -- the eval probe below AND the `nix build` that
+# home-manager runs internally, which no flag of ours would reach.
+export NIX_CONFIG="tarball-ttl = 0
+${NIX_CONFIG:-}"
+
 # ---------------------------------------------------------------- state
 # Read the PREVIOUS outcome before overwriting: a success is only worth
 # notifying about when it ends a run of failures (see notify() below).

@@ -84,6 +84,13 @@ pkgs.runCommand "home-manager-auto-upgrade-script-test" { } ''
   NIX_STUB_HOST_ATTR=true "$up" "''${base[@]}"
   grep -q -- "--flake /live#alice@$(uname -n) " "$RECORD"
 
+  # ── the tracked ref is never served from nix's cache ──
+  # a git+https ref with no rev is cached for tarball-ttl (default 1h),
+  # so without this a run started soon after a push applies the OLDER
+  # revision and still reports success
+  captured=$("$up" "''${base[@]}" --pre-command ${pkgs.writeShellScript "show-ttl" ''echo "TTL=[$NIX_CONFIG]"''} 2>&1)
+  echo "$captured" | grep -q "tarball-ttl = 0"
+
   # ── generation pruning ──
   : > "$PRUNE_RECORD"
   "$up" "''${base[@]}" --keep-generations 7
