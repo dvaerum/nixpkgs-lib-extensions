@@ -107,6 +107,29 @@ in
       }).alice.config
     ).OnCalendar == "weekly";
 
+  # keepGenerations is a plain option default, not a baked-in constant:
+  # the library is the thing CREATING a generation a day here, so it
+  # prunes by default -- but how many to keep is the consumer's call,
+  # and 0 opts out entirely for anyone whose store GC already covers it.
+  auto-upgrade-keep-generations-default = lib.hasInfix "keep-generations 10" (launcherOf withRef);
+
+  auto-upgrade-keep-generations-overridable =
+    let
+      with42 =
+        launcherOf
+          (homesWith {
+            autoUpgradeFlakeRef = liveRef;
+            homeModules = [ { services.homeManagerAutoUpgrade.keepGenerations = 42; } ];
+          }).alice.config;
+      withOff =
+        launcherOf
+          (homesWith {
+            autoUpgradeFlakeRef = liveRef;
+            homeModules = [ { services.homeManagerAutoUpgrade.keepGenerations = 0; } ];
+          }).alice.config;
+    in
+    lib.hasInfix "keep-generations 42" with42 && lib.hasInfix "keep-generations 0" withOff;
+
   # ── the switch is detached, for the same reason the interactive
   #    wrapper is: activation restarts user units, including this one ──
   auto-upgrade-runs-detached =
