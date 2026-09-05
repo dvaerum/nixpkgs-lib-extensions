@@ -331,10 +331,10 @@ apart from "links to a regular file" -- see the code comment on
 patch is actually used, as a plain Nix error naming the missing path
 rather than a warning naming the symlink.
 
-Applied in LEXICOGRAPHIC filename order (`builtins.readDir`'s own
-ordering) -- `.patch` and `.nix` entries interleave by name, so prefix
-filenames with `10-`, `50-`, `99-`, etc. when application order
-matters.
+Applied in LEXICOGRAPHIC filename order (`builtins.attrNames`'s own
+sort over `readDir`'s entries) -- `.patch` and `.nix` entries
+interleave by name, so prefix filenames with `10-`, `50-`, `99-`,
+etc. when application order matters.
 
 A missing directory is NOT an error: it is treated the same as an
 empty one (`[ ]`) -- a repo with no patches at all should not need to
@@ -792,6 +792,18 @@ or attrsets. For "shared base plus per-host extras" put the addition in
 that host's `extra` slot instead -- ONE rule for every argument: a bare
 key REPLACES the default, `extra.<key>` ADDS to it (lists concatenate,
 attrsets merge with `extra` winning a conflict).
+
+EXCEPT for the users-tree-DISCOVERY role of `rootPath`, `loginFlakeRef`
+and `traceDiscoveredUsers`: the whole plan scans the tree ONCE, from
+`_defaults`' values of these three ALONE (a `_groups` entry's values
+are NOT consulted either), and shares that single result across every
+host -- a host's own override of any of them still merges normally
+into its arguments (so it still reaches, say, the `hosts/<hostname>.nix`
+lookup or the login-bootstrap's own target, unaffected), but has NO
+effect on which users/`configuration.nix`/`home.nix` are discovered
+for it, or on whether the discovery trace prints. A host needing a
+genuinely DIFFERENT tree needs `mkNixosSystem` called directly for
+it instead -- a plan cannot give two hosts two different trees.
 
 A second reserved key, `_groups`, holds OPTIONAL per-group defaults: a
 host declaring `group = "<name>";` receives `_groups.<name>` merged
@@ -1721,7 +1733,7 @@ argv list.
 ```nix
 # extLib = inputs.nixpkgs-lib-extensions.lib
 # as a systemd service's ExecStart:
-script = extLib.systemd.detachedRun pkgs {
+script = extLib.detachedRun pkgs {
   label = "hm-upgrade";
   command = "${pkgs.home-manager}/bin/home-manager switch";
   extraProperties = [ "RuntimeMaxSec=7200" ];
@@ -1789,7 +1801,7 @@ priority only breaks the naming conflict on `binary` itself.
 ```nix
 # extLib = inputs.nixpkgs-lib-extensions.lib
 environment.systemPackages = [
-  (extLib.systemd.interceptingWrapper pkgs {
+  (extLib.interceptingWrapper pkgs {
     package = pkgs.home-manager;
     binary = "home-manager";
     # detach only `home-manager switch`; every other subcommand

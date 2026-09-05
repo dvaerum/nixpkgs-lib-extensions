@@ -31,7 +31,7 @@
     ```nix
     # extLib = inputs.nixpkgs-lib-extensions.lib
     # as a systemd service's ExecStart:
-    script = extLib.systemd.detachedRun pkgs {
+    script = extLib.detachedRun pkgs {
       label = "hm-upgrade";
       command = "${pkgs.home-manager}/bin/home-manager switch";
       extraProperties = [ "RuntimeMaxSec=7200" ];

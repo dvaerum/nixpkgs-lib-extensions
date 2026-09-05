@@ -442,19 +442,19 @@
         ```nix
         genZfsUserFolder "foo"
         =>
-        { "HOME/foo" = { type = "zfs_fs"; ... }; }
+        { name = "HOME/foo"; value = { type = "zfs_fs"; ... }; }
         ```
 
         # Type
 
         ```
-        genZfsUserFolder :: String || Attribute -> Attribute
+        genZfsUserFolder :: String | Attribute -> Attribute
         ```
 
         # Arguments
 
         userSetting
-        : Takes a value of the `string` or `attribute.
+        : Takes a value of the `string` or `attribute` type.
         : The `string` element is: <USERNAME>.
         : The `attribute` element is: { username = "<USERNAME>"; mountpoint = "<MOUNTPOINT>"; }
       */

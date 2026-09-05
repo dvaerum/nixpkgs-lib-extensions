@@ -82,7 +82,7 @@ flowchart TD
     Standalone --> Stand2 --> MkHome
 ```
 
-`planHosts` does three things:
+`planHosts` does four things:
 
 1. `splitHostsArgs`: validate every key against the allowlists,
    split off `_defaults` and `_groups`; ALL complaints are collected
@@ -93,6 +93,13 @@ flowchart TD
 3. core sharing: hosts are grouped into equivalence classes over the
    CORE arguments (`coreArgNames` -- derived from `mkContextCore`'s
    formals, never hand-listed); ONE `mkContextCore` per class.
+4. ONE users-tree scan for the whole plan, from `_defaults`' own
+   `rootPath`/`loginFlakeRef`/`traceDiscoveredUsers` alone (never a
+   host's or `_groups`' own values for these three) -- shared
+   verbatim as `registry`/`args.usersTree` by every host, so a
+   consumer of the plan never rescans (see `buildNixosConfigurations`'s
+   doc comment for the consumer-facing consequence: a plan cannot give
+   two hosts two different users trees).
 
 `systemsFromPlan` calls `mkSystem core args` per host: it builds the
 context (`mkContext core`: lib, pkgs, specialArgs, collected modules)

@@ -21,6 +21,18 @@ in
     key REPLACES the default, `extra.<key>` ADDS to it (lists concatenate,
     attrsets merge with `extra` winning a conflict).
 
+    EXCEPT for the users-tree-DISCOVERY role of `rootPath`, `loginFlakeRef`
+    and `traceDiscoveredUsers`: the whole plan scans the tree ONCE, from
+    `_defaults`' values of these three ALONE (a `_groups` entry's values
+    are NOT consulted either), and shares that single result across every
+    host -- a host's own override of any of them still merges normally
+    into its arguments (so it still reaches, say, the `hosts/<hostname>.nix`
+    lookup or the login-bootstrap's own target, unaffected), but has NO
+    effect on which users/`configuration.nix`/`home.nix` are discovered
+    for it, or on whether the discovery trace prints. A host needing a
+    genuinely DIFFERENT tree needs `mkNixosSystem` called directly for
+    it instead -- a plan cannot give two hosts two different trees.
+
     A second reserved key, `_groups`, holds OPTIONAL per-group defaults: a
     host declaring `group = "<name>";` receives `_groups.<name>` merged
     BETWEEN `_defaults` and its own entry, later layers winning per

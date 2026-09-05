@@ -49,7 +49,10 @@ Highlights:
   `hosts/<hostname>.nix` or `hosts/<hostname>/configuration.nix`.
 - Arguments shared by every host go in one `_defaults` entry; host
   entries override per argument, and unknown keys throw instead of
-  being silently ignored.
+  being silently ignored. Exception: the users tree itself is
+  discovered once from `_defaults` and shared by every host, so a
+  host's own `rootPath`/`loginFlakeRef` cannot give it a different
+  tree (see `buildNixosConfigurations`).
 - User accounts are created automatically (`normalUserModule`). Homes
   are built into the system by default (home-manager NixOS module);
   users listed in `loginHomes` get theirs provisioned on first login

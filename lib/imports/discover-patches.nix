@@ -33,10 +33,10 @@
     patch is actually used, as a plain Nix error naming the missing path
     rather than a warning naming the symlink.
 
-    Applied in LEXICOGRAPHIC filename order (`builtins.readDir`'s own
-    ordering) -- `.patch` and `.nix` entries interleave by name, so prefix
-    filenames with `10-`, `50-`, `99-`, etc. when application order
-    matters.
+    Applied in LEXICOGRAPHIC filename order (`builtins.attrNames`'s own
+    sort over `readDir`'s entries) -- `.patch` and `.nix` entries
+    interleave by name, so prefix filenames with `10-`, `50-`, `99-`,
+    etc. when application order matters.
 
     A missing directory is NOT an error: it is treated the same as an
     empty one (`[ ]`) -- a repo with no patches at all should not need to

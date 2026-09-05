@@ -106,6 +106,21 @@
       }).config.users.users
     )).success;
 
+  # the same collision, but between rootPath's OWN tree and a list
+  # entry -- not just between two list entries. loginFlakeRefSources
+  # always prepends rootPath as a source, so resolveUsers' duplicate
+  # check must see it too.
+  cross-source-collision-includes-rootpath =
+    !(builtins.tryEval (
+      (mkProbeSystem {
+        inherit inputs system;
+        hostname = "multitree-collide-rootpath";
+        users = [ "per" ];
+        rootPath = fixturesDir + "/tree-per";
+        loginFlakeRef = [ (fixturesDir + "/tree-collide") ];
+      }).config.users.users
+    )).success;
+
   # singular (non-list) loginFlakeRef now defaults to untrusted too --
   # the deliberate breaking-change default flip (see the plan/commit
   # message): replaces rootPath entirely (unchanged "instead of"
@@ -146,5 +161,29 @@
           allowNixosConfig = true;
         };
       }).config.users.users
+    )).success;
+
+  # Under a PLAN (buildNixosConfigurations), the users-tree is scanned
+  # ONCE from `_defaults`' own rootPath/loginFlakeRef alone and shared
+  # verbatim by every host -- a host's own override of either merges
+  # normally into its OTHER arguments, but has NO effect on which users
+  # are discovered for it (see build-nixos-configurations.nix's doc
+  # comment for the full explanation). `laptop` here sets its own
+  # rootPath naming a tree with "bo"; the plan-wide scan (from
+  # `_defaults`, naming "per") wins regardless -- selecting "bo" on
+  # `laptop` is therefore a typo (unknown user) and throws.
+  plan-host-rootpath-override-is-ignored-for-discovery =
+    !(builtins.tryEval (
+      (myLib.buildNixosConfigurations {
+        _defaults = {
+          inherit inputs system;
+          rootPath = fixturesDir + "/tree-per";
+          users = [ "per" ];
+        };
+        laptop = {
+          rootPath = fixturesDir + "/tree-bo";
+          users = [ "bo" ];
+        };
+      }).laptop.config.users.users
     )).success;
 }

@@ -383,9 +383,13 @@ The reserved `_defaults` entry (never a valid hostname -- a hostname
 cannot START with `_`) supplies arguments to every host. Merging is
 per-argument and the host entry wins entirely, no deep-merging of
 lists or attrsets -- see `buildNixosConfigurations`'s doc comment
-(`docs/lib.md`) for the full merge rule. For "shared base plus
-per-host extras" put the addition in that host's `extra` slot
-instead:
+(`docs/lib.md`) for the full merge rule, **including one exception**:
+`rootPath`/`loginFlakeRef`/`traceDiscoveredUsers` are scanned for
+users ONCE from `_defaults` alone and shared by every host regardless
+of what a host (or `_groups` entry) sets for them itself -- a host
+needing a genuinely different tree needs `mkNixosSystem` called
+directly for it. For "shared base plus per-host extras" put the
+addition in that host's `extra` slot instead:
 
 ```nix
 _defaults = { modules = [ ./base.nix ]; homeModules = [ ./direnv.nix ]; };

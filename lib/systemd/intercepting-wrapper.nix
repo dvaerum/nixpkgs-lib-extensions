@@ -20,7 +20,7 @@
     ```nix
     # extLib = inputs.nixpkgs-lib-extensions.lib
     environment.systemPackages = [
-      (extLib.systemd.interceptingWrapper pkgs {
+      (extLib.interceptingWrapper pkgs {
         package = pkgs.home-manager;
         binary = "home-manager";
         # detach only `home-manager switch`; every other subcommand
