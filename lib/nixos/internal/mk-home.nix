@@ -102,6 +102,24 @@ in
               # home.stateVersion default (current release) -- with a
               # warning for any home that RELIES on it
               (homeStateVersionModule hostname)
+              # scheduled refresh from a LIVE ref. STANDALONE homes only
+              # -- mk-system.nix injects the same module for its
+              # system-managed homes with `systemManaged = true`, which
+              # declares the options (one home.nix is evaluated by both
+              # mechanisms) but produces no unit.
+              # `loginFlakeRef` is deliberately NOT reused as a fallback
+              # here, despite naming the same repo in the obvious setup:
+              # a flake INPUT is an immutable /nix/store path (can never
+              # pick up a new commit), and the one shape that IS live --
+              # a bare string -- cannot be scanned for users at all, so a
+              # home built that way does not exist to carry a timer. The
+              # combination that would make a fallback useful cannot
+              # occur; requiring an explicit ref is the honest interface.
+              (self.homeManagerAutoUpgradeModule {
+                enable = args.autoUpgrade or true;
+                flakeRef = args.autoUpgradeFlakeRef or null;
+                homeManagerPackage = home-manager.packages.${system}.home-manager or null;
+              })
               {
                 _file = ../mk-home-configuration.nix;
                 home.username = lib.mkDefault username;

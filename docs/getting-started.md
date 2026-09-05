@@ -636,6 +636,132 @@ The module is self-gating: with no matching login user, no
 home-manager input, or no flake reference, it evaluates to an empty
 module -- safe to include unconditionally.
 
+## Keeping standalone homes current
+
+The bootstrap provisions a home **once**. To keep it current
+afterwards, the builders can also install a systemd user **timer** that
+re-runs `home-manager switch` on a schedule against a **live** flake
+reference:
+
+```nix
+buildHomeConfigurations {
+  inherit inputs system;
+  autoUpgradeFlakeRef = "git+https://example.org/home-manager-config.git";
+}
+```
+
+`autoUpgrade` is on by default, so a home with no reference configured
+**warns** rather than silently doing nothing. If you update your homes
+yourself, `autoUpgrade = false;` is the single off switch -- it removes
+the unit and the warning together.
+
+The reference must be **live** (`git+https://...`, `github:...`,
+`/etc/nixos`), because the whole point is to pick up commits made since
+the system was built. `loginFlakeRef` is deliberately never reused for
+it, even though it usually names the same repository: a flake *input*
+is an immutable `/nix/store` path that can never yield a new commit,
+and the one shape that is live -- a bare string -- cannot be scanned
+for users at evaluation time, so a home built that way would not exist
+to carry a timer.
+
+Only **standalone** homes get a unit. A system-managed home already
+switches with `nixos-rebuild`; a timer running `home-manager switch`
+against it would fight it over one profile, so the options are declared
+there (one `home.nix` is evaluated by both mechanisms) but produce
+nothing, and asking for it anyway warns.
+
+Each run re-resolves its target the same way the bootstrap does --
+`"<user>@<hostname>"` when the live flake exports one, else `"<user>"`
+-- but at RUN time rather than build time, so a `hosts/<host>/`
+directory added since the last rebuild takes effect without one. The
+switch runs through `detachedRun`, so activation restarting user units
+cannot kill it mid-flight.
+
+### Scheduling
+
+| option | default | |
+|---|---|---|
+| `schedule` | `"daily"` | the timer's `OnCalendar` |
+| `persistent` | `true` | a run missed while the machine was off fires at next login |
+| `randomizedDelaySec` | `300` | delays that catch-up so a full build does not start at the instant of login |
+
+### Credentials
+
+Everything below is a **path, never a secret value**, and every file is
+read at RUN time -- so rotating a token needs no rebuild. When an
+option is unset, a conventional runtime path is used if it exists,
+which means a machine can be set up with no Nix change at all:
+
+| | option | conventional runtime path |
+|---|---|---|
+| HTTPS token / user+password | `gitCredentialsFile` | `$XDG_CONFIG_HOME/hm-auto-upgrade/git-credentials` |
+| SSH key | `sshKeyPath` | `$XDG_CONFIG_HOME/hm-auto-upgrade/ssh-key` |
+
+For HTTPS, the file is in git's `store` format -- one line, the same
+shape for a PAT, an OAuth token or a real password:
+
+```
+https://dennis:<token-or-password>@example.org
+```
+
+Declaratively, point at a decrypted secret rather than writing the
+value into Nix:
+
+```nix
+# in the user's own home.nix, where config.sops.secrets is in scope
+services.homeManagerAutoUpgrade.gitCredentialsFile =
+  config.sops.secrets."hm-auto-upgrade/git-credentials".path;
+```
+
+The unit then forces a non-interactive chain for itself
+(`GIT_TERMINAL_PROMPT=0` plus a store-only `credential.helper`). This
+matters more than it looks: the default chain can include helpers that
+block **forever** on "complete authentication in your browser", which
+for an unattended timer means a hang, not an error.
+
+For SSH, `sshKeyPath` becomes
+`ssh -i <key> -o IdentitiesOnly=yes -o BatchMode=yes`. `BatchMode` is
+the SSH counterpart of `GIT_TERMINAL_PROMPT=0` -- fail fast instead of
+prompting into the void. The key must be **passphrase-less** and the
+host must already be in `known_hosts`; host-key checking is not
+weakened for you, but `sshExtraOptions` is there if you want that trade
+(`[ "StrictHostKeyChecking=accept-new" ]`).
+
+An **agent** is used when `SSH_AUTH_SOCK` is genuinely set in the
+unit's environment and its socket exists. Note a systemd *user* service
+does not inherit a login shell's agent -- it only sees one if the agent
+is itself a user service, or something imported it into the user
+manager's environment. `sshAuthSock` points the unit at a known path.
+When an SSH-flavoured reference has none of these, the run fails
+immediately and names all three fixes, rather than hanging.
+
+A credential file readable by group or others is **refused**, naming
+the path and the `chmod` -- the same stance `ssh` takes on private
+keys.
+
+### Reporting
+
+Failures always reach the journal (`journalctl --user -u
+hm-auto-upgrade`). On top of that, two switches you can set
+independently:
+
+- `console.enable` (default on) -- one line at interactive shell start,
+  **only** after a failure, in whichever of bash/zsh/fish that home
+  enables. `hm-auto-upgrade-status` is always installed for checking
+  deliberately.
+- `desktop.enable` (default on) -- a notification on failure, and on
+  the first success that ends a failing streak. Never a daily "still
+  fine" popup, and silent when no session bus is reachable.
+
+Both read one state file (`$XDG_STATE_HOME/hm-auto-upgrade/last-run`),
+so they cannot disagree.
+
+**A caveat worth knowing:** without lingering enabled
+(`loginctl enable-linger <user>`), there is no user manager after a
+reboot until someone logs in -- so no user timer fires at all, this one
+included. `persistent` is what makes the missed run happen at that next
+login instead of being skipped.
+
 ## What your inputs contribute automatically
 
 For every flake input, by convention:

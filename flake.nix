@@ -180,6 +180,13 @@
             pkgs = nixpkgs.legacyPackages.${system};
             inherit nixpkgs myLib;
           };
+          # the auto-upgrade SCRIPT's own behavior (credential
+          # resolution, live target re-resolution, state file,
+          # notification transitions) -- its module-level wiring is
+          # covered by checks/builders/tests/auto-upgrade.nix
+          auto-upgrade-script = import ./checks/auto-upgrade/script.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+          };
           # mechanical documentation rules (examples, references,
           # anchors, indentation) -- see the file's own header for what
           # the two name-pinning checks above deliberately do NOT cover

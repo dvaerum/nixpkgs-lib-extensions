@@ -155,6 +155,14 @@ in
                   # home.stateVersion default (current release) -- with a
                   # warning for any home that RELIES on it
                   (homeStateVersionModule hostname)
+                  # Options only, never a unit: a SYSTEM-managed home
+                  # switches with nixos-rebuild, so a timer running
+                  # `home-manager switch` against it would fight it over
+                  # one profile. Injected all the same because ONE
+                  # users/<user>/home.nix is evaluated by both mechanisms
+                  # -- an option that existed only on the standalone side
+                  # would make that same file fail to evaluate here.
+                  (self.homeManagerAutoUpgradeModule { systemManaged = true; })
                 ];
               users = lib.genAttrs systemUsersWithHome (u: {
                 # `username` as a module arg (extraSpecialArgs cannot

@@ -22,6 +22,7 @@ builders? Start with the
   - [`lib.nixos.buildHomeConfigurations`](#libnixosbuildhomeconfigurations)
   - [`lib.nixos.buildNixosConfigurations`](#libnixosbuildnixosconfigurations)
   - [`lib.nixos.discoverUserRegistry`](#libnixosdiscoveruserregistry)
+  - [`lib.nixos.homeManagerAutoUpgradeModule`](#libnixoshomemanagerautoupgrademodule)
   - [`lib.nixos.homeManagerBootstrapModule`](#libnixoshomemanagerbootstrapmodule)
   - [`lib.nixos.mkHomeConfiguration`](#libnixosmkhomeconfiguration)
   - [`lib.nixos.mkNixosSystem`](#libnixosmknixossystem)
@@ -883,6 +884,12 @@ buildNixosConfigurations ::
     attrset goes through `buildConfigurations`)
   - `loginFlakeRef`
   - `loginReactivateEveryLogin`
+  - `autoUpgrade` (keep standalone homes current on a timer; see
+    `homeManagerAutoUpgradeModule`. Ignored by this builder, which
+    produces no homes -- it applies through `buildConfigurations`)
+  - `autoUpgradeFlakeRef` (the LIVE ref that timer tracks -- always
+    explicit; `loginFlakeRef` is never reused for it, see
+    `homeManagerAutoUpgradeModule`)
   - `traceDiscoveredUsers`
   - `wrapHomeManagerSwitch`
   - `tags`
@@ -957,6 +964,91 @@ discoverUserRegistry :: Path -> Attribute
 
 - **dir**
   The users directory to scan. Non-existent is treated as empty, not an error.
+
+
+
+
+## `lib.nixos.homeManagerAutoUpgradeModule`
+
+A home-manager module that keeps a STANDALONE home current: a systemd
+user timer re-runs `home-manager switch` against a LIVE flake
+reference on a schedule, resolving `"<user>@<hostname>"` vs
+`"<user>"` freshly on every run.
+
+The builders inject this into every standalone home they produce, so
+a consumer normally sets the `autoUpgrade`/`autoUpgradeFlakeRef`
+ARGUMENTS on `buildHomeConfigurations`/`buildConfigurations`/
+`mkHomeConfiguration` rather than calling this directly; everything
+else is configured through the `services.homeManagerAutoUpgrade.*`
+options this declares (which is also where credentials go, since a
+`home.nix` has `config.sops.secrets.*` in scope and a flake's
+argument list does not).
+
+Deliberately the mirror image of `homeManagerBootstrapModule`, not a
+replacement for it: that one provisions a home ONCE at first login
+from a PINNED ref, resolving the attribute at EVALUATION time
+(`attrFor`) so a wrong guess fails the build. This one tracks a ref
+whose outputs may change after the system was built, so its
+resolution has to happen at RUN time -- a build-time answer would go
+stale the moment a `hosts/<hostname>/` directory is added.
+
+Only ever active for a STANDALONE home. A system-managed home (built
+into a NixOS system via home-manager's NixOS module) already switches
+with `nixos-rebuild`; running `home-manager switch` against it on a
+timer would create a second, competing generation lineage over one
+profile. The builders still inject this module there so the options
+exist -- one `users/<user>/home.nix` is evaluated by BOTH mechanisms,
+and an option that vanished on one of them would break the other --
+but it produces no unit, and warns if asked to.
+
+### Example
+
+```nix
+# in a user's home.nix -- the flake ref itself normally comes from
+# the builder argument, so what is left here is the credential:
+services.homeManagerAutoUpgrade = {
+  gitCredentialsFile = config.sops.secrets."hm-auto-upgrade/git-credentials".path;
+  schedule = "daily";
+};
+```
+
+### Type
+
+```
+homeManagerAutoUpgradeModule :: Attribute -> Module
+```
+
+### Arguments
+
+- **enable**
+  The `enable` option's DEFAULT -- what the builder's `autoUpgrade`
+  argument feeds in. A definition in the consumer's own `home.nix`
+  beats it, as any definition beats any default. Default `true`.
+
+- **flakeRef**
+  The `flakeRef` option's default -- the builder's
+  `autoUpgradeFlakeRef`. `null` warns at evaluation time when
+  `enable` is on. Default `null`.
+  
+  Deliberately NOT defaulted from `loginFlakeRef`, though it usually
+  names the same repository: a flake INPUT is an immutable
+  `/nix/store` path, so switching to it repeatedly could never pick
+  up a new commit, and the one shape that IS live -- a bare string --
+  cannot be scanned for users at evaluation time, so a home built
+  that way does not exist to carry a timer. No configuration exists
+  in which such a fallback both fires and is useful.
+
+- **homeManagerPackage**
+  The home-manager CLI to run. Defaults to `pkgs.home-manager` when
+  `null`, which is right for a standalone caller; the builders pass
+  the package from the flake's own home-manager input so the timer
+  runs the same version the home was built with.
+
+- **systemManaged**
+  Declare the options but never produce a unit -- what the builders
+  pass on the system-managed path. Also flips `enable`'s default to
+  `false`, so the "not supported here" warning fires only for someone
+  who explicitly asked for it. Default `false`.
 
 
 

@@ -111,6 +111,12 @@ in
     :   attrset goes through `buildConfigurations`)
     : - `loginFlakeRef`
     : - `loginReactivateEveryLogin`
+    : - `autoUpgrade` (keep standalone homes current on a timer; see
+    :   `homeManagerAutoUpgradeModule`. Ignored by this builder, which
+    :   produces no homes -- it applies through `buildConfigurations`)
+    : - `autoUpgradeFlakeRef` (the LIVE ref that timer tracks -- always
+    :   explicit; `loginFlakeRef` is never reused for it, see
+    :   `homeManagerAutoUpgradeModule`)
     : - `traceDiscoveredUsers`
     : - `wrapHomeManagerSwitch`
     : - `tags`

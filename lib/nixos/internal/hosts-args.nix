@@ -42,6 +42,8 @@ let
     "homeModules"
     "loginFlakeRef"
     "loginReactivateEveryLogin"
+    "autoUpgrade"
+    "autoUpgradeFlakeRef"
     "traceDiscoveredUsers"
     "wrapHomeManagerSwitch"
     "tags"
