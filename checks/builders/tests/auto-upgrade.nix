@@ -62,6 +62,25 @@ in
   auto-upgrade-disabled-is-silent =
     !(disabled.systemd.user.timers ? hm-auto-upgrade) && disabled.warnings == [ ];
 
+  # the combined builder's home half reaches the same injection point in
+  # mk-home.nix, so it gets the timer too -- true by construction, but
+  # the construction is exactly the kind of thing that quietly stops
+  # being true, and this is the builder a fleet with NixOS hosts uses
+  auto-upgrade-through-build-configurations =
+    let
+      out = myLib.buildConfigurations {
+        _defaults = {
+          inherit inputs system;
+          traceDiscoveredUsers = false;
+          autoUpgradeFlakeRef = liveRef;
+        };
+        laptop = { };
+      };
+      cfg = out.homeConfigurations.alice.config;
+    in
+    cfg.systemd.user.timers ? hm-auto-upgrade
+    && cfg.services.homeManagerAutoUpgrade.flakeRef == liveRef;
+
   # ── the timer itself ──
   auto-upgrade-timer-defaults =
     let
