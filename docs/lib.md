@@ -27,6 +27,7 @@ builders? Start with the
   - [`lib.nixos.mkHomeConfiguration`](#libnixosmkhomeconfiguration)
   - [`lib.nixos.mkNixosSystem`](#libnixosmknixossystem)
   - [`lib.nixos.normalUserModule`](#libnixosnormalusermodule)
+  - [`lib.nixos.systemAutoUpgradeModule`](#libnixossystemautoupgrademodule)
 - [strings](#strings)
   - [`lib.strings.stringToTitle`](#libstringsstringtotitle)
 - [systemd](#systemd)
@@ -1754,6 +1755,84 @@ normalUserModule :: String -> Module
 
 - **username**
   The name of the user account (and its private group) to create.
+
+
+
+
+## `lib.nixos.systemAutoUpgradeModule`
+
+A NixOS module that keeps a HOST current on a timer and owns the one
+thing nixpkgs' own `system.autoUpgrade` has no place for: what to do
+when the new generation needs a reboot.
+
+It WRAPS `system.autoUpgrade` rather than replacing it. Upstream stays
+the engine -- it fetches with `--refresh`, evaluates, builds, and
+stages -- pinned here to `operation = "boot"` and
+`allowReboot = false`, so it never activates and never reboots. A
+`nixos-upgrade-policy` unit then decides:
+
+- nothing needs a reboot, and the staged generation is not yet
+  activated: activate it (`switch-to-configuration switch` on the
+  profile itself -- no second evaluation, so it cannot drift onto a
+  newer commit than the one that was staged and boot-defaulted);
+- a reboot IS needed: leave it staged, and tell whoever is here.
+
+Whether a reboot is needed is DERIVED on every run, by comparing
+`/run/booted-system` against the staged profile -- never remembered,
+so it cannot be wrong. `/run` holds only bookkeeping (since when,
+last notified), which is exactly what should vanish on reboot.
+
+Advisory by default: a logged-in session postpones the reboot
+indefinitely and nothing overrides that. `forceRebootAfter` opts into
+a deadline, with escalating reminders and a cancellable
+`shutdown -r +N` at the end.
+
+The builders inject this into every host they produce, so a consumer
+normally sets the `systemAutoUpgrade`/`systemAutoUpgradeFlakeRef`
+ARGUMENTS on `buildNixosConfigurations`/`buildConfigurations`/
+`mkNixosSystem` rather than calling this directly; everything else is
+configured through the `services.systemAutoUpgrade.*` options this
+declares (which is also where credentials go, since a host's
+`configuration.nix` has `config.sops.*` in scope and a flake's
+argument list does not).
+
+The home-manager counterpart is `homeManagerAutoUpgradeModule`. The
+two are deliberately independent: this one never triggers that one.
+A standalone home has its own daily timer, and coupling them would
+only add a way for one to fail because the other did.
+
+### Example
+
+```nix
+# in a host's configuration.nix -- the flake ref itself normally
+# comes from the builder argument, so what is left here is policy:
+services.systemAutoUpgrade = {
+  rebootWindow = {
+    lower = "04:00";
+    upper = "06:00";
+  };
+  gitCredentialsFile = config.sops.templates."nixos-upgrade-git-credentials".path;
+};
+```
+
+### Type
+
+```
+systemAutoUpgradeModule :: Attribute -> Module
+```
+
+### Arguments
+
+- **enable**
+  The `enable` option's DEFAULT -- what the builder's
+  `systemAutoUpgrade` argument feeds in. A definition in the
+  consumer's own `configuration.nix` beats it, as any definition
+  beats any default. Default `true`.
+
+- **flakeRef**
+  The `flakeRef` option's default -- the builder's
+  `systemAutoUpgradeFlakeRef`. `null` warns at evaluation time when
+  `enable` is on, and creates nothing. Default `null`.
 
 
 ---

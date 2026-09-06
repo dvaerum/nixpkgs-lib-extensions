@@ -44,6 +44,8 @@ in
       homeModules ? [ ],
       loginFlakeRef ? null,
       loginReactivateEveryLogin ? false,
+      systemAutoUpgrade ? true,
+      systemAutoUpgradeFlakeRef ? null,
       traceDiscoveredUsers ? true,
       wrapHomeManagerSwitch ? true,
       tags ? [ ],
@@ -220,6 +222,15 @@ in
         homeManager = home-manager;
       };
 
+      # THE HOST ITSELF: nixpkgs' system.autoUpgrade as the build engine,
+      # with the reboot decision -- activate now, or wait for whoever is
+      # logged in -- owned here. Self-gating: options only, no units,
+      # when no ref is configured.
+      autoUpgradeModule = self.systemAutoUpgradeModule {
+        enable = systemAutoUpgrade;
+        flakeRef = systemAutoUpgradeFlakeRef;
+      };
+
       # A login-managed user otherwise has NO way to manually re-run
       # `home-manager switch` between logins -- only the bootstrap service
       # itself ever invokes it. Wrapped, not the bare package: `switch`'s
@@ -322,6 +333,7 @@ in
             }
           )
           bootstrapModule
+          autoUpgradeModule
           systemHomesModule
           homeManagerSwitchWrapperModule
         ]

@@ -762,6 +762,170 @@ reboot until someone logs in -- so no user timer fires at all, this one
 included. `persistent` is what makes the missed run happen at that next
 login instead of being skipped.
 
+## Keeping hosts current
+
+The system counterpart. nixpkgs already ships `system.autoUpgrade`, but
+it has no answer for the question that actually matters on a machine
+someone uses: the new generation needs a **reboot** -- now what?
+
+```nix
+buildNixosConfigurations {
+  _defaults = {
+    inherit inputs;
+    systemAutoUpgradeFlakeRef = "git+https://example.org/nixos-config.git";
+  };
+  laptop = { };
+}
+```
+
+`systemAutoUpgrade` is on by default, so a host with no reference
+configured **warns** rather than silently doing nothing;
+`systemAutoUpgrade = false;` removes the units and the warning together.
+
+This **wraps** `system.autoUpgrade` rather than replacing it. Upstream
+stays the engine -- it fetches with `--refresh`, evaluates, builds and
+stages -- pinned to `operation = "boot"` and `allowReboot = false` so it
+never activates and never reboots. A `nixos-upgrade-policy` unit then
+decides what happens, on every run:
+
+| booted vs staged | what happens |
+|---|---|
+| same, already activated | nothing |
+| same, not yet activated | `switch-to-configuration switch` on the staged profile |
+| differs | leave it staged; tell whoever is logged in |
+
+Activation runs the **profile's own** `switch-to-configuration`, not a
+second `nixos-rebuild switch`. Upstream re-evaluates the flake at that
+point, which with `--refresh` can activate a *newer* commit than the one
+just staged and boot-defaulted; the profile's own script cannot drift,
+and needs no network.
+
+Whether a reboot is needed is **derived** every run, by comparing
+`/run/booted-system` against the staged profile -- never remembered, so
+it cannot go stale. `/run/nixos-upgrade-policy/` holds only bookkeeping
+(since when, last notified), which is exactly what should vanish on
+reboot.
+
+### What counts as a reboot
+
+`rebootTriggers` -- the same three components nixpkgs compares:
+
+| | why | |
+|---|---|---|
+| `kernel` | a different kernel binary is running | always real |
+| `initrd` | early boot changed (LUKS, ZFS import, resume) | always real |
+| `kernel-modules` | the merged module tree moved | the noisy one |
+
+`kernel-modules` moves **without** the kernel moving whenever an
+out-of-tree module does -- nvidia, ZFS, v4l2loopback. That is precisely
+when the module loaded in RAM and the tree on disk disagree, so it stays
+on by default: an extra reboot prompt is cheaper than an unimportable
+pool. Drop it on a host that has no out-of-tree modules.
+
+### What counts as someone being here
+
+An **allow-list**: a session blocks the reboot only when its `Class` is
+one of `user` / `user-early` / `user-incomplete` **and** its `State` is
+not `closing`. Everything else is not a person -- `manager` (the session
+a **lingering** user has with nobody logged in), `background` (what the
+notification machinery itself creates), `greeter`, `lock-screen`.
+
+So enabling linger does not make a machine think it is permanently
+occupied, while a real login by that same lingering user does block.
+
+### Rebooting
+
+With nobody here, the reboot happens as soon as `rebootWindow` allows
+(`null`, the default, means any time -- nobody is there to interrupt).
+Unlike `system.autoUpgrade.rebootWindow`, this one is actually consulted;
+upstream's is only read inside its `allowReboot` branch, which this
+module pins off.
+
+With someone here, nothing is forced. The default is **advisory**: the
+reboot waits as long as the session lasts, while newer generations keep
+staging underneath.
+
+`forceRebootAfter` opts into a deadline, measured from when the reboot
+first became necessary:
+
+```nix
+services.systemAutoUpgrade.forceRebootAfter = {
+  days = 7;
+  hours = 0;
+};
+```
+
+Reminders escalate as it approaches (`reminders`, coarsest first), and
+the end of it is `shutdown -r +5` -- systemd's own broadcast countdown,
+which `shutdown -c` cancels. The deadline deliberately ignores
+`rebootWindow`: a deadline a window can postpone indefinitely is not a
+deadline. Because the clock lives in `/run`, it counts only time the
+machine was up and pending -- a laptop closed for a week does not burn
+its grace period.
+
+### Scheduling
+
+| option | default | |
+|---|---|---|
+| `schedule` | `"04:45"` | when the ENGINE runs -- the only part that fetches and builds |
+| `randomizedDelaySec` | `900` | jitter, so a fleet does not hit the substituter together |
+| `runtimeMaxSec` | `10800` | an unattended build that hangs must eventually fail |
+| `pollIntervalSec` | `900` | how often the POLICY re-checks; `null` disables the timer |
+
+`pollIntervalSec` is **not** an update-frequency knob -- the policy run
+is three `readlink`s and a `loginctl` call, with no network and no store
+access. What it bounds is reaction time: how soon after the last user
+logs out the machine reboots, and how late a reminder lands. Coarsen it
+freely; anything time-critical arms its own one-shot wakeup rather than
+waiting for the next poll.
+
+### Credentials
+
+Same shape as the home timer, except that everything is **environment on
+the engine unit**, so nothing is written to disk at all:
+
+```nix
+# in the host's configuration.nix, where config.sops is in scope
+sops.templates."nixos-upgrade-git-credentials".content =
+  "https://forgejo-token:${config.sops.placeholder."forgejo/auto-upgrade-token"}@example.org";
+
+services.systemAutoUpgrade.gitCredentialsFile =
+  config.sops.templates."nixos-upgrade-git-credentials".path;
+```
+
+A sops **template** composes git's one-line `store` format from a token
+you already have, so rotating stays a single `sops set` on the existing
+key and the composed line never becomes a second secret to keep in sync.
+
+`sshKeyPath` becomes `ssh -i <key> -o IdentitiesOnly=yes -o BatchMode=yes`,
+with the same caveats as the home timer: passphrase-less key, host
+already in `known_hosts`, `sshExtraOptions` if you want to trade that
+away.
+
+The credential chain is narrowed to store-only **whether or not** a file
+is configured -- `GIT_TERMINAL_PROMPT=0` does not govern a credential
+*helper*, and an ambient one blocks forever on "complete authentication
+in your browser", which for an unattended unit is a hang rather than an
+error.
+
+### Reporting
+
+- `console.enable` (default on) -- one line at interactive shell start
+  while a reboot is pending or the last upgrade failed, and nothing
+  otherwise. `nixos-upgrade-status` is installed for checking
+  deliberately. One definition of `environment.interactiveShellInit`
+  covers bash, zsh and fish (NixOS translates it for fish through
+  babelfish), so the line cannot print twice.
+- `desktop.enable` (default on) -- `notify-send` inside each logged-in
+  user's own session bus, falling back to `wall` for anyone without one.
+- `onResult` -- shell run **once per engine run**, not once per poll,
+  with `$RESULT`, `$REBOOT_PENDING` and `$GENERATION` in scope. This is
+  where a push notification goes; the library bakes in none.
+
+The home timer and this one are deliberately independent: this never
+triggers that. A standalone home has its own daily timer, and coupling
+them would only add a way for one to fail because the other did.
+
 ## What your inputs contribute automatically
 
 For every flake input, by convention:
