@@ -14,6 +14,7 @@ profile=/nix/var/nix/profiles/system
 runtime_dir=/run/nixos-upgrade-policy
 state_file=/var/lib/nixos-upgrade-policy/last-run
 shutdown_scheduled=/run/systemd/shutdown/scheduled
+user_runtime_dir=/run/user
 upgrade_unit=nixos-upgrade.service
 policy_unit=nixos-upgrade-policy.service
 reboot_triggers=kernel,initrd,kernel-modules
@@ -40,6 +41,8 @@ usage: nixos-upgrade-policy [options]
   --runtime-dir PATH       tmpfs bookkeeping (default /run/nixos-upgrade-policy)
   --state-file PATH        persistent last-run record
   --shutdown-scheduled PATH  systemd's own scheduled-shutdown marker
+  --user-runtime-dir PATH  where per-user session buses live
+                           (default /run/user)
   --upgrade-unit NAME      the engine unit to read a result from
   --policy-unit NAME       this unit's own name, for self-armed wakeups
   --reboot-triggers LIST   comma-separated: kernel,initrd,kernel-modules
@@ -63,7 +66,8 @@ while [ "$#" -gt 0 ]; do
   # usage error, not a `set -u` crash on "$2"
   case "$1" in
     --booted-system | --current-system | --profile | --runtime-dir | --state-file | \
-      --shutdown-scheduled | --upgrade-unit | --policy-unit | --reboot-triggers | \
+      --shutdown-scheduled | --user-runtime-dir | --upgrade-unit | --policy-unit | \
+      --reboot-triggers | \
       --reboot-window | --reminders | --notify-interval | --force-after | \
       --force-grace | --poll-interval | --pre-command | --on-result | --now)
       if [ "$#" -lt 2 ]; then
@@ -80,6 +84,7 @@ while [ "$#" -gt 0 ]; do
     --runtime-dir) runtime_dir="$2"; shift 2 ;;
     --state-file) state_file="$2"; shift 2 ;;
     --shutdown-scheduled) shutdown_scheduled="$2"; shift 2 ;;
+    --user-runtime-dir) user_runtime_dir="$2"; shift 2 ;;
     --upgrade-unit) upgrade_unit="$2"; shift 2 ;;
     --policy-unit) policy_unit="$2"; shift 2 ;;
     --reboot-triggers) reboot_triggers="$2"; shift 2 ;;
@@ -239,17 +244,30 @@ for id in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); 
   esac
 done
 
+# ABSOLUTE path, resolved here: `systemd-run --machine=<user>@` looks the
+# command up in the TARGET manager's PATH, not this unit's, and a system
+# unit's runtimeInputs mean nothing over there. The store is shared, so
+# the full path always works. (Found the hard way: the bare name failed
+# with 203/EXEC while systemd-run itself still reported success.)
+notify_send=$(command -v notify-send 2>/dev/null || true)
+
 notify() {
   local urgency="$1" title="$2" body="$3"
   local need_wall=0 entry name uid
   for entry in $blocking; do
     name="${entry%%:*}"
     uid="${entry##*:}"
-    if [ "$desktop_notify" -eq 1 ] && [ -e "/run/user/$uid/bus" ]; then
+    if [ "$desktop_notify" -eq 1 ] && [ -n "$notify_send" ] &&
+      [ -e "$user_runtime_dir/$uid/bus" ]; then
       # Runs inside that user's own manager, which is where a session bus
-      # and a working notification daemon actually are.
-      systemd-run --user --machine="$name@.host" --collect --quiet -- \
-        notify-send -a "NixOS" -u "$urgency" "$title" "$body" ||
+      # and a working notification daemon actually are. --wait so a
+      # failure INSIDE the transient unit reaches us -- without it
+      # systemd-run reports success for merely having started it, and a
+      # notification that never appeared looks delivered. Capped, because
+      # a wedged notification daemon must not stall the policy run.
+      systemd-run --user --machine="$name@.host" --collect --quiet --wait \
+        -p RuntimeMaxSec=30 -- \
+        "$notify_send" -a "NixOS" -u "$urgency" "$title" "$body" ||
         need_wall=1
     else
       need_wall=1

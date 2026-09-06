@@ -210,9 +210,24 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   touch $TMPDIR/user/1000/bus
   rm -f "$rt/pending"
   reset
-  # the script looks under /run/user/<uid>; no bus exists in the sandbox,
-  # so this asserts the wall FALLBACK rather than the bus path
   SESSIONS="5:user:active:dennis:1000" "$policy" "''${base[@]}" --desktop-notify --now 300 \
+    --user-runtime-dir $TMPDIR/user \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  grep -q -- "--machine=dennis@.host" "$RECORD"
+  # notify-send must go over as an ABSOLUTE path: systemd-run resolves the
+  # command in the TARGET manager's PATH, where this unit's runtimeInputs
+  # do not exist. A bare name fails with 203/EXEC after systemd-run has
+  # already reported success.
+  grep -qE "/bin/notify-send" "$RECORD"
+  # ... and --wait, so that 203/EXEC is something we can actually see
+  grep -q -- "--wait" "$RECORD"
+  ! grep -q "wall " "$RECORD"
+
+  # ... and with no bus for that uid, the same call falls back to wall
+  rm -f "$rt/pending"
+  reset
+  SESSIONS="5:user:active:dennis:1000" "$policy" "''${base[@]}" --desktop-notify --now 400 \
+    --user-runtime-dir $TMPDIR/empty-user \
     --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
   grep -q "wall " "$RECORD"
   rm -f "$rt/pending"
