@@ -685,6 +685,22 @@ cannot kill it mid-flight.
 | `persistent` | `true` | a run missed while the machine was off fires at next login |
 | `randomizedDelaySec` | `300` | delays that catch-up so a full build does not start at the instant of login |
 
+### Not at the same time as the system
+
+`deferToSystemUpgrade` (default on) adds an `ExecCondition` that skips a
+run while `nixos-upgrade.service` is active. The two halves have no
+business building at once -- the system one may be rebuilding this very
+home, and two full-closure builds just thrash the nix daemon. Since
+`systemAutoUpgradeModule` configures that unit, the library knows both
+names and you do not have to wire the interlock yourself.
+
+A skipped run is recorded as *condition failed*, not as a failure: it
+does not alert and does not touch the last-run state. It is also simply
+lost -- `Persistent` catches up an elapse missed while the machine was
+off, not one a condition declined -- so the next scheduled run is what
+picks it up. Fine at the default schedules, which are hours apart; turn
+it off if yours genuinely overlap.
+
 ### Credentials
 
 Everything below is a **path, never a secret value**, and every file is

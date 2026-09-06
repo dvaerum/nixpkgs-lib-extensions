@@ -130,6 +130,26 @@ in
     in
     lib.hasInfix "keep-generations 42" with42 && lib.hasInfix "keep-generations 0" withOff;
 
+  # ── the two halves must not build at once ──
+  # nixos-upgrade may be rebuilding this very home (a system-managed
+  # user), and two full-closure builds just thrash the daemon. The
+  # library owns BOTH units now, so a consumer should not have to know
+  # the other one's name to keep them apart.
+  auto-upgrade-defers-to-system-upgrade =
+    let
+      c = withRef.systemd.user.services.hm-auto-upgrade.Service.ExecCondition;
+    in
+    lib.hasInfix "nixos-upgrade.service" (builtins.readFile (if lib.isList c then lib.head c else c));
+
+  # ... and a home that WANTS to overlap can say so
+  auto-upgrade-defer-can-be-disabled =
+    !(
+      (homesWith {
+        homeAutoUpgradeFlakeRef = liveRef;
+        homeModules = [ { services.homeManagerAutoUpgrade.deferToSystemUpgrade = false; } ];
+      }).alice.config.systemd.user.services.hm-auto-upgrade.Service ? ExecCondition
+    );
+
   # ── the switch is detached, for the same reason the interactive
   #    wrapper is: activation restarts user units, including this one ──
   auto-upgrade-runs-detached =

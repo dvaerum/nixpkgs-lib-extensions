@@ -117,6 +117,17 @@
             fragmentFor =
               name: text: if text == "" then null else pkgs.writeShellScript "hm-auto-upgrade-${name}" text;
             preFragment = fragmentFor "pre" cfg.preCommand;
+
+            # `systemctl` by ABSOLUTE path: ExecCondition runs this with
+            # whatever PATH the user manager happens to have, which is
+            # not something a library can assume. Queries the SYSTEM
+            # manager (no --user) -- reading a system unit's state needs
+            # no privilege. On a host with no such unit `is-active`
+            # simply fails, the negation succeeds, and the run proceeds,
+            # so this is safe to ship unconditionally.
+            deferCondition = pkgs.writeShellScript "hm-auto-upgrade-defer" ''
+              ! ${pkgs.systemd}/bin/systemctl is-active --quiet nixos-upgrade.service
+            '';
             resultFragment = fragmentFor "on-result" cfg.onResult;
 
             upgradeArgs = [
@@ -346,6 +357,37 @@
                 '';
               };
 
+              deferToSystemUpgrade = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  Skip a scheduled run while `nixos-upgrade.service` is
+                  active.
+
+                  The two auto-upgrade halves have no business building
+                  at the same time: the system one may be rebuilding
+                  this very home (for a system-managed user), and two
+                  full-closure builds simply thrash the nix daemon.
+                  `systemAutoUpgradeModule` configures that unit, so
+                  with both in use the library knows both names and a
+                  consumer should not have to wire the interlock by
+                  hand.
+
+                  Implemented as an `ExecCondition`, so a skipped run is
+                  recorded as *condition failed* rather than as a
+                  failure -- it does not alert, and it does not touch
+                  the last-run state.
+
+                  Note the skipped run is simply LOST: systemd's
+                  `Persistent` catches up an elapse missed while the
+                  machine was off, not one a condition declined. The
+                  next scheduled run picks it up. That is the right
+                  trade at the default schedules (the two are hours
+                  apart), and this is the switch for anyone whose
+                  schedules genuinely overlap.
+                '';
+              };
+
               desktop.enable = mkOption {
                 type = types.bool;
                 default = true;
@@ -393,6 +435,7 @@
                   Service = {
                     Type = "oneshot";
                     ExecStart = "${launcher}";
+                    ExecCondition = lib.mkIf cfg.deferToSystemUpgrade "${deferCondition}";
                   };
                 };
 
