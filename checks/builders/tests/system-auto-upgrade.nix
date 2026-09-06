@@ -201,12 +201,41 @@ in
     p: (p.name or "") == "nixos-upgrade-status"
   ) withRef.environment.systemPackages;
 
-  # ONE shell-init definition: NixOS' fish module runs
-  # environment.interactiveShellInit through babelfish, so also defining
-  # programs.fish.interactiveShellInit would print the line twice
-  system-auto-upgrade-status-line-once =
-    lib.hasInfix "nixos-upgrade-status --only-news" withRef.environment.interactiveShellInit
-    && !(lib.hasInfix "nixos-upgrade-status" (withRef.programs.fish.interactiveShellInit or ""));
+  system-auto-upgrade-status-line-wired = lib.hasInfix "nixos-upgrade-status --only-news" withRef.environment.interactiveShellInit;
+
+  # ... and it must actually be VISIBLE in each shell exactly once.
+  # NixOS pipes environment.interactiveShellInit into fish through
+  # `fenv source ... > /dev/null`, which discards output -- so with the
+  # default (useBabelfish = false) fish needs its own definition, and
+  # with babelfish it must NOT get one or the line prints twice.
+  system-auto-upgrade-status-line-fish-fenv =
+    let
+      cfg =
+        (hostWith {
+          systemAutoUpgradeFlakeRef = liveRef;
+          modules = [ { programs.fish.enable = true; } ];
+        }).config;
+    in
+    lib.hasInfix "nixos-upgrade-status" cfg.programs.fish.interactiveShellInit;
+
+  system-auto-upgrade-status-line-fish-babelfish =
+    let
+      cfg =
+        (hostWith {
+          systemAutoUpgradeFlakeRef = liveRef;
+          modules = [
+            {
+              programs.fish.enable = true;
+              programs.fish.useBabelfish = true;
+            }
+          ];
+        }).config;
+    in
+    !(lib.hasInfix "nixos-upgrade-status" cfg.programs.fish.interactiveShellInit);
+
+  # a host with no fish at all gets no fish definition
+  system-auto-upgrade-status-line-no-fish =
+    !(lib.hasInfix "nixos-upgrade-status" withRef.programs.fish.interactiveShellInit);
 
   # ── the guard against two things racing to reboot ──
   system-auto-upgrade-asserts-allow-reboot-off =

@@ -609,14 +609,24 @@
 
               # Worth having even where no timer runs: a host that USED
               # to auto-upgrade still has a last-run record worth
-              # reporting. NixOS' fish module translates
-              # environment.interactiveShellInit through babelfish, so
-              # this one definition covers bash, zsh and fish -- adding
-              # programs.fish.interactiveShellInit as well would print
-              # the line twice.
+              # reporting.
               (lib.mkIf cfg.console.enable {
                 environment.systemPackages = [ scripts.status ];
                 environment.interactiveShellInit = statusLine;
+
+                # ... except that the line above never reaches an
+                # interactive FISH. NixOS feeds
+                # environment.interactiveShellInit to fish through
+                # `fenv source ... > /dev/null` (programs.fish's own
+                # sourceEnv, at the useBabelfish = false default): that
+                # imports the environment and discards anything printed,
+                # which is right for fenv and fatal for a status line.
+                # The babelfish path sources a translated file normally
+                # and DOES print, so defining this there too would print
+                # twice -- hence the condition on both.
+                programs.fish.interactiveShellInit = lib.mkIf (
+                  config.programs.fish.enable && !config.programs.fish.useBabelfish
+                ) statusLine;
               })
             ];
           }

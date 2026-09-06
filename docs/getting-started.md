@@ -913,9 +913,11 @@ error.
 - `console.enable` (default on) -- one line at interactive shell start
   while a reboot is pending or the last upgrade failed, and nothing
   otherwise. `nixos-upgrade-status` is installed for checking
-  deliberately. One definition of `environment.interactiveShellInit`
-  covers bash, zsh and fish (NixOS translates it for fish through
-  babelfish), so the line cannot print twice.
+  deliberately. Fish gets its own definition, because NixOS feeds
+  `environment.interactiveShellInit` to fish through
+  `fenv source ... > /dev/null` and that discards anything printed --
+  but only at the `useBabelfish = false` default, since the babelfish
+  path prints on its own and a second definition would double it.
 - `desktop.enable` (default on) -- `notify-send` inside each logged-in
   user's own session bus, falling back to `wall` for anyone without one.
 - `onResult` -- shell run **once per engine run**, not once per poll,
