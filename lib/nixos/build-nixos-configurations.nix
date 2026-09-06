@@ -111,12 +111,17 @@ in
     :   attrset goes through `buildConfigurations`)
     : - `loginFlakeRef`
     : - `loginReactivateEveryLogin`
-    : - `autoUpgrade` (keep standalone homes current on a timer; see
+    : - `homeAutoUpgrade` (keep standalone homes current on a timer; see
     :   `homeManagerAutoUpgradeModule`. Ignored by this builder, which
     :   produces no homes -- it applies through `buildConfigurations`)
-    : - `autoUpgradeFlakeRef` (the LIVE ref that timer tracks -- always
+    : - `homeAutoUpgradeFlakeRef` (the LIVE ref that timer tracks -- always
     :   explicit; `loginFlakeRef` is never reused for it, see
     :   `homeManagerAutoUpgradeModule`)
+    : - `systemAutoUpgrade` (keep the HOST current on a timer, and own the
+    :   reboot policy nixpkgs' own module has no place for; see
+    :   `systemAutoUpgradeModule`)
+    : - `systemAutoUpgradeFlakeRef` (the LIVE ref that timer tracks --
+    :   always explicit, for the same reason its home twin is)
     : - `traceDiscoveredUsers`
     : - `wrapHomeManagerSwitch`
     : - `tags`

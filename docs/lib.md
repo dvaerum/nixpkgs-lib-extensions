@@ -884,12 +884,17 @@ buildNixosConfigurations ::
     attrset goes through `buildConfigurations`)
   - `loginFlakeRef`
   - `loginReactivateEveryLogin`
-  - `autoUpgrade` (keep standalone homes current on a timer; see
+  - `homeAutoUpgrade` (keep standalone homes current on a timer; see
     `homeManagerAutoUpgradeModule`. Ignored by this builder, which
     produces no homes -- it applies through `buildConfigurations`)
-  - `autoUpgradeFlakeRef` (the LIVE ref that timer tracks -- always
+  - `homeAutoUpgradeFlakeRef` (the LIVE ref that timer tracks -- always
     explicit; `loginFlakeRef` is never reused for it, see
     `homeManagerAutoUpgradeModule`)
+  - `systemAutoUpgrade` (keep the HOST current on a timer, and own the
+    reboot policy nixpkgs' own module has no place for; see
+    `systemAutoUpgradeModule`)
+  - `systemAutoUpgradeFlakeRef` (the LIVE ref that timer tracks --
+    always explicit, for the same reason its home twin is)
   - `traceDiscoveredUsers`
   - `wrapHomeManagerSwitch`
   - `tags`
@@ -976,7 +981,7 @@ reference on a schedule, resolving `"<user>@<hostname>"` vs
 `"<user>"` freshly on every run.
 
 The builders inject this into every standalone home they produce, so
-a consumer normally sets the `autoUpgrade`/`autoUpgradeFlakeRef`
+a consumer normally sets the `homeAutoUpgrade`/`homeAutoUpgradeFlakeRef`
 ARGUMENTS on `buildHomeConfigurations`/`buildConfigurations`/
 `mkHomeConfiguration` rather than calling this directly; everything
 else is configured through the `services.homeManagerAutoUpgrade.*`
@@ -1021,13 +1026,13 @@ homeManagerAutoUpgradeModule :: Attribute -> Module
 ### Arguments
 
 - **enable**
-  The `enable` option's DEFAULT -- what the builder's `autoUpgrade`
+  The `enable` option's DEFAULT -- what the builder's `homeAutoUpgrade`
   argument feeds in. A definition in the consumer's own `home.nix`
   beats it, as any definition beats any default. Default `true`.
 
 - **flakeRef**
   The `flakeRef` option's default -- the builder's
-  `autoUpgradeFlakeRef`. `null` warns at evaluation time when
+  `homeAutoUpgradeFlakeRef`. `null` warns at evaluation time when
   `enable` is on. Default `null`.
   
   Deliberately NOT defaulted from `loginFlakeRef`, though it usually

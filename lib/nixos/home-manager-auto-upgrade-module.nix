@@ -8,7 +8,7 @@
     `"<user>"` freshly on every run.
 
     The builders inject this into every standalone home they produce, so
-    a consumer normally sets the `autoUpgrade`/`autoUpgradeFlakeRef`
+    a consumer normally sets the `homeAutoUpgrade`/`homeAutoUpgradeFlakeRef`
     ARGUMENTS on `buildHomeConfigurations`/`buildConfigurations`/
     `mkHomeConfiguration` rather than calling this directly; everything
     else is configured through the `services.homeManagerAutoUpgrade.*`
@@ -53,13 +53,13 @@
     # Arguments
 
     enable
-    : The `enable` option's DEFAULT -- what the builder's `autoUpgrade`
+    : The `enable` option's DEFAULT -- what the builder's `homeAutoUpgrade`
     : argument feeds in. A definition in the consumer's own `home.nix`
     : beats it, as any definition beats any default. Default `true`.
 
     flakeRef
     : The `flakeRef` option's default -- the builder's
-    : `autoUpgradeFlakeRef`. `null` warns at evaluation time when
+    : `homeAutoUpgradeFlakeRef`. `null` warns at evaluation time when
     : `enable` is on. Default `null`.
     :
     : Deliberately NOT defaulted from `loginFlakeRef`, though it usually
@@ -181,7 +181,7 @@
                 description = ''
                   Whether to keep this home current with a scheduled
                   `home-manager switch` against {option}`flakeRef`.
-                  Seeded by the builder's `autoUpgrade` argument. Setting
+                  Seeded by the builder's `homeAutoUpgrade` argument. Setting
                   this to `false` is the single off switch: no unit is
                   produced AND the unconfigured-reference warning is
                   silenced, for someone who manages updates themselves.
@@ -198,7 +198,7 @@
                   flake input: an input resolves to an immutable
                   `/nix/store` path, so switching to it repeatedly can
                   never pick up a new commit. Seeded by the builder's
-                  `autoUpgradeFlakeRef` and never from `loginFlakeRef` --
+                  `homeAutoUpgradeFlakeRef` and never from `loginFlakeRef` --
                   see this module's own doc comment for why that
                   fallback cannot work. `null` warns.
                 '';
@@ -366,7 +366,7 @@
                     nixpkgs-lib-extensions: services.homeManagerAutoUpgrade is enabled for `${config.home.username}`, whose home is SYSTEM-managed on this host (built into the NixOS system). No timer is created: that home switches with `nixos-rebuild`, and a second `home-manager switch` on a timer would fight it over one profile. Move the user to `loginHomes` for a standalone home, or set `services.homeManagerAutoUpgrade.enable = false;` to silence this.
                   ''
                   ++ lib.optional (cfg.enable && !systemManaged && cfg.flakeRef == null) ''
-                    nixpkgs-lib-extensions: services.homeManagerAutoUpgrade is enabled for `${config.home.username}` but no LIVE flake reference is available, so no timer is created. Set the builder's `autoUpgradeFlakeRef` argument (or `services.homeManagerAutoUpgrade.flakeRef`) to a mutable ref like `"git+https://..."`. A `loginFlakeRef` that is a flake INPUT cannot be used: it resolves to an immutable /nix/store path, which can never pick up a new commit. If you update this home yourself, set `services.homeManagerAutoUpgrade.enable = false;`.
+                    nixpkgs-lib-extensions: services.homeManagerAutoUpgrade is enabled for `${config.home.username}` but no LIVE flake reference is available, so no timer is created. Set the builder's `homeAutoUpgradeFlakeRef` argument (or `services.homeManagerAutoUpgrade.flakeRef`) to a mutable ref like `"git+https://..."`. A `loginFlakeRef` that is a flake INPUT cannot be used: it resolves to an immutable /nix/store path, which can never pick up a new commit. If you update this home yourself, set `services.homeManagerAutoUpgrade.enable = false;`.
                   '';
               }
 

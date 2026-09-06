@@ -116,8 +116,8 @@ in
               # combination that would make a fallback useful cannot
               # occur; requiring an explicit ref is the honest interface.
               (self.homeManagerAutoUpgradeModule {
-                enable = args.autoUpgrade or true;
-                flakeRef = args.autoUpgradeFlakeRef or null;
+                enable = args.homeAutoUpgrade or true;
+                flakeRef = args.homeAutoUpgradeFlakeRef or null;
                 homeManagerPackage = home-manager.packages.${system}.home-manager or null;
               })
               {

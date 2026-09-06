@@ -23,9 +23,9 @@ let
       // extra
     );
 
-  withRef = (homesWith { autoUpgradeFlakeRef = liveRef; }).alice.config;
+  withRef = (homesWith { homeAutoUpgradeFlakeRef = liveRef; }).alice.config;
   withoutRef = (homesWith { }).alice.config;
-  disabled = (homesWith { autoUpgrade = false; }).alice.config;
+  disabled = (homesWith { homeAutoUpgrade = false; }).alice.config;
 
   timerOf = cfg: cfg.systemd.user.timers.hm-auto-upgrade.Timer;
   # home-manager normalizes a single ExecStart into a one-element list
@@ -52,13 +52,13 @@ in
   # would run `home-manager switch` against nothing
   auto-upgrade-no-unit-without-ref = !(withoutRef.systemd.user.timers ? hm-auto-upgrade);
 
-  # ... and that case WARNS, since autoUpgrade is on by default and the
+  # ... and that case WARNS, since homeAutoUpgrade is on by default and the
   # user has not said they handle updates themselves
   auto-upgrade-warns-without-ref = lib.any (
     w: lib.hasInfix "no LIVE flake reference" w
   ) withoutRef.warnings;
 
-  # `autoUpgrade = false` is the single off switch: no unit AND no nag
+  # `homeAutoUpgrade = false` is the single off switch: no unit AND no nag
   auto-upgrade-disabled-is-silent =
     !(disabled.systemd.user.timers ? hm-auto-upgrade) && disabled.warnings == [ ];
 
@@ -72,7 +72,7 @@ in
         _defaults = {
           inherit inputs system;
           traceDiscoveredUsers = false;
-          autoUpgradeFlakeRef = liveRef;
+          homeAutoUpgradeFlakeRef = liveRef;
         };
         laptop = { };
       };
@@ -93,7 +93,7 @@ in
   auto-upgrade-delay-is-configurable =
     (timerOf
       (homesWith {
-        autoUpgradeFlakeRef = liveRef;
+        homeAutoUpgradeFlakeRef = liveRef;
         homeModules = [ { services.homeManagerAutoUpgrade.randomizedDelaySec = 0; } ];
       }).alice.config
     ).RandomizedDelaySec == 0;
@@ -102,7 +102,7 @@ in
   auto-upgrade-consumer-overrides-builder =
     (timerOf
       (homesWith {
-        autoUpgradeFlakeRef = liveRef;
+        homeAutoUpgradeFlakeRef = liveRef;
         homeModules = [ { services.homeManagerAutoUpgrade.schedule = "weekly"; } ];
       }).alice.config
     ).OnCalendar == "weekly";
@@ -118,13 +118,13 @@ in
       with42 =
         launcherOf
           (homesWith {
-            autoUpgradeFlakeRef = liveRef;
+            homeAutoUpgradeFlakeRef = liveRef;
             homeModules = [ { services.homeManagerAutoUpgrade.keepGenerations = 42; } ];
           }).alice.config;
       withOff =
         launcherOf
           (homesWith {
-            autoUpgradeFlakeRef = liveRef;
+            homeAutoUpgradeFlakeRef = liveRef;
             homeModules = [ { services.homeManagerAutoUpgrade.keepGenerations = 0; } ];
           }).alice.config;
     in
@@ -145,7 +145,7 @@ in
     let
       launcher = launcherOf (
         (homesWith {
-          autoUpgradeFlakeRef = liveRef;
+          homeAutoUpgradeFlakeRef = liveRef;
           homeModules = [
             {
               services.homeManagerAutoUpgrade = {

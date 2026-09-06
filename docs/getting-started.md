@@ -646,13 +646,13 @@ reference:
 ```nix
 buildHomeConfigurations {
   inherit inputs system;
-  autoUpgradeFlakeRef = "git+https://example.org/home-manager-config.git";
+  homeAutoUpgradeFlakeRef = "git+https://example.org/home-manager-config.git";
 }
 ```
 
-`autoUpgrade` is on by default, so a home with no reference configured
+`homeAutoUpgrade` is on by default, so a home with no reference configured
 **warns** rather than silently doing nothing. If you update your homes
-yourself, `autoUpgrade = false;` is the single off switch -- it removes
+yourself, `homeAutoUpgrade = false;` is the single off switch -- it removes
 the unit and the warning together.
 
 The reference must be **live** (`git+https://...`, `github:...`,
