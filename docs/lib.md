@@ -21,6 +21,7 @@ builders? Start with the
   - [`lib.nixos.buildConfigurations`](#libnixosbuildconfigurations)
   - [`lib.nixos.buildHomeConfigurations`](#libnixosbuildhomeconfigurations)
   - [`lib.nixos.buildNixosConfigurations`](#libnixosbuildnixosconfigurations)
+  - [`lib.nixos.checksForConfigurations`](#libnixoschecksforconfigurations)
   - [`lib.nixos.discoverUserRegistry`](#libnixosdiscoveruserregistry)
   - [`lib.nixos.homeManagerAutoUpgradeModule`](#libnixoshomemanagerautoupgrademodule)
   - [`lib.nixos.homeManagerBootstrapModule`](#libnixoshomemanagerbootstrapmodule)
@@ -919,6 +920,84 @@ buildNixosConfigurations ::
   Optional reserved entry of `hosts` (never a hostname): per-group
   argument sets, applied between `_defaults` and the host entries
   that declare the matching `group` -- see the description above.
+
+
+
+
+## `lib.nixos.checksForConfigurations`
+
+Turn built configurations into a flake `checks` output, so that
+"does the whole fleet still evaluate and build" is one command
+(`nix flake check`) rather than a habit.
+
+Takes what `buildConfigurations` returns — or either single-purpose
+builder's output, since both halves default to empty — and produces
+the per-system attrset a flake's `checks` expects.
+
+Two things it does that a hand-written `mapAttrs` over
+`nixosConfigurations` reliably gets wrong:
+
+- **It buckets by each derivation's OWN system.** The obvious version
+  writes `checks.x86_64-linux = mapAttrs ... nixosConfigurations;`,
+  which files an aarch64 host's `toplevel` under the x86_64 name.
+  Nothing catches that: `nix flake check` on an x86_64 machine then
+  reports a check it cannot have run. The system is read from
+  `drv.system`, which every derivation carries, so a mixed fleet
+  lands in the right buckets without being told what they are.
+- **It knows the two halves build differently.** A host builds
+  through `config.system.build.toplevel`, a home through
+  `activationPackage`. That asymmetry is the other half of what gets
+  copy-pasted wrong.
+
+Names are prefixed `nixos-` and `home-`, which also makes a
+collision impossible: two hosts or two homes cannot share a name
+(they are attrset keys), and a host can never collide with a home.
+
+Laziness still applies: a check nobody forces is never built, so
+adding this costs nothing until something asks for it.
+
+### Example
+
+```nix
+# in a flake's outputs, alongside the configurations themselves
+let
+  configurations = extLib.buildConfigurations {
+    _defaults = {
+      inherit inputs;
+      system = "x86_64-linux";
+    };
+    laptop = { };
+  };
+in
+configurations
+// {
+  checks = extLib.checksForConfigurations configurations;
+}
+=>
+{
+  checks.x86_64-linux = {
+    nixos-laptop = <toplevel>;
+    home-alice = <activationPackage>;
+  };
+}
+```
+
+### Type
+
+```
+checksForConfigurations ::
+  { nixosConfigurations = { <hostname> = NixosSystem; };
+    homeConfigurations = { <name> = HomeManagerConfiguration; }; }
+  -> { <system> = { "nixos-<hostname>" | "home-<name>" = Derivation; }; }
+```
+
+### Arguments
+
+- **configurations**
+  An attrset with `nixosConfigurations` and/or `homeConfigurations`.
+  Both default to `{ }`, so the output of `buildConfigurations`,
+  `buildNixosConfigurations` or `buildHomeConfigurations` can be
+  passed as-is.
 
 
 

@@ -944,6 +944,55 @@ The home timer and this one are deliberately independent: this never
 triggers that. A standalone home has its own daily timer, and coupling
 them would only add a way for one to fail because the other did.
 
+## Gating the whole fleet
+
+`buildConfigurations` produces configurations, not checks -- a flake
+that exports them has nothing asserting they still evaluate and build.
+`checksForConfigurations` turns them into the `checks` output
+`nix flake check` looks for:
+
+```nix
+let
+  configurations = extLib.buildConfigurations hosts;
+in
+configurations
+// {
+  checks = extLib.checksForConfigurations configurations;
+}
+```
+
+Both halves are covered, under prefixed names -- `nixos-<hostname>`
+built through `config.system.build.toplevel`, `home-<name>` through
+`activationPackage`. The prefixes also make a collision impossible: two
+hosts or two homes cannot share a name, and a host can never clash with
+a home.
+
+Either single-purpose builder's output works too, since both halves
+default to empty:
+
+```nix
+checks = extLib.checksForConfigurations {
+  inherit (self) nixosConfigurations;
+};
+```
+
+The reason to use this rather than a `mapAttrs` of your own is the
+system key. The obvious hand-written version is
+
+```nix
+checks.x86_64-linux =
+  builtins.mapAttrs (_: h: h.config.system.build.toplevel) nixosConfigurations;
+```
+
+which files an aarch64 host's `toplevel` under the x86_64 name. Nothing
+catches it: `nix flake check` on an x86_64 machine reports a check it
+could never have run. Each derivation already carries its own `system`,
+so the buckets are read off the derivations instead of being asserted by
+hand.
+
+Laziness still applies -- a check nobody forces is never built, so this
+costs nothing until CI asks for it.
+
 ## What your inputs contribute automatically
 
 For every flake input, by convention:
