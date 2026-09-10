@@ -15,6 +15,7 @@ runtime_dir=/run/nixos-upgrade-policy
 state_file=/var/lib/nixos-upgrade-policy/last-run
 shutdown_scheduled=/run/systemd/shutdown/scheduled
 user_runtime_dir=/run/user
+system_allow_file=/run/nixos-upgrade-policy/allow-reboot
 upgrade_unit=nixos-upgrade.service
 policy_unit=nixos-upgrade-policy.service
 reboot_triggers=kernel,initrd,kernel-modules
@@ -23,6 +24,7 @@ reminders=24:360,4:60,1:15
 notify_interval=86400
 force_after=
 force_grace=5
+reboot_grace=1
 poll_interval=
 pre_command=
 on_result=
@@ -41,8 +43,10 @@ usage: nixos-upgrade-policy [options]
   --runtime-dir PATH       tmpfs bookkeeping (default /run/nixos-upgrade-policy)
   --state-file PATH        persistent last-run record
   --shutdown-scheduled PATH  systemd's own scheduled-shutdown marker
-  --user-runtime-dir PATH  where per-user session buses live
-                           (default /run/user)
+  --user-runtime-dir PATH  where per-user session buses and reboot
+                           waivers live (default /run/user)
+  --system-allow-file PATH   the admin-wide "reboot regardless of who is
+                           logged in" waiver
   --upgrade-unit NAME      the engine unit to read a result from
   --policy-unit NAME       this unit's own name, for self-armed wakeups
   --reboot-triggers LIST   comma-separated: kernel,initrd,kernel-modules
@@ -50,7 +54,9 @@ usage: nixos-upgrade-policy [options]
   --reminders SPEC         remainingHours:everyMinutes, comma-separated
   --notify-interval SEC    cadence outside the reminder ladder
   --force-after SEC        deadline from pending-since; empty means NEVER
-  --force-grace MIN        the shutdown -r +N countdown
+  --force-grace MIN        countdown for the DEADLINE reboot
+  --reboot-grace MIN       countdown for the ordinary reboot, once
+                           nothing is blocking it any more
   --poll-interval SEC      how often this runs, to decide whether to arm
                            an exact wakeup; empty means polling is off
   --pre-command PATH       sourced-ish hook run before anything else
@@ -66,10 +72,11 @@ while [ "$#" -gt 0 ]; do
   # usage error, not a `set -u` crash on "$2"
   case "$1" in
     --booted-system | --current-system | --profile | --runtime-dir | --state-file | \
-      --shutdown-scheduled | --user-runtime-dir | --upgrade-unit | --policy-unit | \
+      --shutdown-scheduled | --user-runtime-dir | --system-allow-file | \
+      --upgrade-unit | --policy-unit | \
       --reboot-triggers | \
       --reboot-window | --reminders | --notify-interval | --force-after | \
-      --force-grace | --poll-interval | --pre-command | --on-result | --now)
+      --force-grace | --reboot-grace | --poll-interval | --pre-command | --on-result | --now)
       if [ "$#" -lt 2 ]; then
         echo "nixos-upgrade-policy: $1 needs a value" >&2
         usage
@@ -85,6 +92,7 @@ while [ "$#" -gt 0 ]; do
     --state-file) state_file="$2"; shift 2 ;;
     --shutdown-scheduled) shutdown_scheduled="$2"; shift 2 ;;
     --user-runtime-dir) user_runtime_dir="$2"; shift 2 ;;
+    --system-allow-file) system_allow_file="$2"; shift 2 ;;
     --upgrade-unit) upgrade_unit="$2"; shift 2 ;;
     --policy-unit) policy_unit="$2"; shift 2 ;;
     --reboot-triggers) reboot_triggers="$2"; shift 2 ;;
@@ -93,6 +101,7 @@ while [ "$#" -gt 0 ]; do
     --notify-interval) notify_interval="$2"; shift 2 ;;
     --force-after) force_after="$2"; shift 2 ;;
     --force-grace) force_grace="$2"; shift 2 ;;
+    --reboot-grace) reboot_grace="$2"; shift 2 ;;
     --poll-interval) poll_interval="$2"; shift 2 ;;
     --pre-command) pre_command="$2"; shift 2 ;;
     --on-result) on_result="$2"; shift 2 ;;
@@ -226,23 +235,69 @@ EOF
 # user has with nobody logged in; `background`/`background-light` is what
 # our own `systemd-run --machine` creates. Neither is a person, and a
 # deny-list would have to keep guessing at the next class systemd adds.
+#
+# A person can also WAIVE their own block, which is the only way to say
+# "go ahead" short of logging out. Consent is per user and carries an
+# expiry, so a yes given this morning cannot fire this afternoon.
+waiver_active() {
+  [ -f "$1" ] || return 1
+  local until
+  until=$(sed -n 's/^until=//p' "$1" | head -n 1)
+  case "$until" in
+    session) return 0 ;;
+    "") return 1 ;;
+    *[!0-9]*) return 1 ;; # unparseable is NOT consent
+    *) [ "$now" -lt "$until" ] ;;
+  esac
+}
+
+# Sets `blocking` (name:uid of everyone still in the way) and
+# `waived_present` (someone IS here but said go ahead -- which is what
+# lets the reboot skip the window: there is nobody left to protect).
 blocking=
-for id in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do
-  props=$(loginctl show-session "$id" -p Class -p State -p Name -p User 2>/dev/null || true)
-  s_class=$(printf '%s\n' "$props" | sed -n 's/^Class=//p')
-  s_state=$(printf '%s\n' "$props" | sed -n 's/^State=//p')
-  s_name=$(printf '%s\n' "$props" | sed -n 's/^Name=//p')
-  s_uid=$(printf '%s\n' "$props" | sed -n 's/^User=//p')
-  case "$s_class" in
-    user | user-early | user-incomplete) ;;
-    *) continue ;;
-  esac
-  if [ "$s_state" = "closing" ]; then continue; fi
-  case " $blocking " in
-    *" $s_name:$s_uid "*) ;;
-    *) blocking="${blocking:+$blocking }$s_name:$s_uid" ;;
-  esac
-done
+allowed_users=
+waived_present=0
+scan_sessions() {
+  local id props s_class s_state s_name s_uid
+  blocking=
+  allowed_users=
+  waived_present=0
+  for id in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do
+    props=$(loginctl show-session "$id" -p Class -p State -p Name -p User 2>/dev/null || true)
+    s_class=$(printf '%s\n' "$props" | sed -n 's/^Class=//p')
+    s_state=$(printf '%s\n' "$props" | sed -n 's/^State=//p')
+    s_name=$(printf '%s\n' "$props" | sed -n 's/^Name=//p')
+    s_uid=$(printf '%s\n' "$props" | sed -n 's/^User=//p')
+    case "$s_class" in
+      user | user-early | user-incomplete) ;;
+      *) continue ;;
+    esac
+    if [ "$s_state" = "closing" ]; then continue; fi
+    if waiver_active "$user_runtime_dir/$s_uid/nixos-allow-reboot"; then
+      waived_present=1
+      allowed_users="${allowed_users:+$allowed_users }$s_name:$s_uid"
+      continue
+    fi
+    case " $blocking " in
+      *" $s_name:$s_uid "*) ;;
+      *) blocking="${blocking:+$blocking }$s_name:$s_uid" ;;
+    esac
+  done
+}
+
+# The admin-wide override outranks every session: for a remote admin who
+# cannot ask each user, and for maintenance scripts.
+system_override=0
+if waiver_active "$system_allow_file"; then
+  system_override=1
+  log "system-wide reboot waiver is active; sessions will not block"
+fi
+
+scan_sessions
+if [ "$system_override" -eq 1 ]; then
+  blocking=
+  waived_present=1
+fi
 
 # ABSOLUTE path, resolved here: `systemd-run --machine=<user>@` looks the
 # command up in the TARGET manager's PATH, not this unit's, and a system
@@ -253,8 +308,14 @@ notify_send=$(command -v notify-send 2>/dev/null || true)
 
 notify() {
   local urgency="$1" title="$2" body="$3"
+  # Audience defaults to whoever is BLOCKING, which is right for a
+  # reminder. The imminent-reboot announcement passes everyone PRESENT
+  # instead -- a person who gave permission is still sitting there, and
+  # dropping them from the audience would silence exactly the people most
+  # likely to be at the keyboard.
+  local audience="${4:-$blocking}"
   local need_wall=0 entry name uid
-  for entry in $blocking; do
+  for entry in $audience; do
     name="${entry%%:*}"
     uid="${entry##*:}"
     if [ "$desktop_notify" -eq 1 ] && [ -n "$notify_send" ] &&
@@ -382,27 +443,39 @@ in_window() {
   fi
 }
 
-if ! in_window; then
+# The window protects PEOPLE from being interrupted. If the people who
+# are here have explicitly said go ahead, there is nobody left to
+# protect and waiting until 04:00 only delays it for its own sake.
+if [ "$waived_present" -eq 1 ]; then
+  log "everyone present has waived the reboot; ignoring the window"
+elif ! in_window; then
   log "nobody logged in, but outside the reboot window ($reboot_window); waiting"
   exit 0
 fi
 
 # Cheap, and the alternative is rebooting someone who logged in during
-# the handful of milliseconds since the check above.
-still_empty=1
-for id in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do
-  props=$(loginctl show-session "$id" -p Class -p State 2>/dev/null || true)
-  case "$(printf '%s\n' "$props" | sed -n 's/^Class=//p')" in
-    user | user-early | user-incomplete) ;;
-    *) continue ;;
-  esac
-  if [ "$(printf '%s\n' "$props" | sed -n 's/^State=//p')" = "closing" ]; then continue; fi
-  still_empty=0
-done
-if [ "$still_empty" -eq 0 ]; then
-  log "someone logged in just now; deferring the reboot"
+# the handful of milliseconds since the check above. Re-scanned through
+# the same function, so a NEW un-waived login still blocks even when
+# everyone who was here had waived.
+if [ "$system_override" -eq 0 ]; then
+  scan_sessions
+  if [ -n "$blocking" ]; then
+    log "someone logged in just now; deferring the reboot"
+    exit 0
+  fi
+fi
+
+if [ -e "$shutdown_scheduled" ]; then
+  log "a shutdown is already scheduled"
   exit 0
 fi
 
-log "nobody logged in and inside the window; rebooting for: $differing"
-act systemctl reboot
+# A countdown here too, not a bare `systemctl reboot`. Giving permission
+# is not the same as wanting the screen to go black mid-sentence, and
+# `shutdown` buys the wall broadcast and a working `shutdown -c` for
+# free. Shorter than the deadline's, because nobody here objects.
+log "nothing is blocking the reboot; rebooting in $reboot_grace minute(s) for: $differing"
+notify normal "NixOS: rebooting in $reboot_grace minute(s)" \
+  "Applying a required reboot ($differing). Run 'shutdown -c' to cancel." \
+  "$blocking $allowed_users"
+act shutdown -r "+$reboot_grace" "NixOS: applying a required reboot ($differing)"

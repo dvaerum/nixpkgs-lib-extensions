@@ -879,6 +879,47 @@ deadline. Because the clock lives in `/run`, it counts only time the
 machine was up and pending -- a laptop closed for a week does not burn
 its grace period.
 
+### Telling it you don't mind
+
+Without this, logging out is the only way to say "go ahead" -- a silly
+thing to have to do to a machine you are using. `nixos-allow-reboot` is
+on every user's PATH:
+
+```
+$ nixos-allow-reboot
+reboot allowed for dennis until 11:47 (60 min left)
+a reboot IS pending (kernel changed) -- it will happen at the next policy check
+
+$ nixos-allow-reboot --until 4h     # long lunch
+$ nixos-allow-reboot --session      # not my machine today
+$ nixos-allow-reboot --cancel       # changed my mind
+$ nixos-allow-reboot --status
+```
+
+Three properties worth knowing:
+
+- **It expires.** An hour by default, so a yes given at 09:00 cannot
+  fire at 14:00. `--session` opts out of the expiry and lasts until you
+  log out.
+- **It is per person.** If you and a colleague are both logged in, the
+  reboot waits until *both* have said yes.
+- **It needs no privilege.** The file lands in `$XDG_RUNTIME_DIR`
+  (`/run/user/<uid>/nixos-allow-reboot`), which you own and which
+  disappears when your last session ends.
+
+Permission also **bypasses `rebootWindow`**: the window exists to avoid
+interrupting people, and everyone present has just said they do not mind.
+
+`sudo nixos-allow-reboot --system` writes a machine-wide permission
+instead, which outranks every session -- for maintenance scripts, and
+for a remote admin who cannot ask each user individually.
+
+A reboot taken this way still announces itself: `rebootGraceMinutes`
+(default 1) gives a `shutdown -r +1` countdown with systemd's wall
+broadcast and a working `shutdown -c`, and notifies everyone present,
+including whoever gave permission. Saying "go ahead" is not the same as
+wanting the screen to go black mid-sentence.
+
 ### Scheduling
 
 | option | default | |

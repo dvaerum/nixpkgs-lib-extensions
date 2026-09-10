@@ -98,6 +98,7 @@
             scripts = import ./internal/system-auto-upgrade-script.nix { inherit pkgs; };
 
             runtimeDir = "/run/nixos-upgrade-policy";
+            systemAllowFile = "${runtimeDir}/allow-reboot";
             stateFile = "/var/lib/nixos-upgrade-policy/last-run";
             pendingFile = "${runtimeDir}/pending";
 
@@ -116,6 +117,8 @@
               "${scripts.policy}/bin/nixos-upgrade-policy"
               "--runtime-dir"
               runtimeDir
+              "--system-allow-file"
+              systemAllowFile
               "--state-file"
               stateFile
               "--reboot-triggers"
@@ -128,6 +131,8 @@
               (toString cfg.notifyIntervalSec)
               "--force-grace"
               (toString cfg.forceGraceMinutes)
+              "--reboot-grace"
+              (toString cfg.rebootGraceMinutes)
               # 0 means "no poll timer exists", which is what tells the
               # script to arm its own wakeup for every reminder instead
               # of assuming something else will come along
@@ -398,6 +403,23 @@
                 '';
               };
 
+              rebootGraceMinutes = mkOption {
+                type = types.int;
+                default = 1;
+                description = ''
+                  The countdown for an ORDINARY reboot -- one taken
+                  because nothing is blocking it any more, rather than
+                  because a deadline expired.
+
+                  Shorter than `forceGraceMinutes`, because by then
+                  either nobody is logged in or everyone present has run
+                  `nixos-allow-reboot`. It is not zero: having said "go
+                  ahead" is not the same as wanting the screen to go
+                  black mid-sentence, and the countdown also buys
+                  systemd's wall broadcast and a working `shutdown -c`.
+                '';
+              };
+
               reminders = mkOption {
                 type = types.listOf (
                   types.submodule {
@@ -611,7 +633,15 @@
               # to auto-upgrade still has a last-run record worth
               # reporting.
               (lib.mkIf cfg.console.enable {
-                environment.systemPackages = [ scripts.status ];
+                environment.systemPackages = [
+                  scripts.status
+                  # Installed alongside the status line rather than under
+                  # `wanted`: a user needs to be able to say "go ahead"
+                  # even on a host whose timer someone has since turned
+                  # off, and an absent command is a worse answer than one
+                  # that reports nothing is pending.
+                  scripts.allowReboot
+                ];
                 environment.interactiveShellInit = statusLine;
 
                 # ... except that the line above never reaches an

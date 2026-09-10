@@ -142,7 +142,7 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   reset
   SESSIONS="" "$policy" "''${base[@]}" \
     --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
-  grep -q "systemctl reboot" "$RECORD"
+  grep -q "shutdown -r +1" "$RECORD"
   ! grep -q "switch-to-configuration" "$RECORD"
   rm -f "$rt/pending"
 
@@ -157,7 +157,7 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   reset
   SESSIONS="" "$policy" "''${base[@]}" --reboot-window 04:00-06:00 --now 18000 \
     --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
-  grep -q "systemctl reboot" "$RECORD"
+  grep -q "shutdown -r +1" "$RECORD"
   rm -f "$rt/pending"
 
   # ── who counts as logged in ──
@@ -165,7 +165,7 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   reset
   SESSIONS="c1:manager:active:dennis:1000" "$policy" "''${base[@]}" \
     --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
-  grep -q "systemctl reboot" "$RECORD"
+  grep -q "shutdown -r +1" "$RECORD"
   rm -f "$rt/pending"
 
   # neither does a background session -- which is what our OWN
@@ -174,14 +174,14 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   reset
   SESSIONS="c1:background:active:dennis:1000" "$policy" "''${base[@]}" \
     --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
-  grep -q "systemctl reboot" "$RECORD"
+  grep -q "shutdown -r +1" "$RECORD"
   rm -f "$rt/pending"
 
   # nor a session on its way out
   reset
   SESSIONS="c1:user:closing:dennis:1000" "$policy" "''${base[@]}" \
     --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
-  grep -q "systemctl reboot" "$RECORD"
+  grep -q "shutdown -r +1" "$RECORD"
   rm -f "$rt/pending"
 
   # ... but a real login alongside that same lingering manager DOES
@@ -231,6 +231,112 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
     --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
   grep -q "wall " "$RECORD"
   rm -f "$rt/pending"
+
+  # ── consent: a user can waive their own block ──────────────────────
+  # Logging out is otherwise the ONLY way to say "go ahead", which is a
+  # silly thing to have to do to a machine you are using.
+  waive() { mkdir -p "$TMPDIR/user/$2"; echo "until=$1" > "$TMPDIR/user/$2/nixos-allow-reboot"; }
+  unwaive() { rm -f "$TMPDIR/user/$2/nixos-allow-reboot" 2>/dev/null || true; }
+  wbase=(--runtime-dir "$rt" --state-file "$state" --shutdown-scheduled "$TMPDIR/no-shutdown"
+         --user-runtime-dir "$TMPDIR/user" --system-allow-file "$TMPDIR/no-sys-allow")
+
+  rm -f "$rt/pending"; reset
+  waive 9999999999 1000
+  SESSIONS="5:user:active:dennis:1000" "$policy" "''${wbase[@]}" --now 1000 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  grep -q "shutdown -r +1" "$RECORD"
+
+  # ... and it bypasses the reboot window: everyone present has said yes,
+  # so there is nobody left for the window to protect
+  rm -f "$rt/pending"; reset
+  SESSIONS="5:user:active:dennis:1000" "$policy" "''${wbase[@]}" --now 1000 \
+    --reboot-window 04:00-04:01 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  grep -q "shutdown -r +1" "$RECORD"
+
+  # an EXPIRED waiver is no waiver -- this is the whole point of the
+  # timestamp, so consent from this morning cannot fire this afternoon
+  rm -f "$rt/pending"; reset
+  waive 500 1000
+  SESSIONS="5:user:active:dennis:1000" "$policy" "''${wbase[@]}" --now 1000 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  ! grep -q "shutdown -r +1" "$RECORD"
+
+  # `until=session` never expires
+  rm -f "$rt/pending"; reset
+  waive session 1000
+  SESSIONS="5:user:active:dennis:1000" "$policy" "''${wbase[@]}" --now 99999999 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  grep -q "shutdown -r +1" "$RECORD"
+
+  # consent is PER USER: one of two waiving is not enough
+  rm -f "$rt/pending"; reset
+  waive session 1000; unwaive x 1001
+  SESSIONS="5:user:active:dennis:1000 6:user:active:per:1001" "$policy" "''${wbase[@]}" --now 1000 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  ! grep -q "shutdown -r +1" "$RECORD"
+  # ... and when the second one waives too, it goes
+  rm -f "$rt/pending"; reset
+  waive session 1001
+  SESSIONS="5:user:active:dennis:1000 6:user:active:per:1001" "$policy" "''${wbase[@]}" --now 1000 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  grep -q "shutdown -r +1" "$RECORD"
+  unwaive x 1000; unwaive x 1001
+
+  # a waiver with NOTHING pending must not invent a reboot
+  rm -f "$rt/pending"; reset
+  waive session 1000
+  SESSIONS="5:user:active:dennis:1000" "$policy" "''${wbase[@]}" --now 1000 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen1
+  ! grep -q "shutdown -r +1" "$RECORD"
+  unwaive x 1000
+
+  # the ordinary reboot announces itself too -- permission is not the same
+  # as wanting the screen to go black mid-sentence
+  rm -f "$rt/pending"; reset
+  mkdir -p "$TMPDIR/user/1000"; touch "$TMPDIR/user/1000/bus"
+  waive session 1000
+  SESSIONS="5:user:active:dennis:1000" "$policy" "''${wbase[@]}" --desktop-notify --now 1000 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  grep -q "shutdown -r +1" "$RECORD"
+  # ... and the person who GAVE permission is still notified: they are the
+  # one most likely to be sitting there
+  grep -q -- "--machine=dennis@.host" "$RECORD"
+  # a configurable countdown
+  rm -f "$rt/pending"; reset
+  SESSIONS="5:user:active:dennis:1000" "$policy" "''${wbase[@]}" --reboot-grace 3 --now 1000 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  grep -q "shutdown -r +3" "$RECORD"
+  # and it does not stack a second one
+  rm -f "$rt/pending"; reset
+  touch "$TMPDIR/sched2"
+  SESSIONS="5:user:active:dennis:1000" "$policy" \
+    --runtime-dir "$rt" --state-file "$state" --shutdown-scheduled "$TMPDIR/sched2" \
+    --user-runtime-dir "$TMPDIR/user" --system-allow-file "$TMPDIR/no-sys-allow" --now 1000 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  ! grep -q "shutdown -r" "$RECORD"
+  rm -f "$TMPDIR/sched2"; unwaive x 1000; rm -f "$rt/pending"
+
+  # ── the system-wide admin override ─────────────────────────────────
+  # ignores sessions entirely -- for a remote admin who cannot ask each
+  # user, and for maintenance scripts
+  rm -f "$rt/pending"; reset
+  echo "until=session" > "$TMPDIR/sys-allow"
+  SESSIONS="5:user:active:dennis:1000 6:user:active:per:1001" "$policy" \
+    --runtime-dir "$rt" --state-file "$state" --shutdown-scheduled "$TMPDIR/no-shutdown" \
+    --user-runtime-dir "$TMPDIR/user" --system-allow-file "$TMPDIR/sys-allow" \
+    --reboot-window 04:00-04:01 --now 1000 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  grep -q "shutdown -r +1" "$RECORD"
+  # ... and it expires like any other waiver
+  rm -f "$rt/pending"; reset
+  echo "until=500" > "$TMPDIR/sys-allow"
+  SESSIONS="5:user:active:dennis:1000" "$policy" \
+    --runtime-dir "$rt" --state-file "$state" --shutdown-scheduled "$TMPDIR/no-shutdown" \
+    --user-runtime-dir "$TMPDIR/user" --system-allow-file "$TMPDIR/sys-allow" --now 1000 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  ! grep -q "shutdown -r +1" "$RECORD"
+  rm -f "$TMPDIR/sys-allow"; rm -f "$rt/pending"
 
   # ── the deadline is OFF by default ──
   reset
@@ -304,8 +410,8 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   reset
   res=$(SESSIONS="" "$policy" "''${base[@]}" --dry-run \
     --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2 2>&1)
-  echo "$res" | grep -q "DRY-RUN: would run: systemctl reboot"
-  ! grep -q "systemctl reboot" "$RECORD"
+  echo "$res" | grep -q "DRY-RUN: would run: shutdown -r +1"
+  ! grep -q "shutdown -r +1" "$RECORD"
   rm -f "$rt/pending"
 
   # ── the result is recorded ONCE per engine run, not once per poll ──

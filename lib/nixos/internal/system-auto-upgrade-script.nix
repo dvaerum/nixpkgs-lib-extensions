@@ -32,6 +32,18 @@
     text = builtins.readFile ../scripts/nixos-upgrade-policy.sh;
   };
 
+  # The consent command every user gets on PATH. Same reason as `status`
+  # for being its own wrapper: it must not drag systemd or libnotify onto
+  # an interactive user's path.
+  allowReboot = pkgs.writeShellApplication {
+    name = "nixos-allow-reboot";
+    runtimeInputs = [
+      pkgs.coreutils # date, id, mkdir, dirname, rm
+      pkgs.gnused
+    ];
+    text = builtins.readFile ../scripts/nixos-allow-reboot.sh;
+  };
+
   # Separate wrapper: --only-news runs on every interactive shell start,
   # so it must not drag systemd or libnotify onto that path.
   status = pkgs.writeShellApplication {
