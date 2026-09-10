@@ -2,7 +2,7 @@
 # the only way to tell the updater "go ahead" -- a silly thing to have to
 # do to a machine you are actively using.
 #
-# Writes a waiver the policy run reads. Per user by default, in
+# Writes a permission file the policy run reads. Per user by default, in
 # $XDG_RUNTIME_DIR (tmpfs, owned by that user, gone at logout), so no
 # privilege is needed to consent on your own behalf. --system needs root
 # and outranks every session.
@@ -95,18 +95,18 @@ now=$(date +%s)
 describe() {
   local until
   if [ ! -f "$file" ]; then
-    echo "no reboot waiver for $who"
+    echo "$who has not allowed a reboot"
     return
   fi
   until=$(sed -n 's/^until=//p' "$file" | head -n 1)
   case "$until" in
     session) echo "reboot allowed for $who until logout" ;;
-    *[!0-9]* | "") echo "reboot waiver for $who is unreadable; treated as NO consent" ;;
+    *[!0-9]* | "") echo "the reboot permission for $who is unreadable; treated as NOT allowed" ;;
     *)
       if [ "$now" -lt "$until" ]; then
         echo "reboot allowed for $who until $(date -d "@$until" '+%H:%M') ($(((until - now) / 60)) min left)"
       else
-        echo "reboot waiver for $who EXPIRED at $(date -d "@$until" '+%H:%M')"
+        echo "the reboot permission for $who EXPIRED at $(date -d "@$until" '+%H:%M')"
       fi
       ;;
   esac
@@ -119,7 +119,7 @@ case "$mode" in
     ;;
   cancel)
     rm -f "$file"
-    echo "reboot waiver for $who withdrawn"
+    echo "reboot permission for $who withdrawn"
     exit 0
     ;;
 esac

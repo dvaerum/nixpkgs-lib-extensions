@@ -45,8 +45,8 @@ usage: nixos-upgrade-policy [options]
   --shutdown-scheduled PATH  systemd's own scheduled-shutdown marker
   --user-runtime-dir PATH  where per-user session buses and reboot
                            waivers live (default /run/user)
-  --system-allow-file PATH   the admin-wide "reboot regardless of who is
-                           logged in" waiver
+  --system-allow-file PATH   the machine-wide "reboot regardless of who
+                           is logged in" permission
   --upgrade-unit NAME      the engine unit to read a result from
   --policy-unit NAME       this unit's own name, for self-armed wakeups
   --reboot-triggers LIST   comma-separated: kernel,initrd,kernel-modules
@@ -290,7 +290,7 @@ scan_sessions() {
 system_override=0
 if waiver_active "$system_allow_file"; then
   system_override=1
-  log "system-wide reboot waiver is active; sessions will not block"
+  log "machine-wide reboot permission is active; sessions will not block"
 fi
 
 scan_sessions
