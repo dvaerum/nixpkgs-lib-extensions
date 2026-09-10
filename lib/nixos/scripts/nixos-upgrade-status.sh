@@ -8,22 +8,26 @@
 
 pending_file=/run/nixos-upgrade-policy/pending
 state_file=/var/lib/nixos-upgrade-policy/last-run
+allow_file="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/nixos-allow-reboot"
 only_news=0
 now=
 
 usage() {
   cat >&2 <<'EOF'
 usage: nixos-upgrade-status [--only-news] [--pending-file PATH]
-                            [--state-file PATH] [--now EPOCH]
+                            [--state-file PATH] [--allow-file PATH]
+                            [--now EPOCH]
 
   --only-news    print nothing unless a reboot is pending or the last
                  upgrade failed (what the shell-start line uses)
+  --allow-file   this user's reboot permission, as written by
+                 nixos-allow-reboot
 EOF
 }
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --pending-file | --state-file | --now)
+    --pending-file | --state-file | --allow-file | --now)
       if [ "$#" -lt 2 ]; then
         echo "nixos-upgrade-status: $1 needs a value" >&2
         usage
@@ -34,6 +38,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --pending-file) pending_file="$2"; shift 2 ;;
     --state-file) state_file="$2"; shift 2 ;;
+    --allow-file) allow_file="$2"; shift 2 ;;
     --now) now="$2"; shift 2 ;;
     --only-news) only_news=1; shift ;;
     -h | --help) usage; exit 0 ;;
@@ -81,6 +86,21 @@ fi
 if [ -n "$pending_since" ]; then
   hours=$(( (now - pending_since) / 3600 ))
   echo "NixOS auto-upgrade: reboot required (${changed:-unknown} changed), pending for ${hours}h."
+
+  # Say whether YOU are the one holding it up. Without this the two
+  # commands describe the same situation from different halves and
+  # neither puts them together: this one says a reboot is pending, and
+  # `nixos-allow-reboot --status` says you allowed it.
+  allow_until=$(read_field until "$allow_file")
+  case "$allow_until" in
+    session) echo "  You have allowed it (until you log out)." ;;
+    "" | *[!0-9]*) ;;
+    *)
+      if [ "$now" -lt "$allow_until" ]; then
+        echo "  You have allowed it (for another $(((allow_until - now) / 60)) min); it happens at the next check."
+      fi
+      ;;
+  esac
 fi
 
 # A recorded failure is the actionable case, so it is also the exit code

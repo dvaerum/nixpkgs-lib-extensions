@@ -440,6 +440,27 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   echo "$res" | grep -q "reboot required"
   rc=0; "$status" --only-news --pending-file "$rt/pending" --state-file "$state" || rc=$?
   [ "$rc" -eq 1 ]
+  # ── status also answers "have I already allowed this?" ─────────────
+  # Otherwise the two commands disagree about the same situation: one
+  # says a reboot is pending, the other says you allowed it, and nothing
+  # puts them together.
+  printf 'since=1000\nlast-notified=1000\nchanged=kernel\n' > "$TMPDIR/pending-x"
+  echo "until=9999999999" > "$TMPDIR/allow-x"
+  res=$("$status" --pending-file "$TMPDIR/pending-x" --state-file "$TMPDIR/absent" \
+        --allow-file "$TMPDIR/allow-x" --now 2000)
+  echo "$res" | grep -q "reboot required"
+  echo "$res" | grep -qi "you have allowed"
+  # ... and an EXPIRED permission must not claim it is allowed
+  echo "until=1500" > "$TMPDIR/allow-x"
+  res=$("$status" --pending-file "$TMPDIR/pending-x" --state-file "$TMPDIR/absent" \
+        --allow-file "$TMPDIR/allow-x" --now 2000)
+  ! echo "$res" | grep -qi "you have allowed"
+  # no permission file at all: silent about it, not an error
+  res=$("$status" --pending-file "$TMPDIR/pending-x" --state-file "$TMPDIR/absent" \
+        --allow-file "$TMPDIR/absent" --now 2000)
+  echo "$res" | grep -q "reboot required"
+  ! echo "$res" | grep -qi "you have allowed"
+
   # clean: --only-news says nothing at all
   echo "result=success" > $TMPDIR/clean-state
   echo "time=now" >> $TMPDIR/clean-state
