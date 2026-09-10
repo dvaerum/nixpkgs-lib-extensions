@@ -59,6 +59,7 @@ lib.fix (
         ./nixos/mk-nixos-system.nix
         ./nixos/normal-user-module.nix
         ./nixos/system-auto-upgrade-module.nix
+        ./nixos/system-garbage-collect-module.nix
       ];
       systemd = [
         ./systemd/detached-run.nix

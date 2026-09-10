@@ -194,6 +194,13 @@
           system-auto-upgrade-script = import ./checks/system-auto-upgrade/script.nix {
             pkgs = nixpkgs.legacyPackages.${system};
           };
+          # the generation-retention policy's own behaviour (the floor,
+          # the never-delete-current rule, the fail-closed refusal) --
+          # this one deletes things that cannot be recovered, so the
+          # branches matter more than elsewhere
+          system-garbage-collect-script = import ./checks/system-garbage-collect/script.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+          };
           # mechanical documentation rules (examples, references,
           # anchors, indentation) -- see the file's own header for what
           # the two name-pinning checks above deliberately do NOT cover

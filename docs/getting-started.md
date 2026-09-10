@@ -1034,6 +1034,68 @@ hand.
 Laziness still applies -- a check nobody forces is never built, so this
 costs nothing until CI asks for it.
 
+## Pruning old generations
+
+Nothing removes a system generation. Every `nixos-rebuild switch` adds
+one, every auto-upgrade run adds one, and they accumulate until someone
+notices -- each one pinning its whole closure in the store.
+
+```nix
+# fleet-wide, in a hosts attrset's `_defaults`
+systemGarbageCollect = true;
+```
+
+**Off by default**, deliberately unlike the auto-upgrade arguments.
+Their worst case is a warning; this one deletes things that cannot be
+recovered, so a library that shipped it on would start removing
+generations on every consuming host the moment it was updated.
+
+| option | default | |
+|---|---|---|
+| `keepDays` | `30` | delete generations older than this |
+| `keepGenerations` | `10` | never delete this many newest, whatever their age |
+| `schedule` | `"weekly"` | applied to nixpkgs' own `nix.gc` timer |
+| `randomizedDelaySec` | `3600` | a GC is heavy on I/O; a fleet should not start together |
+| `dryRun` | `false` | report what would go, delete nothing |
+
+### Why not just `nix.gc`
+
+nixpkgs' `nix.gc` can express *"delete older than 30 days"* and nothing
+else. On a host that sat idle past that cutoff, that deletes every
+generation but the running one -- so the machine nobody has been
+watching is the one left with nothing to roll back to.
+
+A retention **floor** cannot be written as a flag, so this module picks
+the generations itself and leaves `nix.gc` to do the part that needs no
+policy:
+
+| | |
+|---|---|
+| `nixos-prune-generations.service` (this module) | chooses what to delete: older than `keepDays`, except the newest `keepGenerations` and the running one |
+| `nix-gc.service` (nixpkgs) | collects whatever is then unreferenced |
+
+It rides `nix.gc`'s timer, so there is one schedule rather than two, and
+runs strictly before it -- pruning is what turns those generations'
+store paths into garbage for the collection to find.
+
+`nix.gc.options` is pinned **empty** on purpose. `--delete-older-than`
+is precisely the flag whose missing floor this exists to supply; letting
+upstream delete generations too would make the floor a lie.
+
+The policy is inspectable without waiting for the timer:
+
+```
+$ nixos-prune-generations --dry-run
+nixos-prune-generations: 86 generation(s); deleting 43 older than 30d
+  (keeping the newest 10 and the current one)
+nixos-prune-generations: DRY-RUN: would delete generations: 644 645 646 ...
+```
+
+An output it cannot parse is a **refusal**, not an empty delete set:
+if `nix-env`'s listing ever changes shape, "nothing to prune" would hide
+the breakage until the generations had piled up again -- which is the
+thing this exists to prevent.
+
 ## What your inputs contribute automatically
 
 For every flake input, by convention:

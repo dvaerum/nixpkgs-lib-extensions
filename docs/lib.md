@@ -29,6 +29,7 @@ builders? Start with the
   - [`lib.nixos.mkNixosSystem`](#libnixosmknixossystem)
   - [`lib.nixos.normalUserModule`](#libnixosnormalusermodule)
   - [`lib.nixos.systemAutoUpgradeModule`](#libnixossystemautoupgrademodule)
+  - [`lib.nixos.systemGarbageCollectModule`](#libnixossystemgarbagecollectmodule)
 - [strings](#strings)
   - [`lib.strings.stringToTitle`](#libstringsstringtotitle)
 - [systemd](#systemd)
@@ -897,6 +898,10 @@ buildNixosConfigurations ::
     `systemAutoUpgradeModule`)
   - `systemAutoUpgradeFlakeRef` (the LIVE ref that timer tracks --
     always explicit, for the same reason its home twin is)
+  - `systemGarbageCollect` (prune stale system generations on a
+    timer; see `systemGarbageCollectModule`. OFF by default, unlike
+    the auto-upgrade arguments -- deleting a generation cannot be
+    undone)
   - `traceDiscoveredUsers`
   - `wrapHomeManagerSwitch`
   - `tags`
@@ -1912,6 +1917,67 @@ systemAutoUpgradeModule :: Attribute -> Module
   The `flakeRef` option's default -- the builder's
   `systemAutoUpgradeFlakeRef`. `null` warns at evaluation time when
   `enable` is on, and creates nothing. Default `null`.
+
+
+
+
+## `lib.nixos.systemGarbageCollectModule`
+
+A NixOS module that prunes stale system-profile generations on a
+schedule, and reclaims the store paths they were pinning.
+
+The system-side counterpart to what a housekeeping timer typically
+does for a home-manager profile. Without it a host accumulates
+generations indefinitely: every `nixos-rebuild switch`, and every
+run of `systemAutoUpgradeModule`, adds one, and nothing removes any.
+
+It WRAPS nixpkgs' `nix.gc`, but only for the half `nix.gc` does
+well. Upstream can express "delete older than 30 days" and nothing
+else, and on a host that sat idle past that cutoff it deletes every
+generation but the current one -- leaving no rollback target on
+precisely the machine that has been unattended longest. A retention
+FLOOR cannot be written as a flag, so choosing the generations is
+this module's job; `nix.gc` is left to collect the unreferenced
+paths afterwards, which needs no policy at all.
+
+So the split is:
+
+- `nixos-prune-generations.service` (this module) decides which
+  generations to delete: older than `keepDays`, except the newest
+  `keepGenerations` and the running one.
+- `nix-gc.service` (nixpkgs) then collects whatever is no longer
+  referenced. It rides its own timer, so there is only one schedule.
+
+Deleting a generation is not reversible, so `enable` defaults to
+**false** -- deliberately unlike `systemAutoUpgrade`, whose worst
+case is a warning. A library that started deleting things on every
+consuming host the moment it was updated would be indefensible.
+
+### Example
+
+```nix
+# fleet-wide, in a hosts attrset's `_defaults`
+systemGarbageCollect = true;
+
+# and per host, if the defaults do not suit
+services.systemGarbageCollect = {
+  keepDays = 60;
+  keepGenerations = 20;
+};
+```
+
+### Type
+
+```
+systemGarbageCollectModule :: Attribute -> Module
+```
+
+### Arguments
+
+- **enable**
+  The `enable` option's DEFAULT -- what the builder's
+  `systemGarbageCollect` argument feeds in. Default `false`,
+  because the action is destructive and irreversible.
 
 
 ---

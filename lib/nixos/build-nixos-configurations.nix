@@ -122,6 +122,10 @@ in
     :   `systemAutoUpgradeModule`)
     : - `systemAutoUpgradeFlakeRef` (the LIVE ref that timer tracks --
     :   always explicit, for the same reason its home twin is)
+    : - `systemGarbageCollect` (prune stale system generations on a
+    :   timer; see `systemGarbageCollectModule`. OFF by default, unlike
+    :   the auto-upgrade arguments -- deleting a generation cannot be
+    :   undone)
     : - `traceDiscoveredUsers`
     : - `wrapHomeManagerSwitch`
     : - `tags`

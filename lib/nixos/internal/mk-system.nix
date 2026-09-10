@@ -46,6 +46,7 @@ in
       loginReactivateEveryLogin ? false,
       systemAutoUpgrade ? true,
       systemAutoUpgradeFlakeRef ? null,
+      systemGarbageCollect ? false,
       traceDiscoveredUsers ? true,
       wrapHomeManagerSwitch ? true,
       tags ? [ ],
@@ -231,6 +232,14 @@ in
         flakeRef = systemAutoUpgradeFlakeRef;
       };
 
+      # Nothing else removes a generation, so without this a host grows
+      # them forever -- one per rebuild, one per auto-upgrade run. Kept
+      # separate from the upgrade module because it is the only
+      # destructive thing here and defaults OFF accordingly.
+      garbageCollectModule = self.systemGarbageCollectModule {
+        enable = systemGarbageCollect;
+      };
+
       # A login-managed user otherwise has NO way to manually re-run
       # `home-manager switch` between logins -- only the bootstrap service
       # itself ever invokes it. Wrapped, not the bare package: `switch`'s
@@ -334,6 +343,7 @@ in
           )
           bootstrapModule
           autoUpgradeModule
+          garbageCollectModule
           systemHomesModule
           homeManagerSwitchWrapperModule
         ]

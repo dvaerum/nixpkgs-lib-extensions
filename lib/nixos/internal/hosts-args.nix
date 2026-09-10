@@ -46,6 +46,7 @@ let
     "homeAutoUpgradeFlakeRef"
     "systemAutoUpgrade"
     "systemAutoUpgradeFlakeRef"
+    "systemGarbageCollect"
     "traceDiscoveredUsers"
     "wrapHomeManagerSwitch"
     "tags"
