@@ -65,6 +65,27 @@ in
     && s.wantedBy == [ "nixos-upgrade.service" ]
     && (s.bindsTo or [ ]) == [ ];
 
+  # ── the unit must not be in its own restart set ─────────────────────
+  # It runs `switch-to-configuration switch`, which stops every unit
+  # whose store path changed -- including THIS one. Observed for real on
+  # 2026-09-10: "stopping the following units: nixos-upgrade-policy.service
+  # / Main process exited, code=killed, status=15/TERM", leaving the
+  # activation half-applied. It fires precisely when the upgrade changes
+  # the module itself, i.e. on every library bump.
+  #
+  # switch-to-configuration reads X-RestartIfChanged off the NEW unit and
+  # puts it in units_to_skip (switch-to-configuration-ng/src/main.rs:738),
+  # so assert both the option and the rendered key -- the option is what
+  # we set, the key is what upstream actually reads.
+  system-auto-upgrade-policy-not-in-its-own-restart-set =
+    withRef.systemd.services.nixos-upgrade-policy.restartIfChanged == false;
+
+  system-auto-upgrade-policy-emits-restart-if-changed-key = lib.hasInfix "X-RestartIfChanged=false" (
+    builtins.readFile "${
+      withRef.systemd.units."nixos-upgrade-policy.service".unit
+    }/nixos-upgrade-policy.service"
+  );
+
   system-auto-upgrade-poll-timer-defaults =
     let
       t = withRef.systemd.timers.nixos-upgrade-policy.timerConfig;

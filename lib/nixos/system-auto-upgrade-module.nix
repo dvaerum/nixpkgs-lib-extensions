@@ -607,6 +607,28 @@
                   # never ran once.
                   after = [ "nixos-upgrade.service" ];
                   wantedBy = [ "nixos-upgrade.service" ];
+                  # This unit runs `switch-to-configuration switch`, which
+                  # stops every unit whose store path changed -- including
+                  # THIS one, killing the activation half-way through.
+                  # Observed for real: "stopping the following units:
+                  # nixos-upgrade-policy.service / Main process exited,
+                  # code=killed, status=15/TERM", unit left `failed` and
+                  # the generation half-applied. It fires exactly when the
+                  # upgrade changes the module itself -- so on every bump
+                  # of this library, which is the common case, not an edge
+                  # one.
+                  #
+                  # `restartIfChanged = false` renders X-RestartIfChanged,
+                  # which switch-to-configuration reads to put the unit in
+                  # units_to_skip (switch-to-configuration-ng main.rs:738)
+                  # and then leaves it alone entirely. Correct for a
+                  # timer-driven oneshot: it is not a daemon, so there is
+                  # nothing to keep current -- the next timer firing picks
+                  # up the new version from the new /etc. The alternative,
+                  # detaching the switch the way the home half does, would
+                  # move this unit's own log lines into a transient unit
+                  # and cost the observability that made this bug findable.
+                  restartIfChanged = false;
                   serviceConfig = {
                     Type = "oneshot";
                     ExecStart = lib.escapeShellArgs policyArgs;
