@@ -338,6 +338,32 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   ! grep -q "shutdown -r +1" "$RECORD"
   rm -f "$TMPDIR/sys-allow"; rm -f "$rt/pending"
 
+  # ── the two window-bypass reasons must not be confused ─────────────
+  # The machine-wide override reported "everyone present has waived the
+  # reboot", which is false twice over: nobody consented (an admin
+  # overrode), and "waived" is jargon this project already removed from
+  # its user-facing text.
+  rm -f "$rt/pending"; reset
+  waive session 1000
+  res=$(SESSIONS="5:user:active:dennis:1000" "$policy" "''${wbase[@]}" --dry-run --now 1000 \
+    --reboot-window 04:00-04:01 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2 2>&1)
+  echo "$res" | grep -q "everyone logged in has allowed the reboot"
+  ! echo "$res" | grep -qi "waive"
+
+  rm -f "$rt/pending"; reset
+  echo "until=session" > "$TMPDIR/sys-allow"
+  res=$(SESSIONS="5:user:active:dennis:1000 6:user:active:per:1001" "$policy" \
+    --runtime-dir "$rt" --state-file "$state" --shutdown-scheduled "$TMPDIR/no-shutdown" \
+    --user-runtime-dir "$TMPDIR/user" --system-allow-file "$TMPDIR/sys-allow" --dry-run \
+    --reboot-window 04:00-04:01 --now 1000 \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2 2>&1)
+  echo "$res" | grep -q "machine-wide permission is active"
+  # it must NOT claim the people present consented -- they did not
+  ! echo "$res" | grep -q "everyone logged in has allowed"
+  ! echo "$res" | grep -qi "waive"
+  rm -f "$TMPDIR/sys-allow"; unwaive x 1000; rm -f "$rt/pending"
+
   # ── the deadline is OFF by default ──
   reset
   for t in 400 1000000 100000000; do

@@ -44,7 +44,7 @@ usage: nixos-upgrade-policy [options]
   --state-file PATH        persistent last-run record
   --shutdown-scheduled PATH  systemd's own scheduled-shutdown marker
   --user-runtime-dir PATH  where per-user session buses and reboot
-                           waivers live (default /run/user)
+                           permissions live (default /run/user)
   --system-allow-file PATH   the machine-wide "reboot regardless of who
                            is logged in" permission
   --upgrade-unit NAME      the engine unit to read a result from
@@ -239,7 +239,7 @@ EOF
 # A person can also WAIVE their own block, which is the only way to say
 # "go ahead" short of logging out. Consent is per user and carries an
 # expiry, so a yes given this morning cannot fire this afternoon.
-waiver_active() {
+permission_active() {
   [ -f "$1" ] || return 1
   local until
   until=$(sed -n 's/^until=//p' "$1" | head -n 1)
@@ -252,16 +252,16 @@ waiver_active() {
 }
 
 # Sets `blocking` (name:uid of everyone still in the way) and
-# `waived_present` (someone IS here but said go ahead -- which is what
+# `allowed_present` (someone IS here but said go ahead -- which is what
 # lets the reboot skip the window: there is nobody left to protect).
 blocking=
 allowed_users=
-waived_present=0
+allowed_present=0
 scan_sessions() {
   local id props s_class s_state s_name s_uid
   blocking=
   allowed_users=
-  waived_present=0
+  allowed_present=0
   for id in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do
     props=$(loginctl show-session "$id" -p Class -p State -p Name -p User 2>/dev/null || true)
     s_class=$(printf '%s\n' "$props" | sed -n 's/^Class=//p')
@@ -273,8 +273,8 @@ scan_sessions() {
       *) continue ;;
     esac
     if [ "$s_state" = "closing" ]; then continue; fi
-    if waiver_active "$user_runtime_dir/$s_uid/nixos-allow-reboot"; then
-      waived_present=1
+    if permission_active "$user_runtime_dir/$s_uid/nixos-allow-reboot"; then
+      allowed_present=1
       allowed_users="${allowed_users:+$allowed_users }$s_name:$s_uid"
       continue
     fi
@@ -288,7 +288,7 @@ scan_sessions() {
 # The admin-wide override outranks every session: for a remote admin who
 # cannot ask each user, and for maintenance scripts.
 system_override=0
-if waiver_active "$system_allow_file"; then
+if permission_active "$system_allow_file"; then
   system_override=1
   log "machine-wide reboot permission is active; sessions will not block"
 fi
@@ -296,7 +296,7 @@ fi
 scan_sessions
 if [ "$system_override" -eq 1 ]; then
   blocking=
-  waived_present=1
+  allowed_present=1
 fi
 
 # ABSOLUTE path, resolved here: `systemd-run --machine=<user>@` looks the
@@ -446,8 +446,13 @@ in_window() {
 # The window protects PEOPLE from being interrupted. If the people who
 # are here have explicitly said go ahead, there is nobody left to
 # protect and waiting until 04:00 only delays it for its own sake.
-if [ "$waived_present" -eq 1 ]; then
-  log "everyone present has waived the reboot; ignoring the window"
+if [ "$system_override" -eq 1 ]; then
+  # NOT the same statement as the one below: nobody here consented, an
+  # admin overrode them. Saying "everyone present allowed it" would be
+  # a false account of why the machine is about to reboot.
+  log "machine-wide permission is active; ignoring the window"
+elif [ "$allowed_present" -eq 1 ]; then
+  log "everyone logged in has allowed the reboot; ignoring the window"
 elif ! in_window; then
   log "nobody logged in, but outside the reboot window ($reboot_window); waiting"
   exit 0
@@ -455,8 +460,8 @@ fi
 
 # Cheap, and the alternative is rebooting someone who logged in during
 # the handful of milliseconds since the check above. Re-scanned through
-# the same function, so a NEW un-waived login still blocks even when
-# everyone who was here had waived.
+# the same function, so a login that has NOT given permission still
+# blocks even when everyone who was here had.
 if [ "$system_override" -eq 0 ]; then
   scan_sessions
   if [ -n "$blocking" ]; then
