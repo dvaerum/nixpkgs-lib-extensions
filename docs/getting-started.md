@@ -1081,11 +1081,20 @@ So the division is:
 | this module | decides which generations to delete, on its own schedule |
 | your GC policy | decides when the freed paths are actually reclaimed |
 
-Pruning only makes those store paths *collectable*. Reclaiming them
-stays whatever the host already does -- `nix.gc` on a calendar, or
-`nix.settings.min-free`/`max-free` under space pressure. **If a host has
-neither, nothing reclaims them**, and the generations will still be
-gone but the disk will not shrink.
+Reclaiming happens in the same unit: after pruning, `collect` (on by
+default) runs `nix-collect-garbage`. Deleting a generation only makes
+its closure collectable, so without that step the generation count falls
+while the disk stays exactly as full.
+
+That is still not `nix.gc`. The collection runs here, on this module's
+timer, so a host is free to disable calendar GC for its own reasons and
+keep using this.
+
+Turn `collect` off on a host where a scheduled sweep is unwanted --
+typically one where people leave `nix build` outputs around with no
+`result` symlink, so a collection deletes work still in use. Worth
+fixing at the source (give those builds a GC root) rather than living
+with, but the switch is there.
 
 The policy is inspectable without waiting for the timer:
 

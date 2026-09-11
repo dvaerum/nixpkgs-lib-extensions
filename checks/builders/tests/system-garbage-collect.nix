@@ -94,6 +94,20 @@ in
     in
     lib.hasInfix "--keep-days 60" (execOf cfg) && lib.hasInfix "--keep-generations 20" (execOf cfg);
 
+  # ── reclaiming is ON by default: it is what was actually asked for ──
+  # Pruning alone frees generations, not disk. A module that pruned and
+  # stopped would look like it worked while the store stayed the size it
+  # was.
+  system-gc-collects-by-default = lib.hasInfix "--collect" (execOf on);
+
+  system-gc-collect-can-be-disabled =
+    !(lib.hasInfix "--collect" (
+      execOf (hostWith {
+        systemGarbageCollect = true;
+        modules = [ { services.systemGarbageCollect.collect = false; } ];
+      })
+    ));
+
   # dry-run must be absent unless asked: a flag that silently defaulted
   # on would make the whole thing a no-op that looks like it is working
   system-gc-no-dry-run-by-default = !(lib.hasInfix "--dry-run" (execOf on));

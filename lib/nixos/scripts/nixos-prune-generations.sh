@@ -14,6 +14,7 @@ profile=/nix/var/nix/profiles/system
 keep_days=30
 keep_generations=10
 dry_run=0
+collect=0
 now=
 
 usage() {
@@ -27,6 +28,10 @@ newest --keep-generations of them and the currently-booted one.
   --keep-days N           age cutoff in days
   --keep-generations N     never delete this many newest, whatever their
                           age. 0 disables the floor (age alone governs).
+  --collect               after pruning, run nix-collect-garbage to
+                          reclaim the paths the deleted generations were
+                          pinning. Without it the generations go but the
+                          disk does not shrink.
   --dry-run               report what would be deleted, delete nothing
   --now EPOCH             fake clock, for tests
 EOF
@@ -47,6 +52,7 @@ while [ "$#" -gt 0 ]; do
     --keep-days) keep_days="$2"; shift 2 ;;
     --keep-generations) keep_generations="$2"; shift 2 ;;
     --now) now="$2"; shift 2 ;;
+    --collect) collect=1; shift ;;
     --dry-run) dry_run=1; shift ;;
     -h | --help) usage; exit 0 ;;
     *)
@@ -124,17 +130,32 @@ $parsed
 EOF
 
 if [ -z "$doomed" ]; then
-  log "$total generation(s), none both older than ${keep_days}d and outside the newest ${keep_generations}; nothing to do"
-  exit 0
-fi
-
-count=$(printf '%s\n' "$doomed" | wc -w)
-log "$total generation(s); deleting $count older than ${keep_days}d (keeping the newest ${keep_generations} and the current one)"
-
-if [ "$dry_run" -eq 1 ]; then
+  log "$total generation(s), none both older than ${keep_days}d and outside the newest ${keep_generations}"
+elif [ "$dry_run" -eq 1 ]; then
+  count=$(printf '%s\n' "$doomed" | wc -w)
+  log "$total generation(s); would delete $count older than ${keep_days}d (keeping the newest ${keep_generations} and the current one)"
   log "DRY-RUN: would delete generations: $doomed"
-  exit 0
+else
+  count=$(printf '%s\n' "$doomed" | wc -w)
+  log "$total generation(s); deleting $count older than ${keep_days}d (keeping the newest ${keep_generations} and the current one)"
+  # shellcheck disable=SC2086 # deliberate word splitting: a list of ids
+  nix-env -p "$profile" --delete-generations $doomed
 fi
 
-# shellcheck disable=SC2086 # deliberate word splitting: a list of ids
-nix-env -p "$profile" --delete-generations $doomed
+# Reclaiming is the point of pruning: deleting a generation only makes
+# its closure collectable, and without this the generation count falls
+# while the disk stays exactly as full. Run here, in this module's own
+# unit -- NOT by switching on the host's `nix.gc`, which is a policy
+# this module has no business writing.
+#
+# Unconditional on whether anything was pruned: other garbage accrues
+# too, and a scheduled reclaim that silently skips is worse than no
+# reclaim at all, because it looks like it is working.
+if [ "$collect" -eq 1 ]; then
+  if [ "$dry_run" -eq 1 ]; then
+    log "DRY-RUN: would run nix-collect-garbage"
+  else
+    log "collecting unreferenced store paths"
+    nix-collect-garbage
+  fi
+fi

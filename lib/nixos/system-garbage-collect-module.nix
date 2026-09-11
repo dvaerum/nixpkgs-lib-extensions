@@ -25,13 +25,13 @@
     leaving no rollback target on precisely the machine that has been
     unattended longest. A retention FLOOR cannot be written as a flag.
 
-    So: this module owns a timer of its own and decides which
-    generations to delete -- older than `keepDays`, except the newest
-    `keepGenerations` and the running one. Pruning makes their store
-    paths collectable; WHEN those are actually reclaimed stays the
-    host's own policy, whether that is `nix.gc` on a calendar or
-    `nix.settings.min-free` under space pressure. If a host has neither,
-    nothing reclaims them and that is worth knowing.
+    So: this module owns a timer of its own, decides which generations
+    to delete -- older than `keepDays`, except the newest
+    `keepGenerations` and the running one -- and then reclaims what they
+    were pinning with `nix-collect-garbage`, in the same unit. Deleting
+    a generation only makes its closure collectable; without the
+    reclaim the generation count falls while the disk stays exactly as
+    full, so `collect` is on by default.
 
     Deleting a generation is not reversible, so `enable` defaults to
     **false** -- deliberately unlike `systemAutoUpgrade`, whose worst
@@ -94,6 +94,7 @@
               "--keep-generations"
               (toString cfg.keepGenerations)
             ]
+            ++ lib.optional cfg.collect "--collect"
             ++ lib.optional cfg.dryRun "--dry-run";
           in
           {
@@ -173,6 +174,32 @@
                 description = ''
                   Catch up a run missed while the machine was off,
                   rather than skipping until next week.
+                '';
+              };
+
+              collect = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  After pruning, run `nix-collect-garbage` to reclaim
+                  the store paths the deleted generations were pinning.
+
+                  On by default, because reclaiming the space is the
+                  point: deleting a generation only makes its closure
+                  collectable, so without this the generation count
+                  falls while the disk stays exactly as full.
+
+                  It runs in this module's own unit. It does NOT switch
+                  on `nix.gc`, which is a policy this module never
+                  writes -- a host is free to disable calendar GC for
+                  its own reasons and still use this.
+
+                  Turn it OFF on a host where a scheduled collection is
+                  unwanted -- typically one where people leave `nix
+                  build` outputs around without a `result` symlink, so a
+                  sweep deletes work still in use. That is worth fixing
+                  at the source (give those builds a GC root) rather
+                  than living with forever, but the switch is here.
                 '';
               };
 

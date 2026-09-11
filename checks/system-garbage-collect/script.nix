@@ -7,6 +7,10 @@
 let
   # Emits the exact shape `nix-env --list-generations` prints, and
   # records deletions. GENS is "id:date" words.
+  stub-collect = pkgs.writeShellScriptBin "nix-collect-garbage" ''
+    echo "collect $*" >> "$RECORD"
+  '';
+
   stub-nix-env = pkgs.writeShellScriptBin "nix-env" ''
     case "$*" in
       *--list-generations*)
@@ -28,7 +32,10 @@ let
   scripts = import ../../lib/nixos/internal/garbage-collect-script.nix {
     inherit pkgs;
     nixPackage = stub-nix-env;
-    extraInputs = [ stub-nix-env ];
+    extraInputs = [
+      stub-nix-env
+      stub-collect
+    ];
   };
 in
 pkgs.runCommand "nixos-prune-generations-script-test" { } ''
@@ -86,6 +93,37 @@ pkgs.runCommand "nixos-prune-generations-script-test" { } ''
   rc=0; msg=$(GENS="" CURRENT= "$prune" "''${base[@]}" --keep-days 30 --keep-generations 3 2>&1) || rc=$?
   [ "$rc" -ne 0 ]
   echo "$msg" | grep -qi "no generations"
+  [ ! -s "$RECORD" ]
+
+  # ── reclaiming the space, which is the point of pruning ──────────
+  # Deleting a generation only makes its closure collectable; without
+  # this the disk never shrinks. Run in THIS module's own unit, never by
+  # reaching into the host's `nix.gc`.
+  reset
+  GENS="$old" CURRENT=5 "$prune" "''${base[@]}" --keep-days 30 --keep-generations 3 --collect
+  grep -q -- "--delete-generations" "$RECORD"
+  grep -q "^collect" "$RECORD"
+  # ... and the collection comes AFTER the prune, or it would not see
+  # the paths the prune just freed
+  [ "$(grep -n -- '--delete-generations' "$RECORD" | cut -d: -f1 | head -1)" \
+    -lt "$(grep -n '^collect' "$RECORD" | cut -d: -f1 | head -1)" ]
+
+  # it still collects when there was nothing to prune: other garbage
+  # accrues too, and a scheduled reclaim that silently skips is worse
+  # than useless
+  reset
+  GENS="$recent" CURRENT=11 "$prune" "''${base[@]}" --keep-days 30 --keep-generations 0 --collect
+  ! grep -q -- "--delete-generations" "$RECORD"
+  grep -q "^collect" "$RECORD"
+
+  # without --collect nothing is reclaimed
+  reset
+  GENS="$old" CURRENT=5 "$prune" "''${base[@]}" --keep-days 30 --keep-generations 3
+  ! grep -q "^collect" "$RECORD"
+
+  # and --dry-run never collects either
+  reset
+  GENS="$old" CURRENT=5 "$prune" "''${base[@]}" --keep-days 30 --keep-generations 3 --collect --dry-run
   [ ! -s "$RECORD" ]
 
   # ── dry-run touches nothing ──

@@ -1946,13 +1946,13 @@ the cutoff it deletes every generation but the running one --
 leaving no rollback target on precisely the machine that has been
 unattended longest. A retention FLOOR cannot be written as a flag.
 
-So: this module owns a timer of its own and decides which
-generations to delete -- older than `keepDays`, except the newest
-`keepGenerations` and the running one. Pruning makes their store
-paths collectable; WHEN those are actually reclaimed stays the
-host's own policy, whether that is `nix.gc` on a calendar or
-`nix.settings.min-free` under space pressure. If a host has neither,
-nothing reclaims them and that is worth knowing.
+So: this module owns a timer of its own, decides which generations
+to delete -- older than `keepDays`, except the newest
+`keepGenerations` and the running one -- and then reclaims what they
+were pinning with `nix-collect-garbage`, in the same unit. Deleting
+a generation only makes its closure collectable; without the
+reclaim the generation count falls while the disk stays exactly as
+full, so `collect` is on by default.
 
 Deleting a generation is not reversible, so `enable` defaults to
 **false** -- deliberately unlike `systemAutoUpgrade`, whose worst
