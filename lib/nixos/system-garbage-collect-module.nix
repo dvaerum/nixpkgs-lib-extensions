@@ -10,22 +10,28 @@
     generations indefinitely: every `nixos-rebuild switch`, and every
     run of `systemAutoUpgradeModule`, adds one, and nothing removes any.
 
-    It WRAPS nixpkgs' `nix.gc`, but only for the half `nix.gc` does
-    well. Upstream can express "delete older than 30 days" and nothing
-    else, and on a host that sat idle past that cutoff it deletes every
-    generation but the current one -- leaving no rollback target on
-    precisely the machine that has been unattended longest. A retention
-    FLOOR cannot be written as a flag, so choosing the generations is
-    this module's job; `nix.gc` is left to collect the unreferenced
-    paths afterwards, which needs no policy at all.
+    It does NOT touch nixpkgs' `nix.gc`, on purpose. Generation
+    retention and store collection are different jobs, and a host may
+    disable calendar GC for reasons that have nothing to do with
+    generations -- because the sweep was deleting local builds with no
+    GC root, say. A module that rode that timer would be silently inert
+    on such a host; one that switched it back on would break something
+    it was never asked to manage. Both were true of the first cut of
+    this module.
 
-    So the split is:
+    `nix.gc` also cannot express what this is for. It offers "delete
+    older than N days" and nothing else, so on a host that sat idle past
+    the cutoff it deletes every generation but the running one --
+    leaving no rollback target on precisely the machine that has been
+    unattended longest. A retention FLOOR cannot be written as a flag.
 
-    - `nixos-prune-generations.service` (this module) decides which
-      generations to delete: older than `keepDays`, except the newest
-      `keepGenerations` and the running one.
-    - `nix-gc.service` (nixpkgs) then collects whatever is no longer
-      referenced. It rides its own timer, so there is only one schedule.
+    So: this module owns a timer of its own and decides which
+    generations to delete -- older than `keepDays`, except the newest
+    `keepGenerations` and the running one. Pruning makes their store
+    paths collectable; WHEN those are actually reclaimed stays the
+    host's own policy, whether that is `nix.gc` on a calendar or
+    `nix.settings.min-free` under space pressure. If a host has neither,
+    nothing reclaims them and that is worth knowing.
 
     Deleting a generation is not reversible, so `enable` defaults to
     **false** -- deliberately unlike `systemAutoUpgrade`, whose worst
@@ -144,9 +150,9 @@
                 type = types.str;
                 default = "weekly";
                 description = ''
-                  When to run -- an `OnCalendar` expression, applied to
-                  nixpkgs' own `nix.gc` timer, which triggers this
-                  module's prune first and then the collection.
+                  When to run -- an `OnCalendar` expression for this
+                  module's own timer. Independent of `nix.gc`, which
+                  this module never writes.
                 '';
               };
 
@@ -154,9 +160,10 @@
                 type = types.int;
                 default = 3600;
                 description = ''
-                  Jitter on the timer. Generous by default: a garbage
-                  collection is heavy on I/O and there is no reason for
-                  a fleet to start one simultaneously.
+                  Jitter on the timer. Generous by default: pruning
+                  walks a profile's whole generation list and the
+                  collection it enables is heavy on I/O, so there is no
+                  reason for a fleet to start together.
                 '';
               };
 
@@ -188,36 +195,42 @@
                 }
               ];
 
-              # Upstream for the half that needs no policy. `options` is
-              # pinned EMPTY on purpose: its `--delete-older-than` is
-              # exactly the flag whose missing floor this module exists
-              # to supply, and letting both delete generations would
-              # make the floor a lie.
-              nix.gc = {
-                automatic = mkBuilderDefault true;
-                dates = mkBuilderDefault cfg.schedule;
-                randomizedDelaySec = mkBuilderDefault cfg.randomizedDelaySec;
-                persistent = mkBuilderDefault cfg.persistent;
-                options = mkBuilderDefault "";
-              };
-
               systemd.services.nixos-prune-generations = {
                 description = "Prune stale system-profile generations";
-                # Rides nix-gc's timer rather than adding a second one,
-                # and strictly before it: pruning first is what turns
-                # those generations' store paths into garbage for the
-                # collection to find.
-                before = [ "nix-gc.service" ];
-                wantedBy = [ "nix-gc.service" ];
                 # A half-finished prune is harmless (the next run
                 # continues), but being stopped mid-delete by an
                 # unrelated `nixos-rebuild switch` is never what anyone
                 # wants, and restarting a oneshot means running an
-                # unscheduled GC pass at activation time.
+                # unscheduled prune at activation time.
                 restartIfChanged = false;
                 serviceConfig = {
                   Type = "oneshot";
                   ExecStart = lib.escapeShellArgs pruneArgs;
+                };
+              };
+
+              # Its OWN timer, and deliberately NOT nixpkgs' `nix.gc`
+              # one. Generation retention and store collection are
+              # different jobs: a host may disable calendar GC for
+              # reasons that have nothing to do with generations --
+              # nixos-developer-system does, because the sweep was
+              # deleting local builds that had no GC root -- and a
+              # module that rode that timer would be silently inert
+              # there, or worse would switch it back on and break the
+              # thing it was never asked to manage.
+              #
+              # So this module never writes `nix.gc` at all. Pruning
+              # makes the old generations' store paths collectable; WHEN
+              # they are actually reclaimed stays the host's own policy,
+              # whether that is `nix.gc` on a calendar or
+              # `nix.settings.min-free` under pressure.
+              systemd.timers.nixos-prune-generations = {
+                description = "Prune stale system-profile generations";
+                wantedBy = [ "timers.target" ];
+                timerConfig = {
+                  OnCalendar = cfg.schedule;
+                  Persistent = cfg.persistent;
+                  RandomizedDelaySec = cfg.randomizedDelaySec;
                 };
               };
 

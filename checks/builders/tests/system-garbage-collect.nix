@@ -34,7 +34,8 @@ in
   # be recovered, so a library that shipped it on by default would start
   # removing generations on every consuming host the moment it updated.
   system-gc-off-by-default =
-    !(off.systemd.services ? nixos-prune-generations) && off.nix.gc.automatic == false;
+    !(off.systemd.services ? nixos-prune-generations)
+    && !(off.systemd.timers ? nixos-prune-generations);
 
   # Only that IT is silent. The host still warns about systemAutoUpgrade
   # having no flakeRef, which is a sibling module doing its job.
@@ -42,27 +43,36 @@ in
 
   system-gc-unit-present-when-on = on.systemd.services ? nixos-prune-generations;
 
-  # ── one timer, not two ──
-  # It rides nix.gc's timer; a second timer would mean two schedules to
-  # keep in step and a GC that can start while a prune is running.
-  system-gc-rides-nix-gc-timer =
+  # ── it must NOT touch the host's GC policy ─────────────────────────
+  # The first cut rode nix.gc's timer and set `nix.gc.automatic = true`
+  # to get one. That is a landmine in a library: a host may disable
+  # calendar GC deliberately -- nixos-developer-system does, because the
+  # sweep was deleting unrooted local builds -- and a module that quietly
+  # switches it back on breaks something it was never asked to manage.
+  #
+  # Asserted as "identical with the module on and off", which is the
+  # property that matters and cannot rot into a weaker check.
+  system-gc-leaves-nix-gc-alone =
+    on.nix.gc.automatic == off.nix.gc.automatic
+    && on.nix.gc.options == off.nix.gc.options
+    && on.nix.gc.dates == off.nix.gc.dates
+    && on.nix.gc.persistent == off.nix.gc.persistent;
+
+  # ... which means it needs its own timer, not upstream's
+  system-gc-has-its-own-timer =
+    let
+      t = on.systemd.timers.nixos-prune-generations.timerConfig;
+    in
+    t.OnCalendar == "weekly" && t.Persistent == true && t.RandomizedDelaySec == 3600;
+
+  system-gc-timer-enabled = on.systemd.timers.nixos-prune-generations.wantedBy == [ "timers.target" ];
+
+  # and no ordering edge onto a unit that may not be scheduled at all
+  system-gc-not-coupled-to-nix-gc =
     let
       s = on.systemd.services.nixos-prune-generations;
     in
-    s.before == [ "nix-gc.service" ]
-    && s.wantedBy == [ "nix-gc.service" ]
-    && !(on.systemd.timers ? nixos-prune-generations);
-
-  # `nix.gc.dates` is a merge-friendly "str or listOf str", so the
-  # evaluated value is a list even when one string was written.
-  system-gc-seeds-upstream-timer = on.nix.gc.automatic && lib.toList on.nix.gc.dates == [ "weekly" ];
-
-  # ── the invariant the whole design rests on ──
-  # `nix.gc.options` must stay free of --delete-older-than: that flag is
-  # the one whose missing floor this module exists to supply, and if
-  # upstream also deleted generations the floor would be a lie.
-  system-gc-upstream-does-not-delete-generations =
-    on.nix.gc.options == "" && !(lib.hasInfix "delete" on.nix.gc.options);
+    (s.before or [ ]) == [ ] && (s.wantedBy or [ ]) == [ ];
 
   # ── the policy reaches the script ──
   system-gc-retention-wired =

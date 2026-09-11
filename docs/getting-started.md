@@ -1063,24 +1063,29 @@ generations on every consuming host the moment it was updated.
 nixpkgs' `nix.gc` can express *"delete older than 30 days"* and nothing
 else. On a host that sat idle past that cutoff, that deletes every
 generation but the running one -- so the machine nobody has been
-watching is the one left with nothing to roll back to.
+watching is the one left with nothing to roll back to. A retention
+**floor** cannot be written as a flag.
 
-A retention **floor** cannot be written as a flag, so this module picks
-the generations itself and leaves `nix.gc` to do the part that needs no
-policy:
+This module therefore runs on **its own timer** and never writes
+`nix.gc`. That is deliberate, and was learned the hard way: the first
+version rode `nix.gc`'s timer and set `automatic = true` to get one.
+On a host that disables calendar GC on purpose -- because the sweep was
+deleting local builds that had no GC root, say -- that version was
+silently inert, and on a host that had simply never set the option it
+would have switched the sweep on. Neither is a library's business.
+
+So the division is:
 
 | | |
 |---|---|
-| `nixos-prune-generations.service` (this module) | chooses what to delete: older than `keepDays`, except the newest `keepGenerations` and the running one |
-| `nix-gc.service` (nixpkgs) | collects whatever is then unreferenced |
+| this module | decides which generations to delete, on its own schedule |
+| your GC policy | decides when the freed paths are actually reclaimed |
 
-It rides `nix.gc`'s timer, so there is one schedule rather than two, and
-runs strictly before it -- pruning is what turns those generations'
-store paths into garbage for the collection to find.
-
-`nix.gc.options` is pinned **empty** on purpose. `--delete-older-than`
-is precisely the flag whose missing floor this exists to supply; letting
-upstream delete generations too would make the floor a lie.
+Pruning only makes those store paths *collectable*. Reclaiming them
+stays whatever the host already does -- `nix.gc` on a calendar, or
+`nix.settings.min-free`/`max-free` under space pressure. **If a host has
+neither, nothing reclaims them**, and the generations will still be
+gone but the disk will not shrink.
 
 The policy is inspectable without waiting for the timer:
 

@@ -1931,22 +1931,28 @@ does for a home-manager profile. Without it a host accumulates
 generations indefinitely: every `nixos-rebuild switch`, and every
 run of `systemAutoUpgradeModule`, adds one, and nothing removes any.
 
-It WRAPS nixpkgs' `nix.gc`, but only for the half `nix.gc` does
-well. Upstream can express "delete older than 30 days" and nothing
-else, and on a host that sat idle past that cutoff it deletes every
-generation but the current one -- leaving no rollback target on
-precisely the machine that has been unattended longest. A retention
-FLOOR cannot be written as a flag, so choosing the generations is
-this module's job; `nix.gc` is left to collect the unreferenced
-paths afterwards, which needs no policy at all.
+It does NOT touch nixpkgs' `nix.gc`, on purpose. Generation
+retention and store collection are different jobs, and a host may
+disable calendar GC for reasons that have nothing to do with
+generations -- because the sweep was deleting local builds with no
+GC root, say. A module that rode that timer would be silently inert
+on such a host; one that switched it back on would break something
+it was never asked to manage. Both were true of the first cut of
+this module.
 
-So the split is:
+`nix.gc` also cannot express what this is for. It offers "delete
+older than N days" and nothing else, so on a host that sat idle past
+the cutoff it deletes every generation but the running one --
+leaving no rollback target on precisely the machine that has been
+unattended longest. A retention FLOOR cannot be written as a flag.
 
-- `nixos-prune-generations.service` (this module) decides which
-  generations to delete: older than `keepDays`, except the newest
-  `keepGenerations` and the running one.
-- `nix-gc.service` (nixpkgs) then collects whatever is no longer
-  referenced. It rides its own timer, so there is only one schedule.
+So: this module owns a timer of its own and decides which
+generations to delete -- older than `keepDays`, except the newest
+`keepGenerations` and the running one. Pruning makes their store
+paths collectable; WHEN those are actually reclaimed stays the
+host's own policy, whether that is `nix.gc` on a calendar or
+`nix.settings.min-free` under space pressure. If a host has neither,
+nothing reclaims them and that is worth knowing.
 
 Deleting a generation is not reversible, so `enable` defaults to
 **false** -- deliberately unlike `systemAutoUpgrade`, whose worst
