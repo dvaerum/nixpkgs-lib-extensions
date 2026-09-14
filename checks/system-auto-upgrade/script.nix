@@ -33,6 +33,7 @@ let
     cat > $out/bin/systemctl <<'EOF'
     #!/bin/sh
     case "$*" in
+      *--property=LoadState*)                 echo "''${UPGRADE_LOADSTATE:-loaded}" ;;
       *--property=Result*)                    echo "''${UPGRADE_RESULT:-success}" ;;
       *--property=ExecMainExitTimestampMonotonic*) echo "''${UPGRADE_STAMP:-0}" ;;
       *is-active*nixos-upgrade-policy-wake*)  exit "''${WAKE_ACTIVE:-1}" ;;
@@ -459,7 +460,30 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
     --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
   grep -q "HOOK result=failed" "$RECORD"
 
+  # ── a unit that does not exist is not a success ────────────────────
+  # `systemctl show` reports Result=success for a name that was never
+  # loaded, so a typo in --upgrade-unit would look like a permanent
+  # string of successful upgrades. The timestamp guard happens to stop
+  # anything being recorded, but that is a side effect, not a decision.
+  reset
+  : > "$state"
+  res=$(UPGRADE_LOADSTATE=not-found UPGRADE_STAMP=0 SESSIONS="" "$policy" "''${wbase[@]}" --dry-run \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen1 2>&1)
+  echo "$res" | grep -qi "not loaded"
+  ! grep -q "^result=" "$state"
+  # ... and a loaded unit still records normally
+  reset
+  res=$(UPGRADE_LOADSTATE=loaded UPGRADE_STAMP=777 SESSIONS="" "$policy" "''${wbase[@]}" --dry-run \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen1 2>&1)
+  grep -q "^result=success" "$state"
+
   # ── the status command ──
+  # Sets up its own state rather than inheriting whatever the runs above
+  # happened to leave. Depending on leftovers made this break the moment
+  # a test was inserted before it -- the failure it asserted on had been
+  # overwritten by an unrelated success.
+  printf 'since=1000\nlast-notified=1000\nchanged=kernel\n' > "$rt/pending"
+  printf 'time=T\nepoch=1000\nresult=exit-code\nupgrade-stamp=1\n' > "$state"
   # pending + a recorded failure
   res=$("$status" --pending-file "$rt/pending" --state-file "$state" --now 3600) || rc=$?
   echo "$res" | grep -q "FAILED"

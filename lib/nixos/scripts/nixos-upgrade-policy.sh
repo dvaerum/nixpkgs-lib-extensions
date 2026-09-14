@@ -172,13 +172,25 @@ if [ -n "$differing" ]; then reboot_pending=1; fi
 # engine's own exit timestamp is what says "this is a result you have not
 # reported yet". Without that, a per-run onResult hook would fire on
 # every poll instead of once a day.
+# `systemctl show` answers Result=success for a unit that was never
+# loaded, so a typo in --upgrade-unit would otherwise read as an endless
+# run of successful upgrades. Check that the unit exists before
+# believing anything it says. (The timestamp guard below happens to stop
+# a phantom result being recorded, but relying on that would be relying
+# on a side effect.)
+upgrade_loadstate=$(systemctl show "$upgrade_unit" --property=LoadState --value 2>/dev/null || echo unknown)
+if [ "$upgrade_loadstate" != "loaded" ]; then
+  log "engine unit '$upgrade_unit' is not loaded (LoadState=$upgrade_loadstate) -- not recording a result for it"
+fi
+
 upgrade_result=$(systemctl show "$upgrade_unit" --property=Result --value 2>/dev/null || echo unknown)
 upgrade_stamp=$(systemctl show "$upgrade_unit" --property=ExecMainExitTimestampMonotonic --value 2>/dev/null || echo 0)
 [ -n "$upgrade_result" ] || upgrade_result=unknown
 [ -n "$upgrade_stamp" ] || upgrade_stamp=0
 
 previous_stamp=$(read_field upgrade-stamp "$state_file")
-if [ "$upgrade_stamp" != "0" ] && [ "$upgrade_stamp" != "$previous_stamp" ]; then
+if [ "$upgrade_loadstate" = "loaded" ] &&
+  [ "$upgrade_stamp" != "0" ] && [ "$upgrade_stamp" != "$previous_stamp" ]; then
   generation=$(link_of "$profile")
   cat >"$state_file" <<EOF
 time=$(date -d "@$now" --iso-8601=seconds)

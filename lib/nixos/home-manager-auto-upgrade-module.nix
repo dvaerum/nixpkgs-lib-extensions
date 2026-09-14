@@ -337,14 +337,26 @@
                 type = types.lines;
                 default = "";
                 description = ''
-                  Shell sourced after the switch, with `$RESULT` (the
-                  exit code), `$TARGET` and `$STATE_FILE` exported --
+                  Shell run after the switch -- EXECUTED, not sourced,
+                  so an `exit` in it cannot terminate the upgrade and
+                  its variables cannot collide with the script's own.
+
+                  `$RESULT` (the exit code), `$TARGET`, `$STATE_FILE`,
+                  `$PREVIOUS_STATUS` and `$TRANSITION` (`fail` /
+                  `recover` / `steady`) are exported --
                   for a consumer's own alerting, on top of (not instead
                   of) the built-in reporting.
 
                   A hook that pushes notifications has a blind spot: it
                   cannot announce that its own pushing is broken,
                   because the broken channel is the one it would use.
+                  `$TRANSITION` is the decision the module already
+                  made to pick its own notification, handed over rather
+                  than left to be re-derived: a hook that parsed
+                  `previous_status=` out of the state file would be
+                  coupled to a format that is nobody's public interface
+                  and would re-implement a rule that can then drift.
+
                   Appending `warn=<text>` to `$STATE_FILE` is the way
                   back -- `hm-auto-upgrade-status` prints it at every
                   interactive shell start, including on an otherwise

@@ -204,6 +204,43 @@ pkgs.runCommand "home-manager-auto-upgrade-script-test" { } ''
   printf 'status=ok\ntimestamp=T\ntarget=alice\n' > "$state"
   [ -z "$("$status" --only-failures "$state")" ]
 
+  # ── the hook runs in its OWN process ──
+  # It used to be SOURCED, which has two teeth: a hook that calls `exit`
+  # takes the whole upgrade script down with it, and a hook's variables
+  # share the script's namespace -- the real consumer already declared
+  # `previous_status`, which is the exact name the script uses
+  # internally. Both are silent until the day they are not.
+  captured=$("$up" "''${base[@]}" --on-result ${pkgs.writeShellScript "exiting-hook" ''
+    echo "HOOK ran"
+    exit 0
+  ''} 2>&1)
+  echo "$captured" | grep -q "HOOK ran"
+  # the script must have carried on past the hook and written its state
+  grep -q "status=ok" "$state"
+
+  # a hook cannot clobber the script's own variables
+  captured=$("$up" "''${base[@]}" --on-result ${pkgs.writeShellScript "clobbering-hook" ''
+    previous_status=CLOBBERED
+    echo "HOOK previous_status=$previous_status"
+  ''} 2>&1)
+  echo "$captured" | grep -q "HOOK previous_status=CLOBBERED"
+  grep -q "status=ok" "$state"
+
+  # ── the hook is TOLD the transition, not left to derive it ──
+  # Without this a consumer has to sed `previous_status=` out of the
+  # state file -- coupling its code to a library-internal format, and
+  # forcing it to re-implement a decision the library already made.
+  : > "$state"
+  HM_STUB_FAIL=1 "$up" "''${base[@]}" --on-result ${pkgs.writeShellScript "t1" ''echo "T=$TRANSITION P=$PREVIOUS_STATUS"''} >/dev/null 2>&1 || true
+  captured=$("$up" "''${base[@]}" --on-result ${pkgs.writeShellScript "t2" ''echo "T=$TRANSITION P=$PREVIOUS_STATUS"''} 2>&1)
+  echo "$captured" | grep -q "T=recover P=fail"
+  # a further success is steady, not another recovery
+  captured=$("$up" "''${base[@]}" --on-result ${pkgs.writeShellScript "t3" ''echo "T=$TRANSITION"''} 2>&1)
+  echo "$captured" | grep -q "T=steady"
+  # and a failure says so
+  rc=0; captured=$(HM_STUB_FAIL=1 "$up" "''${base[@]}" --on-result ${pkgs.writeShellScript "t4" ''echo "T=$TRANSITION"''} 2>&1) || rc=$?
+  echo "$captured" | grep -q "T=fail"
+
   # ── the status line: silent on success, loud on failure ──
   "$up" "''${base[@]}"
   [ -z "$("$status" --only-failures "$state")" ]

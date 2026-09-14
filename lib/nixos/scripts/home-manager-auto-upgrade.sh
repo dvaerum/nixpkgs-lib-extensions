@@ -287,12 +287,27 @@ fi
 
 # ------------------------------------------------------------ post-hook
 if [ -n "${on_result}" ]; then
-  RESULT="${result}"
-  TARGET="${target}"
-  STATE_FILE="${state_file}"
-  export RESULT TARGET STATE_FILE
-  # shellcheck source=/dev/null
-  . "${on_result}"
+  # TRANSITION is the decision this script already made to choose its own
+  # notification, handed over rather than left to be re-derived. Without
+  # it a hook has to sed `previous_status=` out of the state file, which
+  # couples consumer code to a format that is nobody's public interface
+  # and makes it re-implement a rule that can then drift from this one.
+  if [ "${result}" -ne 0 ]; then
+    TRANSITION=fail
+  elif [ "${previous_status}" = "fail" ]; then
+    TRANSITION=recover
+  else
+    TRANSITION=steady
+  fi
+
+  # EXECUTED, not sourced. Sourcing gave a hook two ways to break its
+  # host silently: an `exit` anywhere in it terminated this script
+  # mid-run, and its variables shared this script's namespace -- the
+  # real consumer declared `previous_status`, the very name used above,
+  # and got away with it only because nothing read it afterwards.
+  RESULT="${result}" TARGET="${target}" STATE_FILE="${state_file}" \
+    PREVIOUS_STATUS="${previous_status}" TRANSITION="${TRANSITION}" \
+    "${on_result}"
 fi
 
 exit "${result}"
