@@ -8,8 +8,8 @@
 # options, `tags` MERGES contributions from several modules, the
 # read-only values carry types and descriptions, and the module system
 # itself rejects a module trying to redefine what only the builder can
-# know. Only the true import-time values (`inputs`, `rootPath`, `extLib`)
-# are specialArgs -- see internal/context.nix.
+# know. Only the true import-time values (`inputs`, `rootPath`, `extLib`,
+# `builderPkgs`) are specialArgs -- see internal/context.nix.
 { lib, self, ... }:
 let
   inherit (lib) mkOption types literalMD;

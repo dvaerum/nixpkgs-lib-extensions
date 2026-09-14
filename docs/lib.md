@@ -449,7 +449,7 @@ NixOS/home-manager module's `imports` list, that is exactly what you
 want: if `path`'s content is a module FUNCTION
 (`{ config, pkgs, lib, ... }: { ... }`), the module system applies it
 itself and already supplies `config`/`pkgs`/`lib` plus any specialArgs
-the builders wire in (`inputs`, `extLib`, `rootPath`, ...) -- no extra
+the builders wire in (`inputs`, `extLib`, `rootPath`, `builderPkgs`) -- no extra
 plumbing needed here. Calling the RESULT yourself instead (outside a
 module context) needs `default` to match the shape `path` is expected
 to have -- see `default` below.
@@ -501,8 +501,19 @@ fail the actual `import`, or reject what the evaluator would accept.
 ### Example
 
 ```nix
+# in a module reached through this library's builders -- `extLib` and
+# `builderPkgs` are both specialArgs they provide
+{ extLib, builderPkgs, ... }:
+{
+  imports = [ (extLib.importIfNix builderPkgs ./private.nix) ];
+}
+# locally (key present)   => ./private.nix is imported as a module
+# on CI (still encrypted) => { } (warns)
+```
+
+```nix
 # extLib = inputs.nixpkgs-lib-extensions.lib
-# CI-safe secrets with non-secret placeholders:
+# outside a module, where any package set will do:
 extLib.importIfNixOr pkgs ./private.nix {
   tester = 1212;
 }
@@ -520,6 +531,20 @@ importIfNixOr :: pkgs -> Path -> Any -> Any
 
 - **pkgs**
   A package set used to build the validity probe (IFD).
+  Inside an `imports` list, this must NOT be the `pkgs` module
+  argument. The probe has to be BUILT to decide what gets imported,
+  building it forces the package set, and the module argument resolves
+  through the very config fixed point the imports list is being
+  assembled for -- "infinite recursion encountered", which the module
+  system diagnoses as "you probably reference `config` in `imports`".
+  Modules reached through this library's builders get `builderPkgs`
+  for exactly this: the same package set (same overlays, same
+  patches) reached without going through `config`. A hand-rolled
+  `import inputs.nixpkgs { ... }` at the call site also escapes the
+  recursion, but probes with a nixpkgs the host is not built from.
+  Anywhere OTHER than an `imports` list -- an option value in a module
+  body, or a plain expression outside the module system -- the ordinary
+  `pkgs` is fine.
 
 - **path**
   The path (or absolute path string) to inspect and maybe import.
@@ -633,6 +658,10 @@ readIfPlainOr :: pkgs -> Path -> String -> String
 
 - **pkgs**
   A package set used to build the header-check probe (IFD).
+  The ordinary `pkgs` module argument is fine here: this function
+  returns a STRING, so its callers are option values in a module body,
+  never `imports` entries -- the one place forcing `pkgs` recurses.
+  See `importIfNixOr`'s `pkgs` argument for that case.
 
 - **path**
   The path (or absolute path string) to inspect and maybe read.
@@ -1715,7 +1744,10 @@ mkNixosSystem :: Attribute -> NixosSystem
 
 - **specialArgs**
   Extra specialArgs, merged alongside the ones the builder assembles
-  (`inputs`, `rootPath`, `extLib`). Redefining
+  (`inputs`, `rootPath`, `extLib`, `builderPkgs` -- the last being the
+  builder's own package set, for the one job the `pkgs` module
+  argument cannot do: an `imports` entry decided by an IFD probe, see
+  `importIfNixOr`). Redefining
   a builder-owned name THROWS: overriding one changed only what
   modules see, not what the builder did. The option-backed names
   (`hostname`, `tags`, `group`, `users`, `inputPkgs`, `channels`,

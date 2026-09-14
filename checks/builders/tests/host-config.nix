@@ -141,6 +141,12 @@ in
     shadows "hostname" "not-shadowprobe"
     && shadows "rootPath" "/tmp"
     && shadows "extLib" { }
+    # `builderPkgs` is reserved for a sharper reason than the others: it
+    # exists so an `imports` entry can run an IFD probe without touching
+    # `config`, and a shadow could hand that probe a package set the host
+    # is not built from -- silently, since the probe's only visible output
+    # is a yes/no verdict
+    && shadows "builderPkgs" { }
     # ... and the module-system-owned names: a specialArg named `pkgs`
     # (or lib/config/options/modulesPath) overrides the module system's
     # own wiring

@@ -1274,6 +1274,19 @@ body. This table is the complete list the builders add:
 | `inputs` | the whole flake inputs set |
 | `extLib` | this repo's lib (also merged into `lib`) |
 | `rootPath` | the root of the `hosts/<hostname>` convention |
+| `builderPkgs` | the builder's own package set -- see below |
+
+`builderPkgs` is the same package set as the `pkgs` module argument,
+with the same overlays and nixpkgs patches applied; the builders hand
+that very set to the module system. What differs is how you reach it:
+`builderPkgs` does not go through `config`, so it is the one usable
+from an `imports` entry that has to run an import-from-derivation probe
+to decide what to import -- `extLib.importIfNix builderPkgs
+./private.nix` for a git-crypt-encrypted file. Reaching for the `pkgs`
+module argument there instead forces the config fixed point the imports
+list is being assembled for, and evaluation fails with "infinite
+recursion encountered". In a module's BODY, ordinary `pkgs` is correct
+and `builderPkgs` buys nothing.
 
 Everything else the builder derives is declared as ordinary module
 options under `nixpkgsLibExtensions.*`, in every NixOS module set and

@@ -369,7 +369,10 @@ in
 
     specialArgs
     : Extra specialArgs, merged alongside the ones the builder assembles
-    : (`inputs`, `rootPath`, `extLib`). Redefining
+    : (`inputs`, `rootPath`, `extLib`, `builderPkgs` -- the last being the
+    : builder's own package set, for the one job the `pkgs` module
+    : argument cannot do: an `imports` entry decided by an IFD probe, see
+    : `importIfNixOr`). Redefining
     : a builder-owned name THROWS: overriding one changed only what
     : modules see, not what the builder did. The option-backed names
     : (`hostname`, `tags`, `group`, `users`, `inputPkgs`, `channels`,

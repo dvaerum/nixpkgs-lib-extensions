@@ -503,12 +503,24 @@ let
       # and are guarded by the module system.
       # Note: `pkgs` deliberately not included — modules already receive it from
       # the module system, and `specialArgs.pkgs` would override that wiring
-      # (nixpkgs warns about it).
+      # (nixpkgs warns about it). `builderPkgs` below is that same package
+      # set under a name the module system does not own, for the one job
+      # the module argument cannot do.
       builderOwned = {
         inherit inputs rootPath;
         # the specialArg keeps its user-facing name; its value is the lib
         # loader's fixed point
         extLib = self;
+        # The core's own package set -- BY VALUE identical to the `pkgs`
+        # module argument (the builders hand this very set to the module
+        # system), but reached without going through `config`. That is the
+        # only difference and the only reason it exists: an `imports` entry
+        # decided by an IFD probe cannot force the module argument without
+        # recursing through the fixed point it is being assembled for. See
+        # importIfNixOr's `pkgs` argument (lib/imports/import-if-nix-or.nix)
+        # for the mechanism and why a call site building its own nixpkgs is
+        # not an acceptable substitute.
+        builderPkgs = core.pkgs;
       };
 
       # Shadowing a builder-owned name used to "work" and produce a
@@ -543,7 +555,7 @@ let
           null
         else
           throw ''
-            nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the reserved name(s) ${lib.concatStringsSep ", " shadowed}. `inputs`, `rootPath` and `extLib` are builder-owned -- derived from the builder's own arguments, so overriding them here changes what MODULES see without changing what the builder did. `hostname`, `tags`, `group`, `users`, `inputPkgs`, `channels` and `username` are reserved because modules read them through the `nixpkgsLibExtensions.*` options (and `config.networking.hostName` / the `username` module argument) -- a specialArg of the same name would hand modules a value those options do not hold. `pkgs`, `lib`, `config`, `options` and `modulesPath` belong to the module system itself. Set the corresponding builder argument instead -- it goes wherever `system`/`patches` do: a direct `mkNixosSystem`/`mkHomeConfiguration` call, or in a hosts attrset's `_defaults`, a `_groups` entry, or host `${hostname}`'s own entry -- or pick a different specialArg name.
+            nixpkgs-lib-extensions: host `${hostname}`: specialArgs may not redefine the reserved name(s) ${lib.concatStringsSep ", " shadowed}. `inputs`, `rootPath`, `extLib` and `builderPkgs` are builder-owned -- derived from the builder's own arguments, so overriding them here changes what MODULES see without changing what the builder did. `hostname`, `tags`, `group`, `users`, `inputPkgs`, `channels` and `username` are reserved because modules read them through the `nixpkgsLibExtensions.*` options (and `config.networking.hostName` / the `username` module argument) -- a specialArg of the same name would hand modules a value those options do not hold. `pkgs`, `lib`, `config`, `options` and `modulesPath` belong to the module system itself. Set the corresponding builder argument instead -- it goes wherever `system`/`patches` do: a direct `mkNixosSystem`/`mkHomeConfiguration` call, or in a hosts attrset's `_defaults`, a `_groups` entry, or host `${hostname}`'s own entry -- or pick a different specialArg name.
           '';
 
       # `specialArgs` already carries any per-host `extra.specialArgs`,
