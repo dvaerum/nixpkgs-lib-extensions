@@ -32,6 +32,15 @@
       pkgs.git
       # referenced through GIT_SSH_COMMAND for git+ssh refs
       pkgs.openssh
+      # `desktop.enable` defaults to TRUE, and the script's guard is
+      # `command -v notify-send || return 0` -- so without this the
+      # option is a SILENT no-op on any host that does not happen to
+      # have notify-send ambient, which a systemd user service usually
+      # does not. Found the hard way: notify-send was absent from the
+      # login PATH, the system profile, the user profile and a user
+      # service's PATH on the one machine running this, so the built-in
+      # desktop notification had never fired once.
+      pkgs.libnotify
     ]
     ++ extraInputs;
     text = builtins.readFile ../scripts/home-manager-auto-upgrade.sh;

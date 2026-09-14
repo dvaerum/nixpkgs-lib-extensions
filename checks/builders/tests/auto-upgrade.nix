@@ -4,6 +4,7 @@
 # re-resolution, state file) is covered by checks/auto-upgrade/script.nix.
 {
   lib,
+  pkgs,
   myLib,
   inputs,
   system,
@@ -183,6 +184,26 @@ in
     && lib.hasInfix "--git-credentials" launcher
     && lib.hasInfix "/run/secrets/hm-git-credentials" launcher
     && lib.hasInfix "StrictHostKeyChecking=accept-new" launcher;
+
+  # ── desktop.enable must actually be able to notify ──────────────────
+  # It defaults to TRUE, and the script's guard is
+  # `command -v notify-send || return 0` -- so without libnotify in the
+  # wrapper's own runtimeInputs the option is a silent no-op on any host
+  # that does not happen to have notify-send ambient. This machine did
+  # not: `notify-send` was absent from the login PATH, the system
+  # profile, the user profile, and a systemd user service resolved
+  # NOT-FOUND. A stub-based test cannot catch that -- the stub IS the
+  # thing being supplied -- so assert the real closure instead.
+  # Asserted on the WRAPPER, not the launcher: the launcher only names
+  # the wrapper by store path, and the PATH that matters is inside it.
+  auto-upgrade-provides-notify-send =
+    let
+      real = import ../../../lib/nixos/internal/auto-upgrade-script.nix {
+        inherit pkgs;
+        homeManager = pkgs.hello; # irrelevant here; only the PATH is under test
+      };
+    in
+    lib.hasInfix "libnotify" (builtins.readFile "${real.upgrade}/bin/hm-auto-upgrade");
 
   # ── reporting ──
   auto-upgrade-status-command-installed = lib.any (
