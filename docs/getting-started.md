@@ -787,7 +787,7 @@ someone uses: the new generation needs a **reboot** -- now what?
 ```nix
 buildNixosConfigurations {
   _defaults = {
-    inherit inputs;
+    inherit inputs system;
     systemAutoUpgradeFlakeRef = "git+https://example.org/nixos-config.git";
   };
   laptop = { };
@@ -1008,8 +1008,11 @@ built through `config.system.build.toplevel`, `home-<name>` through
 hosts or two homes cannot share a name, and a host can never clash with
 a home.
 
-Either single-purpose builder's output works too, since both halves
-default to empty:
+Either half on its own works too, since both default to empty. Note
+that `buildNixosConfigurations`/`buildHomeConfigurations` return a BARE
+attrset keyed by name, not one wrapped under `nixosConfigurations` --
+so name the key, otherwise the unknown keys are ignored and you get an
+empty `checks` set that gates nothing:
 
 ```nix
 checks = extLib.checksForConfigurations {
@@ -1054,7 +1057,7 @@ generations on every consuming host the moment it was updated.
 |---|---|---|
 | `keepDays` | `30` | delete generations older than this |
 | `keepGenerations` | `10` | never delete this many newest, whatever their age |
-| `schedule` | `"weekly"` | applied to nixpkgs' own `nix.gc` timer |
+| `schedule` | `"weekly"` | `OnCalendar` for this module's own timer |
 | `randomizedDelaySec` | `3600` | a GC is heavy on I/O; a fleet should not start together |
 | `dryRun` | `false` | report what would go, delete nothing |
 
@@ -1276,9 +1279,12 @@ body. This table is the complete list the builders add:
 | `rootPath` | the root of the `hosts/<hostname>` convention |
 | `builderPkgs` | the builder's own package set -- see below |
 
-`builderPkgs` is the same package set as the `pkgs` module argument,
-with the same overlays and nixpkgs patches applied; the builders hand
-that very set to the module system. What differs is how you reach it:
+`builderPkgs` is the package set the builders hand to the module
+system, with the builder's own `overlays` and nixpkgs `patches`
+applied. It is what `pkgs` is built from rather than a second nixpkgs.
+(Not a synonym for `pkgs`: nixpkgs composes any module-level
+`nixpkgs.overlays` on top, and those reach `pkgs` but not
+`builderPkgs`.) The difference that matters here is how you reach it:
 `builderPkgs` does not go through `config`, so it is the one usable
 from an `imports` entry that has to run an import-from-derivation probe
 to decide what to import -- `extLib.importIfNix builderPkgs

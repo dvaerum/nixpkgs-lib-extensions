@@ -406,7 +406,7 @@ with a `default` shaped to match.
 # CI-safe secrets: locally imported, an
 # encrypted blob on CI becomes { }. In a module reached through this
 # library's builders, `extLib` and `builderPkgs` are both specialArgs
-# they provide -- and inside an `imports` list it MUST be
+# they provide -- and inside an `imports` list use
 # `builderPkgs`, never the `pkgs` module argument (see importIfNixOr's
 # `pkgs` argument for why: the probe is IFD, and forcing the module
 # argument recurses through the fixed point being assembled).
@@ -440,8 +440,10 @@ importIfNix :: pkgs -> Path -> Any | { }
 
 - **pkgs**
   A package set used to build the validity probe (IFD). In an
-  `imports` list this must be `builderPkgs`, not the `pkgs` module
-  argument -- see `importIfNixOr`'s `pkgs` argument for the mechanism.
+  `imports` list it must not be the `pkgs` module argument; modules
+  reached through this library's builders get `builderPkgs` for
+  exactly that -- see `importIfNixOr`'s `pkgs` argument for the
+  mechanism and for what to pass when you are not using them.
 
 - **path**
   The path (or absolute path string) to inspect and maybe import.
@@ -493,10 +495,12 @@ Content validity cannot be checked in pure evaluation, so the probe
 runs `nix-instantiate --parse` in a small derivation --
 import-from-derivation, built during evaluation on the machine doing
 the evaluating (`preferLocalBuild`, no substitution), and cached per
-file content. IFD is REQUIRED: any evaluation using
-`importIfNix`/`importIfNixOr` fails under
-`--no-allow-import-from-derivation` (the builders' `patches`
-argument shares this constraint).
+file content. IFD is REQUIRED for any call that REACHES the probe --
+an existing `.nix` file, or a directory with a `default.nix` -- and
+such a call fails under `--no-allow-import-from-derivation` (the
+builders' `patches` argument shares this constraint). The cheap
+guards run first, so a missing path or an unsupported extension
+still returns the default there, warning as usual.
 
 All three pure-eval escape routes were tried against upstream Nix
 2.34.8 and every one aborts past `builtins.tryEval`, which catches
@@ -574,8 +578,11 @@ importIfNixOr :: pkgs -> Path -> Any -> Any
   assembled for -- "infinite recursion encountered", which the module
   system diagnoses as "you probably reference `config` in `imports`".
   Modules reached through this library's builders get `builderPkgs`
-  for exactly this: the same package set (same overlays, same
-  patches) reached without going through `config`. A hand-rolled
+  for exactly this: the set the builder hands to the module system,
+  with its `overlays` and nixpkgs `patches` applied, reached without
+  going through `config`. (A module-level `nixpkgs.overlays` composes
+  onto `pkgs` and not onto this, so the two are not always equal --
+  for a parse probe that difference does not matter.) A hand-rolled
   `import inputs.nixpkgs { ... }` at the call site also escapes the
   recursion, but probes with a nixpkgs the host is not built from.
   Anywhere OTHER than an `imports` list -- an option value in a module
@@ -960,7 +967,9 @@ buildNixosConfigurations ::
   - `loginReactivateEveryLogin`
   - `homeAutoUpgrade` (keep standalone homes current on a timer; see
     `homeManagerAutoUpgradeModule`. Ignored by this builder, which
-    produces no homes -- it applies through `buildConfigurations`)
+    produces no STANDALONE homes -- a system-managed home switches
+    with its host and never gets a timer. Applies through
+    `buildConfigurations`)
   - `homeAutoUpgradeFlakeRef` (the LIVE ref that timer tracks -- always
     explicit; `loginFlakeRef` is never reused for it, see
     `homeManagerAutoUpgradeModule`)
@@ -1006,9 +1015,11 @@ Turn built configurations into a flake `checks` output, so that
 "does the whole fleet still evaluate and build" is one command
 (`nix flake check`) rather than a habit.
 
-Takes what `buildConfigurations` returns — or either single-purpose
-builder's output, since both halves default to empty — and produces
-the per-system attrset a flake's `checks` expects.
+Takes what `buildConfigurations` returns and produces the per-system
+attrset a flake's `checks` expects. Both halves default to empty, so
+one alone is fine -- but the single-purpose builders return a BARE
+attrset keyed by name, so their output must be named
+(`{ inherit nixosConfigurations; }`), not passed straight in.
 
 Two things it does that a hand-written `mapAttrs` over
 `nixosConfigurations` reliably gets wrong:
@@ -1071,9 +1082,13 @@ checksForConfigurations ::
 
 - **configurations**
   An attrset with `nixosConfigurations` and/or `homeConfigurations`.
-  Both default to `{ }`, so the output of `buildConfigurations`,
-  `buildNixosConfigurations` or `buildHomeConfigurations` can be
-  passed as-is.
+  Both default to `{ }`, so `buildConfigurations`' output can be
+  passed as-is and either half may be absent. The single-purpose
+  builders return a BARE attrset of configurations rather than one
+  under either key, so wrap theirs:
+  `checksForConfigurations { inherit nixosConfigurations; }`.
+  Passing such an output directly is not an error -- it simply
+  matches neither key and yields no checks at all.
 
 
 
@@ -1415,8 +1430,10 @@ nixpkgs release, with a WARNING for any home actually relying on
 that moving default, naming the two pin recipes: the user's own
 `home.nix`, or fleet-wide via a shared `homeModules` entry.
 
-- **nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions, traceDiscoveredUsers**
-  Shared options (see `mkNixosSystem`).
+- **nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions, traceDiscoveredUsers, homeAutoUpgrade, homeAutoUpgradeFlakeRef**
+  Shared options (see `mkNixosSystem`). The last two are live here:
+  this builder produces exactly the standalone homes
+  `homeManagerAutoUpgradeModule` times.
 
 
 
@@ -1710,6 +1727,35 @@ mkNixosSystem :: Attribute -> NixosSystem
   Bootstrap re-activates on every login instead of only the first.
   Irrelevant without `loginHomes` users. Default `false`.
 
+- **systemAutoUpgrade**
+  Whether the host gets `systemAutoUpgradeModule` -- nixpkgs'
+  `system.autoUpgrade` as the build/stage engine, plus this library's
+  reboot policy on top. Default `true`; with no
+  `systemAutoUpgradeFlakeRef` it creates no units and WARNS, which is
+  the point. Everything else is set through the
+  `services.systemAutoUpgrade.*` options.
+
+- **systemAutoUpgradeFlakeRef**
+  The flake reference that host rebuilds itself from. Must be a LIVE
+  ref (`git+https://...`); a flake INPUT resolves to an immutable
+  store path and can never see a new commit. Default `null`.
+
+- **systemGarbageCollect**
+  Whether the host gets `systemGarbageCollectModule`, which prunes
+  old system generations on its own timer and never writes `nix.gc`.
+  Default `false`; tune via `services.systemGarbageCollect.*`.
+
+- **homeAutoUpgrade, homeAutoUpgradeFlakeRef**
+  The same pair for STANDALONE homes, feeding
+  `homeManagerAutoUpgradeModule`. Accepted and IGNORED by this
+  builder, which produces no standalone homes -- they apply through
+  `mkHomeConfiguration`/`buildHomeConfigurations`, and through
+  `buildConfigurations`, which builds the same standalone homes
+  (every user with a `home.nix`, not just `loginHomes` ones). A
+  system-managed home never gets a timer at all: it switches with the
+  host.
+  Defaults `true` / `null`.
+
 - **wrapHomeManagerSwitch**
   Whether a login-managed user's host also gets a detach-safe
   `home-manager` on `environment.systemPackages`, so they can manually
@@ -1954,10 +2000,14 @@ declares (which is also where credentials go, since a host's
 `configuration.nix` has `config.sops.*` in scope and a flake's
 argument list does not).
 
-The home-manager counterpart is `homeManagerAutoUpgradeModule`. The
-two are deliberately independent: this one never triggers that one.
-A standalone home has its own daily timer, and coupling them would
-only add a way for one to fail because the other did.
+The home-manager counterpart is `homeManagerAutoUpgradeModule`. This
+one never triggers that one -- a standalone home has its own daily
+timer. The single link runs the other way and is defensive: the home
+unit carries an `ExecCondition` that fails while
+`nixos-upgrade.service` is active
+(`services.homeManagerAutoUpgrade.deferToSystemUpgrade`, on by
+default), so a home run never STARTS mid-system-upgrade. The library
+wires that itself because it knows both unit names.
 
 ### Example
 

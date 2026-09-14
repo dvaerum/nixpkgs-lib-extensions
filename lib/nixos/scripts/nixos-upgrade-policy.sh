@@ -248,7 +248,7 @@ EOF
 # our own `systemd-run --machine` creates. Neither is a person, and a
 # deny-list would have to keep guessing at the next class systemd adds.
 #
-# A person can also WAIVE their own block, which is the only way to say
+# A person can also give PERMISSION despite their own block, the only way to say
 # "go ahead" short of logging out. Consent is per user and carries an
 # expiry, so a yes given this morning cannot fire this afternoon.
 permission_active() {

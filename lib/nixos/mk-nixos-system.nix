@@ -293,6 +293,35 @@ in
     : Bootstrap re-activates on every login instead of only the first.
     : Irrelevant without `loginHomes` users. Default `false`.
 
+    systemAutoUpgrade
+    : Whether the host gets `systemAutoUpgradeModule` -- nixpkgs'
+    : `system.autoUpgrade` as the build/stage engine, plus this library's
+    : reboot policy on top. Default `true`; with no
+    : `systemAutoUpgradeFlakeRef` it creates no units and WARNS, which is
+    : the point. Everything else is set through the
+    : `services.systemAutoUpgrade.*` options.
+
+    systemAutoUpgradeFlakeRef
+    : The flake reference that host rebuilds itself from. Must be a LIVE
+    : ref (`git+https://...`); a flake INPUT resolves to an immutable
+    : store path and can never see a new commit. Default `null`.
+
+    systemGarbageCollect
+    : Whether the host gets `systemGarbageCollectModule`, which prunes
+    : old system generations on its own timer and never writes `nix.gc`.
+    : Default `false`; tune via `services.systemGarbageCollect.*`.
+
+    homeAutoUpgrade, homeAutoUpgradeFlakeRef
+    : The same pair for STANDALONE homes, feeding
+    : `homeManagerAutoUpgradeModule`. Accepted and IGNORED by this
+    : builder, which produces no standalone homes -- they apply through
+    : `mkHomeConfiguration`/`buildHomeConfigurations`, and through
+    : `buildConfigurations`, which builds the same standalone homes
+    : (every user with a `home.nix`, not just `loginHomes` ones). A
+    : system-managed home never gets a timer at all: it switches with the
+    : host.
+    : Defaults `true` / `null`.
+
     wrapHomeManagerSwitch
     : Whether a login-managed user's host also gets a detach-safe
     : `home-manager` on `environment.systemPackages`, so they can manually

@@ -27,7 +27,7 @@ afternoon.
   --session         allow until you log out, with no expiry
   --cancel          withdraw consent
   --status          show the current state and exit
-  --system          act on the machine-wide waiver instead of your own.
+  --system          act on the machine-wide permission instead of your own.
                     Outranks every session; needs root.
 
 Examples:

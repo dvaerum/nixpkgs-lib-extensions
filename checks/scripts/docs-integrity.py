@@ -200,6 +200,48 @@ for f in md_files + nix_files:
             f"patches/{name}: discoverPatches only applies .patch/.nix, so a "
             f"`patches = [ ./patches ]` directory would skip this with a warning")
 
+# RULE 6 -- README's "full reference of ..." enumeration must name every
+# `lib.nixos.*` function. It drifted twice: four exports were added over a
+# year and the sentence kept naming seven, so a README-only reader never
+# learned that auto-upgrade, generation retention and checksForConfigurations
+# exist. docs/lib.md is the source of truth here because gen-docs regenerates
+# it from the doc comments and `docs-up-to-date` gates that, so a new export
+# lands in lib.md on its own and only the README can lag.
+#
+# ONE DIRECTION: every documented export must be listed. The reverse would
+# false-positive the moment the sentence deliberately mentions something that
+# is not a lib.nixos function.
+_readme = pathlib.Path("README.md").read_text()
+_libmd = pathlib.Path("docs/lib.md").read_text()
+_exports = set(re.findall(r"^## `lib\.nixos\.([A-Za-z]+)`", _libmd, re.M))
+_m = re.search(r"for the full reference of(.*?)\.\n", _readme, re.S)
+if not _m:
+    bad("readme-export-list", "README.md",
+        "the 'for the full reference of ...' sentence is gone -- RULE 6 has "
+        "nothing to check; re-point it or drop the rule")
+else:
+    _listed = set(re.findall(r"`([A-Za-z]+)`", _m.group(1)))
+    _line = _readme[:_m.start()].count("\n") + 1
+    for _name in sorted(_exports - _listed):
+        bad("readme-export-list", f"README.md:{_line}",
+            f"`{_name}` is documented in docs/lib.md as lib.nixos.{_name} but "
+            f"the README's reference list does not name it")
+
+# RULE 7 -- docs/architecture.md's file-layout map must name every file under
+# lib/nixos/. It went stale by seven files at once (four public exports plus
+# three internal script helpers), and since that map is how a contributor
+# learns what exists, a missing entry reads as "this does not exist".
+#
+# ONE DIRECTION again: every real file must be named. The reverse would
+# false-positive on prose that mentions a file from another namespace.
+_arch = pathlib.Path("docs/architecture.md")
+_arch_txt = _arch.read_text()
+for _d in ("lib/nixos", "lib/nixos/internal"):
+    for _f in sorted(pathlib.Path(_d).glob("*.nix")):
+        if _f.name not in _arch_txt:
+            bad("architecture-file-map", str(_arch),
+                f"{_f} exists but is not named in the file-layout map")
+
 if fail:
     print("docs-integrity: %d problem(s)\n" % len(fail), file=sys.stderr)
     for x in fail:

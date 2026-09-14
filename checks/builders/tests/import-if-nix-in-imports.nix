@@ -10,8 +10,9 @@
 # must be BUILT to decide what goes in `imports`, building it forces
 # `pkgs`, `pkgs` comes out of the config fixed point, and that fixed point
 # is what the imports list is being assembled for. `builderPkgs` is the
-# same package set reached without going through `config`, so it is the
-# one that works -- these assertions are what keeps that true.
+# set the builder hands to the module system, reached without going
+# through `config`, so it is the one that works -- these assertions are
+# what keeps that true.
 {
   lib,
   myLib,
@@ -81,8 +82,11 @@ in
   import-if-nix-in-imports-reaches-homes =
     (homeProbe validHomeModule).config.home.sessionVariables ? FROM_IMPORT_IF_NIX;
 
-  # ── builderPkgs is the builder's OWN package set, not a second nixpkgs:
-  # same overlays, same patches, same store paths as the module-arg `pkgs`.
+  # ── builderPkgs is the builder's OWN package set, not a second
+  # nixpkgs: the builder's overlays and patches, same store paths as the
+  # module-arg `pkgs` for a host that adds no module-level
+  # `nixpkgs.overlays` (those compose onto `pkgs` only -- which is why
+  # this probe host deliberately declares none).
   # A call site building its own `import inputs.nixpkgs { ... }` to escape
   # the recursion silently probes with a DIFFERENT nixpkgs than the host
   # is built from, which is the trap this argument exists to remove.

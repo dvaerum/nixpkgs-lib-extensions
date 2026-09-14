@@ -113,7 +113,9 @@ in
     : - `loginReactivateEveryLogin`
     : - `homeAutoUpgrade` (keep standalone homes current on a timer; see
     :   `homeManagerAutoUpgradeModule`. Ignored by this builder, which
-    :   produces no homes -- it applies through `buildConfigurations`)
+    :   produces no STANDALONE homes -- a system-managed home switches
+    :   with its host and never gets a timer. Applies through
+    :   `buildConfigurations`)
     : - `homeAutoUpgradeFlakeRef` (the LIVE ref that timer tracks -- always
     :   explicit; `loginFlakeRef` is never reused for it, see
     :   `homeManagerAutoUpgradeModule`)

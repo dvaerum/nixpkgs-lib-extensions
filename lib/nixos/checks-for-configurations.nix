@@ -6,9 +6,11 @@
     "does the whole fleet still evaluate and build" is one command
     (`nix flake check`) rather than a habit.
 
-    Takes what `buildConfigurations` returns — or either single-purpose
-    builder's output, since both halves default to empty — and produces
-    the per-system attrset a flake's `checks` expects.
+    Takes what `buildConfigurations` returns and produces the per-system
+    attrset a flake's `checks` expects. Both halves default to empty, so
+    one alone is fine -- but the single-purpose builders return a BARE
+    attrset keyed by name, so their output must be named
+    (`{ inherit nixosConfigurations; }`), not passed straight in.
 
     Two things it does that a hand-written `mapAttrs` over
     `nixosConfigurations` reliably gets wrong:
@@ -71,9 +73,13 @@
 
     configurations
     : An attrset with `nixosConfigurations` and/or `homeConfigurations`.
-    : Both default to `{ }`, so the output of `buildConfigurations`,
-    : `buildNixosConfigurations` or `buildHomeConfigurations` can be
-    : passed as-is.
+    : Both default to `{ }`, so `buildConfigurations`' output can be
+    : passed as-is and either half may be absent. The single-purpose
+    : builders return a BARE attrset of configurations rather than one
+    : under either key, so wrap theirs:
+    : `checksForConfigurations { inherit nixosConfigurations; }`.
+    : Passing such an output directly is not an error -- it simply
+    : matches neither key and yields no checks at all.
   */
   checksForConfigurations =
     {

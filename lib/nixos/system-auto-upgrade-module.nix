@@ -37,10 +37,14 @@
     `configuration.nix` has `config.sops.*` in scope and a flake's
     argument list does not).
 
-    The home-manager counterpart is `homeManagerAutoUpgradeModule`. The
-    two are deliberately independent: this one never triggers that one.
-    A standalone home has its own daily timer, and coupling them would
-    only add a way for one to fail because the other did.
+    The home-manager counterpart is `homeManagerAutoUpgradeModule`. This
+    one never triggers that one -- a standalone home has its own daily
+    timer. The single link runs the other way and is defensive: the home
+    unit carries an `ExecCondition` that fails while
+    `nixos-upgrade.service` is active
+    (`services.homeManagerAutoUpgrade.deferToSystemUpgrade`, on by
+    default), so a home run never STARTS mid-system-upgrade. The library
+    wires that itself because it knows both unit names.
 
     # Example
 

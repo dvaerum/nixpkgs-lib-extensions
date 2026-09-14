@@ -414,6 +414,39 @@ in
     builtins.all (n: builtins.elem n bulleted) shared.allowedDefaultArgs
     && builtins.all (n: builtins.elem n shared.allowedDefaultArgs) bulleted;
 
+  # The same drift guard for mkNixosSystem, whose `# Arguments` list is a
+  # definition list rather than bullets. It went unguarded and five live
+  # arguments went undocumented -- systemAutoUpgrade among them, which
+  # defaults to TRUE, so a reader of that reference could not learn that
+  # hosts try to upgrade themselves unless told otherwise.
+  #
+  # ONE DIRECTION only, deliberately: every accepted argument must be
+  # documented, but not every documented term must be accepted -- the doc
+  # also defines terms for things that are not builder arguments. And
+  # mkHomeConfiguration is deliberately NOT checked this way: it accepts a
+  # pile of system-side arguments it openly ignores (userModule,
+  # loginHomes, wrapHomeManagerSwitch, ...) and correctly says nothing
+  # about them, so the same rule there would be noise, and a noisy gate
+  # gets switched off.
+  mk-nixos-system-arguments-documented =
+    let
+      doc = builtins.readFile (repoDir + "/lib/nixos/mk-nixos-system.nix");
+      hostsArgs = import (repoDir + "/lib/nixos/internal/hosts-args.nix") {
+        inherit lib;
+        self = myLib;
+      };
+      # `extra` is a hosts-attrset key resolved before a builder runs, so
+      # it is not one of this function's arguments (see builderArgProblems)
+      accepted = lib.filter (k: k != "extra") hostsArgs.allowedHostArgs;
+      # a definition-list TERM: an indented line whose next line starts the
+      # `: ` description. Several terms share one line, comma-separated.
+      termLines = lib.concatMap (m: if lib.isList m then m else [ ]) (
+        builtins.split "\n    ([a-zA-Z][a-zA-Z, ]*)\n    : " doc
+      );
+      documented = lib.concatMap (l: lib.splitString ", " l) termLines;
+    in
+    builtins.all (n: builtins.elem n documented) accepted;
+
   # ── the complaints themselves, not merely "something threw" ──
   # tryEval discards the message, so each of the throws-assertions above is
   # equally satisfied by an unrelated failure. These pin the actual text.

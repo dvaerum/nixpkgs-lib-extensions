@@ -44,10 +44,12 @@
     runs `nix-instantiate --parse` in a small derivation --
     import-from-derivation, built during evaluation on the machine doing
     the evaluating (`preferLocalBuild`, no substitution), and cached per
-    file content. IFD is REQUIRED: any evaluation using
-    `importIfNix`/`importIfNixOr` fails under
-    `--no-allow-import-from-derivation` (the builders' `patches`
-    argument shares this constraint).
+    file content. IFD is REQUIRED for any call that REACHES the probe --
+    an existing `.nix` file, or a directory with a `default.nix` -- and
+    such a call fails under `--no-allow-import-from-derivation` (the
+    builders' `patches` argument shares this constraint). The cheap
+    guards run first, so a missing path or an unsupported extension
+    still returns the default there, warning as usual.
 
     All three pure-eval escape routes were tried against upstream Nix
     2.34.8 and every one aborts past `builtins.tryEval`, which catches
@@ -125,8 +127,11 @@
     : assembled for -- "infinite recursion encountered", which the module
     : system diagnoses as "you probably reference `config` in `imports`".
     : Modules reached through this library's builders get `builderPkgs`
-    : for exactly this: the same package set (same overlays, same
-    : patches) reached without going through `config`. A hand-rolled
+    : for exactly this: the set the builder hands to the module system,
+    : with its `overlays` and nixpkgs `patches` applied, reached without
+    : going through `config`. (A module-level `nixpkgs.overlays` composes
+    : onto `pkgs` and not onto this, so the two are not always equal --
+    : for a parse probe that difference does not matter.) A hand-rolled
     : `import inputs.nixpkgs { ... }` at the call site also escapes the
     : recursion, but probes with a nixpkgs the host is not built from.
     : Anywhere OTHER than an `imports` list -- an option value in a module

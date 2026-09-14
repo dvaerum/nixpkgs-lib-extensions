@@ -21,7 +21,7 @@
     # CI-safe secrets: locally imported, an
     # encrypted blob on CI becomes { }. In a module reached through this
     # library's builders, `extLib` and `builderPkgs` are both specialArgs
-    # they provide -- and inside an `imports` list it MUST be
+    # they provide -- and inside an `imports` list use
     # `builderPkgs`, never the `pkgs` module argument (see importIfNixOr's
     # `pkgs` argument for why: the probe is IFD, and forcing the module
     # argument recurses through the fixed point being assembled).
@@ -55,8 +55,10 @@
 
     pkgs
     : A package set used to build the validity probe (IFD). In an
-    : `imports` list this must be `builderPkgs`, not the `pkgs` module
-    : argument -- see `importIfNixOr`'s `pkgs` argument for the mechanism.
+    : `imports` list it must not be the `pkgs` module argument; modules
+    : reached through this library's builders get `builderPkgs` for
+    : exactly that -- see `importIfNixOr`'s `pkgs` argument for the
+    : mechanism and for what to pass when you are not using them.
 
     path
     : The path (or absolute path string) to inspect and maybe import.

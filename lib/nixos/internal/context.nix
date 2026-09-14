@@ -503,18 +503,21 @@ let
       # and are guarded by the module system.
       # Note: `pkgs` deliberately not included — modules already receive it from
       # the module system, and `specialArgs.pkgs` would override that wiring
-      # (nixpkgs warns about it). `builderPkgs` below is that same package
-      # set under a name the module system does not own, for the one job
-      # the module argument cannot do.
+      # (nixpkgs warns about it). `builderPkgs` below is that package set
+      # reached under a name the module system does not own, for the one
+      # job the module argument cannot do.
       builderOwned = {
         inherit inputs rootPath;
         # the specialArg keeps its user-facing name; its value is the lib
         # loader's fixed point
         extLib = self;
-        # The core's own package set -- BY VALUE identical to the `pkgs`
-        # module argument (the builders hand this very set to the module
-        # system), but reached without going through `config`. That is the
-        # only difference and the only reason it exists: an `imports` entry
+        # The core's own package set -- the very set the builders hand to
+        # the module system as `nixpkgs.pkgs`, reached without going
+        # through `config`. (Not always identical to the `pkgs` module
+        # argument: nixpkgs composes any module-level `nixpkgs.overlays`
+        # on top of it, and those reach `pkgs` but not this -- see
+        # checks/builders/tests/import-if-nix-in-imports.nix.) Being
+        # reachable outside the fixed point is why it exists: an `imports` entry
         # decided by an IFD probe cannot force the module argument without
         # recursing through the fixed point it is being assembled for. See
         # importIfNixOr's `pkgs` argument (lib/imports/import-if-nix-or.nix)

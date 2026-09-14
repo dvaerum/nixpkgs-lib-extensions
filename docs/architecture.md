@@ -27,9 +27,14 @@ lib/
     discover-user-registry.nix      discoverUserRegistry (the users tree)
     mk-nixos-system.nix             mkNixosSystem (public face)
     mk-home-configuration.nix       mkHomeConfiguration (public face)
+    checks-for-configurations.nix   checksForConfigurations
     home-manager-bootstrap-module.nix  the login bootstrap module
+    home-manager-auto-upgrade-module.nix  homeManagerAutoUpgradeModule
+    system-auto-upgrade-module.nix  systemAutoUpgradeModule
+    system-garbage-collect-module.nix  systemGarbageCollectModule
     normal-user-module.nix          default per-user account module
-    scripts/                        the bootstrap shell script
+    scripts/                        the bootstrap, auto-upgrade and
+                                    generation-retention shell scripts
     internal/         PRIVATE: never listed in the loader, reachable
                       only by direct import
       shared.nix      thin aggregator the builder files import
@@ -47,7 +52,10 @@ lib/
       ext-options.nix the nixpkgsLibExtensions.* options module
       module-level.nix  the module-level/flake-level lib split
       priorities.nix  the builder's own option-definition priority
-      bootstrap-script.nix  wiring for scripts/
+      bootstrap-script.nix  wiring for scripts/ -- as are
+      auto-upgrade-script.nix, system-auto-upgrade-script.nix and
+      garbage-collect-script.nix, each building the writeShellApplication
+      wrappers its module and its check both use
 checks/             eval-time tests (builders/tests/*.nix), VM tests,
                     fixtures, and the example that doubles as the
                     flake template
@@ -58,9 +66,9 @@ docs/lib.md         GENERATED from doc comments (scripts/gen-docs.sh);
 Every file the loader names takes one calling convention,
 `{ lib, self, ... }`: nixpkgs' `lib`, and `self` -- the fully
 assembled extension lib (a fixed point), so a file can call a sibling
-without importing it. (`lib/default.nix` is the loader itself, and
-`internal/bootstrap-script.nix` is a builder helper called
-`{ pkgs, homeManager }` -- neither goes through that convention.)
+without importing it. (`lib/default.nix` is the loader itself, and the
+`internal/*-script.nix` builder helpers take `pkgs` plus the packages a
+check swaps out -- none of these go through that convention.)
 
 ## From a hosts attrset to systems and homes
 
@@ -128,8 +136,10 @@ package set, the extended lib, and everything auto-collected from the
 inputs (inputs.nix decides what each input contributes and how
 `inputContributions` narrows it). `mkContext` adds the thin per-host
 layer: specialArgs, plus the guard that throws if a host's own
-`specialArgs` redefines a name the builder already owns (`hostname`,
-`tags`, `pkgs`, ...). The builder-derived per-host values reach
+`specialArgs` redefines a reserved name -- builder-owned (`inputs`,
+`rootPath`, `extLib`, `builderPkgs`), option-backed (`hostname`,
+`tags`, ...) or the module system's own (`pkgs`, `lib`, ...). The
+builder-derived per-host values reach
 modules as the `nixpkgsLibExtensions.*` options (ext-options.nix),
 imported into every system and every home.
 

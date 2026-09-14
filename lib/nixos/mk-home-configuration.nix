@@ -106,8 +106,10 @@ in
     that moving default, naming the two pin recipes: the user's own
     `home.nix`, or fleet-wide via a shared `homeModules` entry.
 
-    nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions, traceDiscoveredUsers
-    : Shared options (see `mkNixosSystem`).
+    nixpkgs, group, specialArgs, tags, patches, nixpkgsConfig, overlays, allowedUnfreePackages, permittedInsecurePackages, rootPath, homeManager, inputContributions, traceDiscoveredUsers, homeAutoUpgrade, homeAutoUpgradeFlakeRef
+    : Shared options (see `mkNixosSystem`). The last two are live here:
+    : this builder produces exactly the standalone homes
+    : `homeManagerAutoUpgradeModule` times.
   */
   # The long definition-list term above must stay on ONE line: gen-docs
   # recognizes a term by a one-line lookahead to the `:` marker, and a

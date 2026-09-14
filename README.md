@@ -21,8 +21,11 @@ from one `users/` directory tree. One `buildConfigurations` call
 produces both outputs from one hosts attrset. See
 [docs/lib.md](docs/lib.md) for the full reference of
 `buildConfigurations`, `buildNixosConfigurations`,
-`buildHomeConfigurations`, `mkNixosSystem`, `mkHomeConfiguration`,
-`homeManagerBootstrapModule` and `normalUserModule`.
+`buildHomeConfigurations`, `checksForConfigurations`, `mkNixosSystem`,
+`mkHomeConfiguration`, `discoverUserRegistry`,
+`homeManagerBootstrapModule`,
+`normalUserModule`, `homeManagerAutoUpgradeModule`,
+`systemAutoUpgradeModule` and `systemGarbageCollectModule`.
 
 The quickest start is the flake template — a complete, working example
 (it is evaluated by this repo's own `nix flake check`, so it cannot rot):
