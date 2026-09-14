@@ -394,8 +394,8 @@ own fallback value.
 
 Because the fallback is always the plain attrset `{ }`, this function
 is for module-shaped or plain-attrset content only -- fine for
-`imports = [ (extLib.importIfNix pkgs ./private.nix) ]`, where the
-module system applies whatever comes back either way. If `path` is
+`imports = [ (extLib.importIfNix builderPkgs ./private.nix) ]`, where
+the module system applies whatever comes back either way. If `path` is
 expected to be a FUNCTION you call yourself, `{ }` is not callable and
 that call throws on the fallback branch; use `importIfNixOr` instead,
 with a `default` shaped to match.
@@ -403,13 +403,22 @@ with a `default` shaped to match.
 ### Example
 
 ```nix
-# extLib = inputs.nixpkgs-lib-extensions.lib
 # CI-safe secrets: locally imported, an
-# encrypted blob on CI becomes { }
-imports = [
-  (extLib.importIfNix pkgs ./private.nix)
-];
+# encrypted blob on CI becomes { }. In a module reached through this
+# library's builders, `extLib` and `builderPkgs` are both specialArgs
+# they provide -- and inside an `imports` list it MUST be
+# `builderPkgs`, never the `pkgs` module argument (see importIfNixOr's
+# `pkgs` argument for why: the probe is IFD, and forcing the module
+# argument recurses through the fixed point being assembled).
+{ extLib, builderPkgs, ... }:
+{
+  imports = [
+    (extLib.importIfNix builderPkgs ./private.nix)
+  ];
+}
 
+# elsewhere -- outside an imports list, any package set will do
+# extLib = inputs.nixpkgs-lib-extensions.lib
 # warns: unsupported extension
 extLib.importIfNix pkgs ./README.md
 => { }
@@ -430,7 +439,9 @@ importIfNix :: pkgs -> Path -> Any | { }
 ### Arguments
 
 - **pkgs**
-  A package set used to build the validity probe (IFD).
+  A package set used to build the validity probe (IFD). In an
+  `imports` list this must be `builderPkgs`, not the `pkgs` module
+  argument -- see `importIfNixOr`'s `pkgs` argument for the mechanism.
 
 - **path**
   The path (or absolute path string) to inspect and maybe import.
@@ -478,15 +489,40 @@ that is not valid Nix) -- a skipped import is never a silent mystery.
 When scanning directories, filter names by the `.nix` suffix first so
 intentionally skipped files do not warn.
 
-Content validity cannot be checked in pure evaluation (a parse error
-from `import` is uncatchable, and `builtins.readFile` refuses binary
-files), so the probe runs `nix-instantiate --parse` in a small
-derivation -- import-from-derivation, built during evaluation on the
-machine doing the evaluating (`preferLocalBuild`, no substitution),
-and cached per file content. IFD is REQUIRED: any evaluation using
+Content validity cannot be checked in pure evaluation, so the probe
+runs `nix-instantiate --parse` in a small derivation --
+import-from-derivation, built during evaluation on the machine doing
+the evaluating (`preferLocalBuild`, no substitution), and cached per
+file content. IFD is REQUIRED: any evaluation using
 `importIfNix`/`importIfNixOr` fails under
 `--no-allow-import-from-derivation` (the builders' `patches`
 argument shares this constraint).
+
+All three pure-eval escape routes were tried against upstream Nix
+2.34.8 and every one aborts past `builtins.tryEval`, which catches
+only `throw`/`assert`: `import` of an unparseable file, `import` of
+ciphertext, and `readFile` of it (`error: the contents of the file
+... cannot be represented as a Nix string`). Of the 118 builtins
+that Nix exposes, `readFile` is the only one that reads content and
+it refuses those bytes; `hashFile` reads any bytes but returns only
+a whole-file digest, and nothing offers a byte-range read. So the
+verdict needs a process, a process needs a derivation, and a
+derivation needs a package set -- which is where the `pkgs` argument
+below comes from, and why `builderPkgs` has to exist at all.
+
+What would lift it: Determinate Nix (a fork, NOT upstream -- checked,
+upstream's tree has no wasm anywhere) has `builtins.wasm`, whose
+`read_file` host function is documented as handling exactly the files
+`builtins.readFile` refuses. Running the check in WebAssembly during
+evaluation would need no derivation, no package set and no
+`builderPkgs`, and the module can be supplied as inline text (`wat`),
+so not even a committed binary. Two reasons it is not used here: it
+sits behind the `wasm-builtin` experimental feature on a fork this
+library's consumers do not run, so the IFD path has to stay anyway;
+and while `readIfPlainOr`'s magic-byte test ports over directly, THIS
+function's parse verdict would need a Nix parser compiled to WASM.
+Feature-detecting `builtins ? wasm` could bypass the probe where
+available -- it could never replace it.
 
 Only an actual parse REJECTION counts as invalid content: when
 nix-instantiate fails for any other reason (a crash, a killed
@@ -589,7 +625,10 @@ readIfPlain :: pkgs -> Path -> String
 ### Arguments
 
 - **pkgs**
-  A package set used to build the header-check probe (IFD).
+  A package set used to build the header-check probe (IFD). The
+  ordinary `pkgs` module argument is fine: this returns a string, so
+  its callers are option values in a module body, never `imports`
+  entries -- see `importIfNixOr`'s `pkgs` argument for that case.
 
 - **path**
   The path (or absolute path string) to inspect and maybe read.
@@ -622,7 +661,10 @@ another NUL byte), whatever the plaintext underneath actually is.
 That header is checked byte-for-byte in a small derivation
 (import-from-derivation, `preferLocalBuild`) -- IFD, like
 `importIfNixOr`'s parse probe, just testing a fixed magic value
-instead of running a Nix parser.
+instead of running a Nix parser. Being only a magic-value test, this
+is the one of the two that a pure in-evaluation byte read would
+replace outright; see `importIfNixOr`'s own discussion of why no such
+read exists in upstream Nix and what would provide one.
 
 Accepted: a regular file whose first bytes are not that header.
 Symlinks are followed and classified by what they resolve to (a link

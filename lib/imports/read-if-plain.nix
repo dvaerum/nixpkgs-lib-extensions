@@ -27,7 +27,10 @@
     # Arguments
 
     pkgs
-    : A package set used to build the header-check probe (IFD).
+    : A package set used to build the header-check probe (IFD). The
+    : ordinary `pkgs` module argument is fine: this returns a string, so
+    : its callers are option values in a module body, never `imports`
+    : entries -- see `importIfNixOr`'s `pkgs` argument for that case.
 
     path
     : The path (or absolute path string) to inspect and maybe read.

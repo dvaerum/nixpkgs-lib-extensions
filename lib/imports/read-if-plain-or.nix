@@ -25,7 +25,10 @@
     That header is checked byte-for-byte in a small derivation
     (import-from-derivation, `preferLocalBuild`) -- IFD, like
     `importIfNixOr`'s parse probe, just testing a fixed magic value
-    instead of running a Nix parser.
+    instead of running a Nix parser. Being only a magic-value test, this
+    is the one of the two that a pure in-evaluation byte read would
+    replace outright; see `importIfNixOr`'s own discussion of why no such
+    read exists in upstream Nix and what would provide one.
 
     Accepted: a regular file whose first bytes are not that header.
     Symlinks are followed and classified by what they resolve to (a link

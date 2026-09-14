@@ -40,15 +40,40 @@
     When scanning directories, filter names by the `.nix` suffix first so
     intentionally skipped files do not warn.
 
-    Content validity cannot be checked in pure evaluation (a parse error
-    from `import` is uncatchable, and `builtins.readFile` refuses binary
-    files), so the probe runs `nix-instantiate --parse` in a small
-    derivation -- import-from-derivation, built during evaluation on the
-    machine doing the evaluating (`preferLocalBuild`, no substitution),
-    and cached per file content. IFD is REQUIRED: any evaluation using
+    Content validity cannot be checked in pure evaluation, so the probe
+    runs `nix-instantiate --parse` in a small derivation --
+    import-from-derivation, built during evaluation on the machine doing
+    the evaluating (`preferLocalBuild`, no substitution), and cached per
+    file content. IFD is REQUIRED: any evaluation using
     `importIfNix`/`importIfNixOr` fails under
     `--no-allow-import-from-derivation` (the builders' `patches`
     argument shares this constraint).
+
+    All three pure-eval escape routes were tried against upstream Nix
+    2.34.8 and every one aborts past `builtins.tryEval`, which catches
+    only `throw`/`assert`: `import` of an unparseable file, `import` of
+    ciphertext, and `readFile` of it (`error: the contents of the file
+    ... cannot be represented as a Nix string`). Of the 118 builtins
+    that Nix exposes, `readFile` is the only one that reads content and
+    it refuses those bytes; `hashFile` reads any bytes but returns only
+    a whole-file digest, and nothing offers a byte-range read. So the
+    verdict needs a process, a process needs a derivation, and a
+    derivation needs a package set -- which is where the `pkgs` argument
+    below comes from, and why `builderPkgs` has to exist at all.
+
+    What would lift it: Determinate Nix (a fork, NOT upstream -- checked,
+    upstream's tree has no wasm anywhere) has `builtins.wasm`, whose
+    `read_file` host function is documented as handling exactly the files
+    `builtins.readFile` refuses. Running the check in WebAssembly during
+    evaluation would need no derivation, no package set and no
+    `builderPkgs`, and the module can be supplied as inline text (`wat`),
+    so not even a committed binary. Two reasons it is not used here: it
+    sits behind the `wasm-builtin` experimental feature on a fork this
+    library's consumers do not run, so the IFD path has to stay anyway;
+    and while `readIfPlainOr`'s magic-byte test ports over directly, THIS
+    function's parse verdict would need a Nix parser compiled to WASM.
+    Feature-detecting `builtins ? wasm` could bypass the probe where
+    available -- it could never replace it.
 
     Only an actual parse REJECTION counts as invalid content: when
     nix-instantiate fails for any other reason (a crash, a killed
