@@ -6,6 +6,12 @@
 # `nixPackage`/`extraInputs` exist for the same reason `homeManager` does:
 # writeShellApplication puts runtimeInputs AHEAD of the ambient PATH, so a
 # test cannot shadow them from outside -- they have to be swappable here.
+#
+# extraInputs comes FIRST in the list, not last. Appended, it could only
+# shadow things this file does not provide -- so the moment a real
+# package supplying the same binary was added (libnotify, for
+# notify-send), the real one won and every stub silently stopped being
+# used. Prepending is what actually makes the seam work.
 {
   pkgs,
   homeManager,
@@ -15,7 +21,7 @@
 {
   upgrade = pkgs.writeShellApplication {
     name = "hm-auto-upgrade";
-    runtimeInputs = [
+    runtimeInputs = extraInputs ++ [
       homeManager
       pkgs.coreutils # date, stat, mkdir, cat, head, id, uname
       pkgs.gnused # state-file field extraction
@@ -41,8 +47,7 @@
       # service's PATH on the one machine running this, so the built-in
       # desktop notification had never fired once.
       pkgs.libnotify
-    ]
-    ++ extraInputs;
+    ];
     text = builtins.readFile ../scripts/home-manager-auto-upgrade.sh;
   };
 
