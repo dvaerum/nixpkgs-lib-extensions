@@ -241,6 +241,19 @@
         zfs-newline-probe = import ./checks/zfs-passphrase-newline.nix {
           pkgs = nixpkgs.legacyPackages.${system};
         };
+
+        # Likewise on-demand, and for the same reason the ZFS probe is:
+        # it boots a guest to reach ONE thing nothing cheaper can. The
+        # reboot policy's "nobody is logged in" branch needs loginctl to
+        # genuinely report zero user sessions, which never happens on a
+        # machine someone is using -- and permission cannot substitute,
+        # since it bypasses the reboot window by design and routes around
+        # the branch. Run it with `nix build .#no-sessions-vm` when
+        # touching the session or window logic.
+        no-sessions-vm = import ./checks/system-auto-upgrade/no-sessions-vm.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+          inherit myLib;
+        };
       });
 
       # `nix fmt` -- the same script the `formatting` check runs with --check,
