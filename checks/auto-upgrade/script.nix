@@ -185,6 +185,25 @@ pkgs.runCommand "home-manager-auto-upgrade-script-test" { } ''
   captured=$("$up" "''${base[@]}" --on-result ${pkgs.writeShellScript "show-result" ''echo "HOOK result=$RESULT target=$TARGET"''} 2>&1)
   echo "$captured" | grep -q "HOOK result=0 target=alice"
 
+  # ── a hook can report its OWN health back through the state file ──
+  # An onResult hook that pushes notifications cannot tell anyone when
+  # the pushing itself is broken -- the broken channel is the one it
+  # would use. `warn=` is the way back: the status line already runs at
+  # every shell start and does not depend on notifications working.
+  : > "$state"
+  printf 'status=ok\ntimestamp=T\ntarget=alice\nwarn=alert delivery failed\n' > "$state"
+  "$status" "$state" | grep -q "alert delivery failed"
+  # a warning is news even on an otherwise SUCCESSFUL run -- that is the
+  # whole point, the run worked and the reporting did not
+  msg=$("$status" --only-failures "$state" 2>&1) || rc=$?
+  echo "$msg" | grep -q "alert delivery failed"
+  # ... but it is not itself a failure: exit stays 0
+  rc=0; "$status" --only-failures "$state" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ]
+  # no warn field -> nothing extra printed
+  printf 'status=ok\ntimestamp=T\ntarget=alice\n' > "$state"
+  [ -z "$("$status" --only-failures "$state")" ]
+
   # ── the status line: silent on success, loud on failure ──
   "$up" "''${base[@]}"
   [ -z "$("$status" --only-failures "$state")" ]

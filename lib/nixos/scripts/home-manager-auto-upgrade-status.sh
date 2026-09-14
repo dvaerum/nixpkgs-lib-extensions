@@ -34,12 +34,25 @@ status="$(sed -n 's/^status=//p' "${state_file}" | head -n1)"
 exit_code="$(sed -n 's/^exit_code=//p' "${state_file}" | head -n1)"
 target="$(sed -n 's/^target=//p' "${state_file}" | head -n1)"
 timestamp="$(sed -n 's/^timestamp=//p' "${state_file}" | head -n1)"
+# A free-form warning an `onResult` hook wrote back. The hook is the one
+# thing that CANNOT report its own failures through its own channel --
+# a broken notification setup has no way to announce that it is broken.
+# This line does not depend on notifications working, so it is where
+# that news belongs. Not a failure in itself: the run succeeded, only
+# the reporting of it did not.
+warn="$(sed -n 's/^warn=//p' "${state_file}" | head -n1)"
 
 if [ "${status}" = "ok" ]; then
+  # A warning is news even on a successful run -- that IS the case worth
+  # surfacing, the upgrade worked and telling you about it did not.
+  if [ -n "${warn}" ]; then
+    echo "home-manager auto-upgrade: last succeeded ${timestamp} (${target}) -- WARNING: ${warn}"
+    exit 0
+  fi
   [ "${only_failures}" = "1" ] && exit 0
   echo "home-manager auto-upgrade: last succeeded ${timestamp} (${target})"
   exit 0
 fi
 
-echo "home-manager auto-upgrade: FAILED ${timestamp} (${target:-unresolved}, exit ${exit_code:-?}) -- journalctl --user -u hm-auto-upgrade" >&2
+echo "home-manager auto-upgrade: FAILED ${timestamp} (${target:-unresolved}, exit ${exit_code:-?})${warn:+ -- WARNING: ${warn}} -- journalctl --user -u hm-auto-upgrade" >&2
 exit 1

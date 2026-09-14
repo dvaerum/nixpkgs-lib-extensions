@@ -341,6 +341,17 @@
                   exit code), `$TARGET` and `$STATE_FILE` exported --
                   for a consumer's own alerting, on top of (not instead
                   of) the built-in reporting.
+
+                  A hook that pushes notifications has a blind spot: it
+                  cannot announce that its own pushing is broken,
+                  because the broken channel is the one it would use.
+                  Appending `warn=<text>` to `$STATE_FILE` is the way
+                  back -- `hm-auto-upgrade-status` prints it at every
+                  interactive shell start, including on an otherwise
+                  successful run, and that path does not depend on
+                  notifications working. It is not treated as a
+                  failure: the exit code stays 0, because the upgrade
+                  did succeed.
                 '';
               };
 
