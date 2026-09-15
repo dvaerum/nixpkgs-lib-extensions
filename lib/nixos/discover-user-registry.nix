@@ -56,10 +56,7 @@
       # `outPath` isn't a real flake input's), which pure evaluation
       # refuses to even STAT, throwing before pathExists returns a plain
       # `false` -- same "a foreign, unpredictable value must not break
-      # unrelated evaluation" reasoning as inputs.nix's `libOf`. Caught by
-      # actually hitting it (mkNixosSystem's auto-discovery trigger calls
-      # this on whatever loginFlakeRef/inputs.self happens to be, even for
-      # callers who never set either up for this), not assumed safe.
+      # unrelated evaluation" reasoning as inputs.nix's `libOf`.
       entriesProbe = builtins.tryEval (if lib.pathExists dir then builtins.readDir dir else { });
       entries = if entriesProbe.success then entriesProbe.value else { };
 

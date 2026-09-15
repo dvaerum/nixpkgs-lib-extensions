@@ -119,11 +119,11 @@ their first login by the bootstrap service instead.
 Independently of that split, a user with a `home.nix` of their own is
 also exported as a flake output -- `homeConfigurations."alice"`, plus
 `"alice@laptop"` where she has a per-host override for a host this
-flake declares (both keys exist when both apply; a user whose ONLY
-override is for an undeclared host gets nothing here). For a
-`loginHomes` user that output is what the bootstrap applies; for
-everyone else it is simply also buildable by hand. Either way you normally never run
-`home-manager` yourself.
+flake declares (a user whose ONLY override is for an undeclared host
+gets nothing here; see [The users tree](#the-users-tree) for every
+output shape). For a `loginHomes` user that output is what the
+bootstrap applies; for everyone else it is simply also buildable by
+hand. Either way you normally never run `home-manager` yourself.
 
 ## The users tree
 
@@ -257,8 +257,7 @@ that by default. `home.nix` and the account itself are never gated by
 it: an untrusted user still gets a real account and their home applies
 normally, just not their own `configuration.nix` content. **This
 default is `false` everywhere `loginFlakeRef` is used, including a
-bare, non-list value** -- a deliberate breaking-change default, since
-no trust concept existed before it. The same username discovered in
+bare, non-list value.** The same username discovered in
 more than one source throws (ambiguous -- pick one source per user).
 
 This is a separate concern from the login bootstrap: `loginFlakeRef`
@@ -373,8 +372,7 @@ this flake never declares.
 `buildConfigurations`'s return value is an ordinary attrset -- `{ nixosConfigurations =
 ...; homeConfigurations = ...; }`, nothing more -- so it composes with
 `//` exactly like hand-written outputs, as in the `devShells`/`packages`
-merge above. Nothing about using the builders confines your flake to
-only the two outputs they produce.
+merge above.
 
 Later snippets in this guide assume these bindings (`extLib`,
 `inputs`, `system`) from this skeleton.
@@ -382,14 +380,14 @@ Later snippets in this guide assume these bindings (`extLib`,
 The reserved `_defaults` entry (never a valid hostname -- a hostname
 cannot START with `_`) supplies arguments to every host. Merging is
 per-argument and the host entry wins entirely, no deep-merging of
-lists or attrsets -- see `buildNixosConfigurations`'s doc comment
-(`docs/lib.md`) for the full merge rule, **including one exception**:
+lists or attrsets. **One exception**:
 `rootPath`/`loginFlakeRef`/`traceDiscoveredUsers` are scanned for
-users ONCE from `_defaults` alone and shared by every host regardless
-of what a host (or `_groups` entry) sets for them itself -- a host
-needing a genuinely different tree needs `mkNixosSystem` called
-directly for it. For "shared base plus per-host extras" put the
-addition in that host's `extra` slot instead:
+users ONCE from `_defaults` alone -- a `_groups` entry's values are not
+consulted either -- and shared by every host, so a host needing a
+genuinely different tree needs `mkNixosSystem` called
+directly for it -- see `buildNixosConfigurations`'s doc comment
+(`docs/lib.md`) for the full rule. For "shared base plus per-host
+extras" put the addition in that host's `extra` slot instead:
 
 ```nix
 _defaults = { modules = [ ./base.nix ]; homeModules = [ ./direnv.nix ]; };
@@ -511,9 +509,8 @@ runs
 home-manager switch --flake <loginFlakeRef>#<user>
 ```
 
-(or `#<user>@<host>` where that user has a `hosts/<host>/` override --
-the bootstrap picks whichever the flake actually exports, decided when
-the system is built, not at login)
+(or `#<user>@<host>` where the flake exports one -- resolved at build
+time, see below)
 
 in the background (login is never blocked). A stamp file in
 `$XDG_STATE_HOME` (default `~/.local/state`) prevents re-runs; pass
@@ -960,10 +957,9 @@ already in `known_hosts`, `sshExtraOptions` if you want to trade that
 away.
 
 The credential chain is narrowed to store-only **whether or not** a file
-is configured -- `GIT_TERMINAL_PROMPT=0` does not govern a credential
-*helper*, and an ambient one blocks forever on "complete authentication
-in your browser", which for an unattended unit is a hang rather than an
-error.
+is configured: `GIT_TERMINAL_PROMPT=0` does not govern a credential
+*helper*, and an ambient one hangs an unattended unit exactly as
+described for the home timer above.
 
 ### Reporting
 
@@ -1070,12 +1066,11 @@ watching is the one left with nothing to roll back to. A retention
 **floor** cannot be written as a flag.
 
 This module therefore runs on **its own timer** and never writes
-`nix.gc`. That is deliberate, and was learned the hard way: the first
-version rode `nix.gc`'s timer and set `automatic = true` to get one.
-On a host that disables calendar GC on purpose -- because the sweep was
-deleting local builds that had no GC root, say -- that version was
-silently inert, and on a host that had simply never set the option it
-would have switched the sweep on. Neither is a library's business.
+`nix.gc`. Riding `nix.gc`'s timer (setting `automatic = true` to get
+one) would be silently inert on a host that disables calendar GC on
+purpose -- because the sweep was deleting local builds with no GC root,
+say -- and would switch the sweep on for a host that had simply never
+set the option. Neither is a library's business.
 
 So the division is:
 
@@ -1087,11 +1082,9 @@ So the division is:
 Reclaiming happens in the same unit: after pruning, `collect` (on by
 default) runs `nix-collect-garbage`. Deleting a generation only makes
 its closure collectable, so without that step the generation count falls
-while the disk stays exactly as full.
-
-That is still not `nix.gc`. The collection runs here, on this module's
-timer, so a host is free to disable calendar GC for its own reasons and
-keep using this.
+while the disk stays exactly as full. That collection still runs on this
+module's timer, not `nix.gc`'s, so a host can disable calendar GC for
+its own reasons and keep using this.
 
 Turn `collect` off on a host where a scheduled sweep is unwanted --
 typically one where people leave `nix build` outputs around with no
@@ -1260,9 +1253,7 @@ other catalog, and opted out per channel the same way.
 
 The home-manager input itself is detected by capability -- by what it
 EXPORTS (the shape only the real home-manager flake has), not by what
-you NAMED it in your `inputs` -- and its NixOS module is never
-auto-imported absent an explicit selection (the builder wires it in
-deliberately where system-managed homes need it).
+you NAMED it in your `inputs`.
 
 ## What your modules receive
 
@@ -1288,11 +1279,11 @@ applied. It is what `pkgs` is built from rather than a second nixpkgs.
 `builderPkgs` does not go through `config`, so it is the one usable
 from an `imports` entry that has to run an import-from-derivation probe
 to decide what to import -- `extLib.importIfNix builderPkgs
-./private.nix` for a git-crypt-encrypted file. Reaching for the `pkgs`
-module argument there instead forces the config fixed point the imports
-list is being assembled for, and evaluation fails with "infinite
-recursion encountered". In a module's BODY, ordinary `pkgs` is correct
-and `builderPkgs` buys nothing.
+./private.nix` for a git-crypt-encrypted file. The `pkgs` module
+argument there fails with "infinite recursion encountered" instead --
+see `importIfNixOr`'s `pkgs` argument in [lib.md](lib.md) for why. In a
+module's BODY, ordinary `pkgs` is correct and `builderPkgs` buys
+nothing.
 
 Everything else the builder derives is declared as ordinary module
 options under `nixpkgsLibExtensions.*`, in every NixOS module set and
@@ -1311,10 +1302,9 @@ so it cannot silently miss one:
 
 `channels` here is this option's own name for "which `nixpkgs-*` input
 this package set came from" -- e.g. `channels.stable` for a
-`nixpkgs-stable` input. It is unrelated to a NixOS release channel
-(`nixos-unstable`, `25.05`, ...) and to the `inputContributions`
-"channel" from the previous section (a KIND of export); the three
-just happen to share a name.
+`nixpkgs-stable` input. Not a NixOS release channel, and not the
+`inputContributions` "channel" of [Selecting what an input
+contributes](#selecting-what-an-input-contributes).
 
 Home-manager modules additionally receive `username` (whose home) as a
 module argument.
@@ -1399,11 +1389,10 @@ laptop = {
 
 ## Patching nixpkgs itself
 
-For a nixpkgs fix that has not reached your channel yet -- a NixOS
-release channel like `nixos-unstable`, unrelated to this doc's other
-uses of "channel" above -- typically an open pull request, a host can
-build from a patched COPY of the nixpkgs source. Save the PR's diff
-into your repo:
+For a nixpkgs fix that has not reached your nixpkgs RELEASE channel
+(`nixos-unstable`, `25.05`, ...) yet -- typically an open pull request
+-- a host can build from a patched COPY of the nixpkgs source. Save
+the PR's diff into your repo:
 
 ```
 mkdir -p patches
@@ -1490,12 +1479,9 @@ merged option value, also labeling the boot menu via
   `loginFlakeRef`) must be set -- all are required, and the service
   is simply absent otherwise. Users NOT in `loginHomes` never touch
   the bootstrap: their homes activate with `nixos-rebuild switch`.
-- A `loginFlakeRef` **list** (see [Combining several trees on one
-  host](#combining-several-trees-on-one-host)) throws at build time if
-  the host also has a `loginHomes` user needing resolution -- the
-  bootstrap always resolves one shared flake for every login-managed
-  user, so there is no per-user tree to pick from at that level. Keep
-  multi-tree users system-managed, or use a single value here.
+- A `loginFlakeRef` **list** throws at build time if the host also has
+  a `loginHomes` user needing resolution -- see [Combining several
+  trees on one host](#combining-several-trees-on-one-host).
 - A `loginHomes` name is only checked across the WHOLE hosts attrset:
   a name the tree does not have at all throws (typo), but a name
   that merely does not apply to some host is legal there -- one shared

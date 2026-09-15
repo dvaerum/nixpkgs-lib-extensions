@@ -7,11 +7,10 @@
 # writeShellApplication puts runtimeInputs AHEAD of the ambient PATH, so a
 # test cannot shadow them from outside -- they have to be swappable here.
 #
-# extraInputs comes FIRST in the list, not last. Appended, it could only
-# shadow things this file does not provide -- so the moment a real
-# package supplying the same binary was added (libnotify, for
-# notify-send), the real one won and every stub silently stopped being
-# used. Prepending is what actually makes the seam work.
+# extraInputs comes FIRST in the list, not last: appended, it could only
+# shadow things this file does not provide, so adding a real package for
+# the same binary (libnotify, for notify-send) makes the real one win and
+# every stub silently stop being used.
 {
   pkgs,
   homeManager,
@@ -42,10 +41,7 @@
       # `command -v notify-send || return 0` -- so without this the
       # option is a SILENT no-op on any host that does not happen to
       # have notify-send ambient, which a systemd user service usually
-      # does not. Found the hard way: notify-send was absent from the
-      # login PATH, the system profile, the user profile and a user
-      # service's PATH on the one machine running this, so the built-in
-      # desktop notification had never fired once.
+      # does not.
       pkgs.libnotify
     ];
     text = builtins.readFile ../scripts/home-manager-auto-upgrade.sh;

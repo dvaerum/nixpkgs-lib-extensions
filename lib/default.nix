@@ -17,11 +17,6 @@
 # here. That is also what makes `lib/nixos/internal/` private: those files
 # are imported directly by their consumers and never appear in this list,
 # so they are unreachable through the exported lib.
-#
-# (This replaced a readDir loader whose folders had TWO calling protocols:
-# a folder with default.nix received nixpkgs' `lib`, one without received
-# only `self`. Everything under lib/nixos and lib/imports therefore had no
-# `lib` at all and was written in raw `builtins`.)
 lib.fix (
   self:
   let

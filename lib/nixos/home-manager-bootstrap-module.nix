@@ -144,12 +144,10 @@ in
       # `loginFlakeRefSources` (registry.nix) lets DIFFERENT users live in
       # DIFFERENT trees for account/configuration.nix discovery, but this
       # module resolves ONE effectiveFlakeRef/attrFor pair shared by every
-      # user in usersHome -- there is no per-user tree here to pick from.
-      # Fail loudly rather than silently falling back to attrFor's
-      # historical `<u>@<hostname>` guess against what could be the wrong
-      # tree entirely. Only matters when there is an actual login-managed
-      # user to resolve on THIS host -- a fleet-wide `loginHomes` that
-      # simply doesn't apply here is unaffected.
+      # user in usersHome. Fail loudly rather than silently falling back
+      # to attrFor's `<u>@<hostname>` guess against what could be the
+      # wrong tree entirely. Only matters when a login-managed user
+      # actually needs resolving on THIS host.
       effectiveFlakeRef =
         if lib.isList loginFlakeRef && usersHome != [ ] then
           throw "homeManagerBootstrapModule: host `${hostname}`: loginFlakeRef is a list (multiple users trees), which the login bootstrap cannot resolve per-user -- it activates every loginHomes user against ONE flake. Keep ${lib.concatStringsSep ", " usersHome} system-managed instead (drop them from loginHomes), or use a single, non-list loginFlakeRef for this host."
@@ -166,14 +164,13 @@ in
       # script: the script cannot see the target flake's outputs, so a
       # name it guesses wrong fails silently at someone's next login on
       # one machine. `?` on a real flake input is cheap and forces no
-      # home. A STRING loginFlakeRef is not introspectable at all, so it
-      # keeps the historical `<u>@<hostname>` form.
+      # home.
       attrFor =
         u:
         # Only decide from outputs we can actually SEE. A string ref, or an
         # input whose `homeConfigurations` is not readable here (a mock, or
-        # a flake whose outputs this evaluation does not force), keeps the
-        # historical `<u>@<hostname>` form rather than guessing; the throw
+        # a flake whose outputs this evaluation does not force), keeps
+        # the `<u>@<hostname>` form rather than guessing; the throw
         # is reserved for the one case we can prove wrong -- the outputs
         # exist and contain neither name.
         if !(lib.isAttrs effectiveFlakeRef) || !(effectiveFlakeRef ? homeConfigurations) then

@@ -105,9 +105,8 @@ flowchart TD
    `rootPath`/`loginFlakeRef`/`traceDiscoveredUsers` alone (never a
    host's or `_groups`' own values for these three) -- shared
    verbatim as `registry`/`args.usersTree` by every host, so a
-   consumer of the plan never rescans (see `buildNixosConfigurations`'s
-   doc comment for the consumer-facing consequence: a plan cannot give
-   two hosts two different users trees).
+   consumer of the plan never rescans. `buildNixosConfigurations`'s
+   doc comment states the consumer-facing consequence.
 
 `systemsFromPlan` calls `mkSystem core args` per host: it builds the
 context (`mkContext core`: lib, pkgs, specialArgs, collected modules)
@@ -145,8 +144,9 @@ imported into every system and every home.
 
 ## Things that are enforced, not remembered
 
-- `nix fmt` / `nix run .#gen-docs` -- the formatting and
-  docs-up-to-date checks run the exact same scripts.
+- `nix fmt` / `nix run .#gen-docs` (the README's "Working on this
+  repo") -- the formatting and docs-up-to-date checks run the exact
+  same scripts.
 - The loader's path list, the core-argument list, the `coreDefaults`
   table (context.nix's default value for each CORE argument --
   `patches`, `overlays`, `nixpkgsConfig`, ...), the argument allowlist

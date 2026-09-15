@@ -50,11 +50,11 @@ let
 
   # The `hosts/<hostname>` subdirectories a user's directory carries --
   # the hostnames that user has machine-specific config for. Same
-  # classification rules as `discoverUserRegistry`'s own scan of the users
-  # tree (see its doc comment): a subdirectory counts when it ships
-  # `home.nix` and/or `configuration.nix`, a dotfile or non-directory is
-  # skipped silently, and a directory with neither file warns rather than
-  # being silently ignored.
+  # classification rules as `discoverUserRegistry`'s scan of the users tree
+  # (see the table in its doc comment) with ONE exception: a subdirectory
+  # counts only when it ships `home.nix` and/or `configuration.nix`. In the
+  # users tree a bare `hosts/` is enough to make a user; nothing makes a
+  # host but those two files.
   discoverHostsForUser =
     userDir:
     let
@@ -174,9 +174,8 @@ let
 
   # Apply a host's own `users` filter to the tree: omitted (null) means
   # every user in the tree applies -- the default -- while a list selects
-  # exactly those, and `[ ]` gives a host with no users at all. Names
-  # not in the tree are
-  # a typo and throw, same bar as `loginHomes`.
+  # exactly those, and `[ ]` gives a host with no users at all. Names not
+  # in the tree are a typo and throw, same bar as `loginHomes`.
   filterUsers =
     fnName: hostname: selection: tree:
     if selection == null then
@@ -323,12 +322,10 @@ let
   # directory tree IS the declaration -- so this is the only way a user
   # comes into existence.
   #
-  # A STRING source cannot be read at evaluation time at all, so it
-  # yields no users -- stringFlakeRefWarning says so at the point it is
-  # passed. The SAME username discovered from more than one source is an
-  # error: two trees silently deciding who wins would be exactly the
-  # ambiguity this library throws on everywhere else (filterUsers'
-  # unknown-name throw, hostsProblems' reserved-key throw, ...).
+  # The SAME username discovered from more than one source is an error:
+  # two trees silently deciding who wins would be exactly the ambiguity
+  # this library throws on everywhere else (filterUsers' unknown-name
+  # throw, hostsProblems' reserved-key throw, ...).
   resolveUsers =
     {
       sources,

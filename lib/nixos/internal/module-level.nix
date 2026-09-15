@@ -36,10 +36,9 @@ in
   # an INPUT's lib export gets (see inputLibAdditions in ./context.nix): the
   # existing side wins, an addition can only ADD.
   #
-  # This repo used to `recursiveUpdate baseLib myLib` at all three sites, so
-  # its own names beat nixpkgs' silently, everywhere -- exactly the failure
-  # the input path goes to some trouble to prevent. A future nixpkgs function
-  # colliding with one of ours would have lost without a word.
+  # A plain `recursiveUpdate baseLib myLib` would let this repo's names beat
+  # nixpkgs' silently: a future nixpkgs function colliding with one of ours
+  # would lose without a word.
   #
   # Three classes, matching that path:
   #   name nixpkgs does not use  -> added

@@ -41,7 +41,7 @@ in
     (same rule as a host's `extra`); it cannot set `group` itself -- its
     attribute name IS the group. When `_groups` is present, every host's
     `group` must name one of its entries (unknown names throw); without
-    `_groups`, `group` is the free-form classification it always was.
+    `_groups`, `group` is a free-form classification.
 
     Users are declared by the `users/` directory tree (see
     `mkNixosSystem`'s own `users` argument), not by an attrset here; a
@@ -113,21 +113,18 @@ in
     : - `loginReactivateEveryLogin`
     : - `homeAutoUpgrade` (keep standalone homes current on a timer; see
     :   `homeManagerAutoUpgradeModule`. Ignored by this builder, which
-    :   produces no STANDALONE homes -- a system-managed home switches
-    :   with its host and never gets a timer. Applies through
+    :   produces no STANDALONE homes; applies through
     :   `buildConfigurations`)
     : - `homeAutoUpgradeFlakeRef` (the LIVE ref that timer tracks -- always
     :   explicit; `loginFlakeRef` is never reused for it, see
     :   `homeManagerAutoUpgradeModule`)
-    : - `systemAutoUpgrade` (keep the HOST current on a timer, and own the
-    :   reboot policy nixpkgs' own module has no place for; see
-    :   `systemAutoUpgradeModule`)
+    : - `systemAutoUpgrade` (keep the HOST current on a timer, and own
+    :   its reboot policy; see `systemAutoUpgradeModule`)
     : - `systemAutoUpgradeFlakeRef` (the LIVE ref that timer tracks --
     :   always explicit, for the same reason its home twin is)
     : - `systemGarbageCollect` (prune stale system generations on a
     :   timer; see `systemGarbageCollectModule`. OFF by default, unlike
-    :   the auto-upgrade arguments -- deleting a generation cannot be
-    :   undone)
+    :   the auto-upgrade arguments)
     : - `traceDiscoveredUsers`
     : - `wrapHomeManagerSwitch`
     : - `tags`

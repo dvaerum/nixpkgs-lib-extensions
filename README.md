@@ -2,9 +2,8 @@
 
 A library for building a fleet of NixOS hosts and their home-manager
 homes from one declarative description: a hosts attrset plus a `users/`
-directory tree. It started as a handful of extra `nixpkgs.lib`
-functions (some written here, some collected), and those helpers are
-still included -- but the builders are what this repo is about now.
+directory tree. The extra `nixpkgs.lib` helpers it grew out of are
+still included, but the builders are what this repo is about.
 
 **Documentation:**
 
@@ -37,14 +36,10 @@ nix flake init -t github:dvaerum/nixpkgs-lib-extensions
 Highlights:
 
 - A `users/` directory tree declares the users -- one directory each,
-  with `home.nix` (home-manager config) and/or `configuration.nix`
-  (NixOS config: account, groups, ...). A `users/<name>/hosts/<host>/`
-  subdirectory holds the same two files for one host, merged on top
-  there; a user with only `hosts/` subdirectories exists on those hosts
-  alone. A host's `users` argument selects which of the tree get an
-  account and a `"<user>@<host>"` home on it (omitted = all, `[ ]` =
-  none); the tree's host-less `"<user>"` homes are unaffected either
-  way.
+  with `home.nix` and/or `configuration.nix`, plus `hosts/<host>/`
+  subdirectories carrying the same two files for one host. A host's
+  `users` argument selects which of the tree apply to it. See
+  [The users tree](docs/getting-started.md#the-users-tree).
 - Home outputs are keyed by user: `homeConfigurations."alice"` (usable
   on any machine) and `"alice@laptop"` where she has a per-host
   override.
@@ -52,18 +47,15 @@ Highlights:
   `hosts/<hostname>.nix` or `hosts/<hostname>/configuration.nix`.
 - Arguments shared by every host go in one `_defaults` entry; host
   entries override per argument, and unknown keys throw instead of
-  being silently ignored. Exception: the users tree itself is
-  discovered once from `_defaults` and shared by every host, so a
-  host's own `rootPath`/`loginFlakeRef` cannot give it a different
-  tree (see `buildNixosConfigurations`).
-- User accounts are created automatically (`normalUserModule`). Homes
-  are built into the system by default (home-manager NixOS module);
-  users listed in `loginHomes` get theirs provisioned on first login
-  instead, by a systemd user service.
+  being silently ignored. The users tree is the one exception to
+  per-host overriding -- see `buildNixosConfigurations`'s doc comment.
+- User accounts are created automatically (`normalUserModule`), and
+  each home activates by one of two mechanisms: with the system, or on
+  first login for users listed in `loginHomes`. See
+  [Two home mechanisms](docs/getting-started.md#two-home-mechanisms).
 - NixOS modules, overlays, home-manager modules and lib extensions
-  exported by your flake inputs are wired in automatically; each
-  input's own `lib` is namespaced as `lib.<inputName>`, and your
-  flake's own `lib` output as `lib.flake`.
+  exported by your flake inputs are wired in automatically. See
+  [What your inputs contribute automatically](docs/getting-started.md#what-your-inputs-contribute-automatically).
 
 ## Stability
 
@@ -80,12 +72,9 @@ namespaced duplicates exist for discoverability.
   GPT partitions, pool, standard datasets plus one per user, optional
   encryption and extra datasets.
   [lib/disko/README.md](lib/disko/README.md) collects the operational
-  notes that go with it, such as the hybrid-MBR case some bootroms
-  need: the Raspberry Pi 3's bootrom only understands MBR partition
-  tables, not the GPT this library uses, so a hybrid MBR overlays an
-  MBR-compatible view of the firmware partition on top of the GPT disk.
-  `legacyBoot = true` automates it; the README also documents the
-  manual fallback.
+  notes that go with it, such as the hybrid MBR a Raspberry Pi bootrom
+  needs to find its firmware partition on a GPT disk
+  (`legacyBoot = true`, plus the manual fallback).
 - `importIfNix` / `importIfNixOr`: friendly to git-crypt (see
   `readIfPlainOr`'s doc comment, `docs/lib.md`, for what git-crypt
   does to a checkout without the decryption key). A `private.nix`

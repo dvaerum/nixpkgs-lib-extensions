@@ -14,7 +14,7 @@
 #   --ssh-option <opt>        extra `ssh -o` option (repeatable)
 #   --git-credentials <path>  git-credentials-format file for HTTPS
 #   --pre-command <path>      shell fragment SOURCED before the switch
-#   --on-result <path>        shell fragment SOURCED after, sees $RESULT
+#   --on-result <path>        program EXECUTED after, sees $RESULT
 #   --desktop-notify          allow desktop notifications
 #
 # Unlike the login bootstrap, the target attribute is resolved HERE, at
@@ -127,12 +127,9 @@ notify() {
 }
 
 # ---------------------------------------------------- credential wiring
-# Force a NON-INTERACTIVE credential chain for this process only. The
-# default chain can include helpers (git-credential-oauth and friends)
-# that block FOREVER on "complete authentication in your browser" with no
-# timeout -- fatal for an unattended timer, and invisible: the unit just
-# hangs until RuntimeMaxSec kills it. GIT_CONFIG_* is read last and is
-# inherited by nix's own git subprocesses.
+# Force a NON-INTERACTIVE credential chain for this process only, so an
+# unattended timer can never sit at a prompt. GIT_CONFIG_* (set below) is
+# read last and is inherited by nix's own git subprocesses.
 export GIT_TERMINAL_PROMPT=0
 
 # A credential file readable by anyone else is refused rather than used

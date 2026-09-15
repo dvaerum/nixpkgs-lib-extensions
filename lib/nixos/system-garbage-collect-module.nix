@@ -16,14 +16,11 @@
     generations -- because the sweep was deleting local builds with no
     GC root, say. A module that rode that timer would be silently inert
     on such a host; one that switched it back on would break something
-    it was never asked to manage. Both were true of the first cut of
-    this module.
+    it was never asked to manage.
 
-    `nix.gc` also cannot express what this is for. It offers "delete
-    older than N days" and nothing else, so on a host that sat idle past
-    the cutoff it deletes every generation but the running one --
-    leaving no rollback target on precisely the machine that has been
-    unattended longest. A retention FLOOR cannot be written as a flag.
+    `nix.gc` also cannot express what this is for: it offers "delete
+    older than N days" and nothing else, so a retention FLOOR (see
+    `keepGenerations`) cannot be written as a flag.
 
     So: this module owns a timer of its own, decides which generations
     to delete -- older than `keepDays`, except the newest
@@ -189,10 +186,8 @@
                   collectable, so without this the generation count
                   falls while the disk stays exactly as full.
 
-                  It runs in this module's own unit. It does NOT switch
-                  on `nix.gc`, which is a policy this module never
-                  writes -- a host is free to disable calendar GC for
-                  its own reasons and still use this.
+                  It runs in this module's own unit, and never switches
+                  on `nix.gc`.
 
                   Turn it OFF on a host where a scheduled collection is
                   unwanted -- typically one where people leave `nix
@@ -237,20 +232,11 @@
               };
 
               # Its OWN timer, and deliberately NOT nixpkgs' `nix.gc`
-              # one. Generation retention and store collection are
-              # different jobs: a host may disable calendar GC for
-              # reasons that have nothing to do with generations --
-              # nixos-developer-system does, because the sweep was
-              # deleting local builds that had no GC root -- and a
-              # module that rode that timer would be silently inert
-              # there, or worse would switch it back on and break the
-              # thing it was never asked to manage.
-              #
-              # So this module never writes `nix.gc` at all. Pruning
-              # makes the old generations' store paths collectable; WHEN
-              # they are actually reclaimed stays the host's own policy,
-              # whether that is `nix.gc` on a calendar or
-              # `nix.settings.min-free` under pressure.
+              # one -- see this module's doc comment. Beyond what
+              # `collect` reclaims in this unit, WHEN the pruned
+              # generations' store paths are reclaimed stays the host's
+              # own policy (`nix.gc` on a calendar,
+              # `nix.settings.min-free` under pressure).
               systemd.timers.nixos-prune-generations = {
                 description = "Prune stale system-profile generations";
                 wantedBy = [ "timers.target" ];

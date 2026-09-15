@@ -20,11 +20,7 @@
     Returns a shell script FRAGMENT (a string), not a derivation -- splice
     it into a wrapper script (`interceptingWrapper` does this) or straight
     into a systemd unit's own `ExecStart` (a timer-triggered upgrade
-    service is exactly this: wrapping its own `home-manager switch` call
-    the same way protects it from the identical self-restart risk).
-    `command`, like `interceptingWrapper`'s `shouldDetach`, is raw shell
-    syntax spliced in verbatim (e.g. `"$real" "$@"`) -- not a Nix-modeled
-    argv list.
+    service running `home-manager switch` is exactly this).
 
     # Example
 

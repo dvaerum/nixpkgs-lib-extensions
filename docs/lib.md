@@ -268,10 +268,8 @@ declareZfsRootDisk :: Attribute -> Module
   partition in a hybrid MBR table, for a Raspberry-Pi-style bootrom
   that cannot read GPT at all; on `x86_64-linux` it adds a raw `EF02`
   partition for GRUB's BIOS+GPT boot embedding instead -- see the
-  PARTITIONS section above for why these are unrelated mechanisms
-  sharing one flag rather than one shared implementation. Throws if
-  combined with `defineBootPartitions`, or on any other platform.
-  Default `false`.
+  PARTITIONS section above. Throws if combined with
+  `defineBootPartitions`, or on any other platform. Default `false`.
 
 - **keySourceCommand**
   Overrides where the encryption key comes from. Default `null` (use
@@ -403,13 +401,10 @@ with a `default` shaped to match.
 ### Example
 
 ```nix
-# CI-safe secrets: locally imported, an
-# encrypted blob on CI becomes { }. In a module reached through this
-# library's builders, `extLib` and `builderPkgs` are both specialArgs
-# they provide -- and inside an `imports` list use
-# `builderPkgs`, never the `pkgs` module argument (see importIfNixOr's
-# `pkgs` argument for why: the probe is IFD, and forcing the module
-# argument recurses through the fixed point being assembled).
+# CI-safe secrets: locally imported, an encrypted blob on CI becomes
+# { }. `extLib` and `builderPkgs` are both specialArgs this library's
+# builders provide; inside an `imports` list use `builderPkgs`, never
+# the `pkgs` module argument (see the `pkgs` argument below).
 { extLib, builderPkgs, ... }:
 {
   imports = [
@@ -478,53 +473,50 @@ configuration evaluates in both places.
 Accepted: a regular file with the `.nix` suffix whose content parses as
 Nix, or a directory whose `default.nix` does. Symlinks are followed
 and classified by what they resolve to (a link to a valid `.nix` file
-imports like its target). A DANGLING link is NOT handled: `builtins.pathExists` returns true for
-one, so it passes the guard and then aborts evaluation when the path
-is realized -- uncatchably, since the failure is a primop error, not
-a `throw`. `discoverPatches` documents the same gap; fixing it needs
-a way to distinguish "link exists" from "target exists" that Nix
-does not currently expose.
-Everything else yields
-`default` WITH an evaluation warning naming the reason (missing path,
-unsupported file extension, directory without default.nix, or content
-that is not valid Nix) -- a skipped import is never a silent mystery.
+imports like its target). A DANGLING link is NOT handled:
+`builtins.pathExists` returns true for one, so it passes the guard
+and then aborts evaluation, uncatchably, when the path is realized --
+see `discoverPatches` for why Nix cannot detect one. Everything else
+yields `default` WITH an evaluation warning naming the reason (missing
+path, unsupported file extension, directory without default.nix, or
+content that is not valid Nix) -- a skipped import is never a silent
+mystery.
 When scanning directories, filter names by the `.nix` suffix first so
 intentionally skipped files do not warn.
 
 Content validity cannot be checked in pure evaluation, so the probe
 runs `nix-instantiate --parse` in a small derivation --
-import-from-derivation, built during evaluation on the machine doing
-the evaluating (`preferLocalBuild`, no substitution), and cached per
-file content. IFD is REQUIRED for any call that REACHES the probe --
-an existing `.nix` file, or a directory with a `default.nix` -- and
-such a call fails under `--no-allow-import-from-derivation` (the
-builders' `patches` argument shares this constraint). The cheap
-guards run first, so a missing path or an unsupported extension
-still returns the default there, warning as usual.
+import-from-derivation, built during evaluation on the evaluating
+machine (`preferLocalBuild`, no substitution) and cached per file
+content. IFD is REQUIRED for any call that REACHES the probe -- an
+existing `.nix` file, or a directory with a `default.nix` -- and such
+a call fails under `--no-allow-import-from-derivation` (the builders'
+`patches` argument shares this constraint). The cheap guards run
+first, so a missing path or an unsupported extension still returns
+the default there, warning as usual.
 
 All three pure-eval escape routes were tried against upstream Nix
 2.34.8 and every one aborts past `builtins.tryEval`, which catches
 only `throw`/`assert`: `import` of an unparseable file, `import` of
 ciphertext, and `readFile` of it (`error: the contents of the file
-... cannot be represented as a Nix string`). Of the 118 builtins
-that Nix exposes, `readFile` is the only one that reads content and
-it refuses those bytes; `hashFile` reads any bytes but returns only
-a whole-file digest, and nothing offers a byte-range read. So the
-verdict needs a process, a process needs a derivation, and a
-derivation needs a package set -- which is where the `pkgs` argument
-below comes from, and why `builderPkgs` has to exist at all.
+... cannot be represented as a Nix string`). Of the 118 builtins Nix
+exposes, `readFile` is the only one that reads content and it refuses
+those bytes; `hashFile` reads any bytes but returns only a whole-file
+digest, and nothing offers a byte-range read. So the verdict needs a
+process, a process needs a derivation, and a derivation needs a
+package set -- which is where the `pkgs` argument below comes from,
+and why `builderPkgs` has to exist at all.
 
-What would lift it: Determinate Nix (a fork, NOT upstream -- checked,
-upstream's tree has no wasm anywhere) has `builtins.wasm`, whose
-`read_file` host function is documented as handling exactly the files
-`builtins.readFile` refuses. Running the check in WebAssembly during
-evaluation would need no derivation, no package set and no
-`builderPkgs`, and the module can be supplied as inline text (`wat`),
-so not even a committed binary. Two reasons it is not used here: it
-sits behind the `wasm-builtin` experimental feature on a fork this
-library's consumers do not run, so the IFD path has to stay anyway;
-and while `readIfPlainOr`'s magic-byte test ports over directly, THIS
-function's parse verdict would need a Nix parser compiled to WASM.
+Determinate Nix (a fork -- upstream's tree has no wasm anywhere) has
+`builtins.wasm`, whose `read_file` host function is documented as
+handling exactly the files `builtins.readFile` refuses: the check
+could run during evaluation with no derivation, no package set and no
+`builderPkgs`, the module supplied as inline text (`wat`) rather than
+a committed binary. Unused here because it sits behind the
+`wasm-builtin` experimental feature on a fork this library's
+consumers do not run, so the IFD path has to stay anyway -- and while
+`readIfPlainOr`'s magic-byte test ports over directly, THIS function's
+parse verdict would need a Nix parser compiled to WASM.
 Feature-detecting `builtins ? wasm` could bypass the probe where
 available -- it could never replace it.
 
@@ -676,17 +668,13 @@ read exists in upstream Nix and what would provide one.
 Accepted: a regular file whose first bytes are not that header.
 Symlinks are followed and classified by what they resolve to (a link
 to such a file reads like its target). A DANGLING link is NOT
-handled: `builtins.pathExists` returns true for
-one, so it passes the guard and then aborts evaluation when the path
-is realized -- uncatchably, since the failure is a primop error, not
-a `throw`. `discoverPatches` documents the same gap; fixing it needs
-a way to distinguish "link exists" from "target exists" that Nix
-does not currently expose.
+handled: `builtins.pathExists` returns true for one, so it passes the
+guard and then aborts evaluation, uncatchably, when the path is
+realized -- see `discoverPatches` for why Nix cannot detect one.
 
-Everything else -- a missing path, a directory, or
-genuine git-crypt ciphertext -- yields `default` WITH an evaluation
-warning naming the reason, so a skipped read is never a silent
-mystery.
+Everything else -- a missing path, a directory, or genuine git-crypt
+ciphertext -- yields `default` WITH an evaluation warning naming the
+reason, so a skipped read is never a silent mystery.
 
 ### Example
 
@@ -895,7 +883,7 @@ argument. Each group entry takes the same argument names as
 (same rule as a host's `extra`); it cannot set `group` itself -- its
 attribute name IS the group. When `_groups` is present, every host's
 `group` must name one of its entries (unknown names throw); without
-`_groups`, `group` is the free-form classification it always was.
+`_groups`, `group` is a free-form classification.
 
 Users are declared by the `users/` directory tree (see
 `mkNixosSystem`'s own `users` argument), not by an attrset here; a
@@ -967,21 +955,18 @@ buildNixosConfigurations ::
   - `loginReactivateEveryLogin`
   - `homeAutoUpgrade` (keep standalone homes current on a timer; see
     `homeManagerAutoUpgradeModule`. Ignored by this builder, which
-    produces no STANDALONE homes -- a system-managed home switches
-    with its host and never gets a timer. Applies through
+    produces no STANDALONE homes; applies through
     `buildConfigurations`)
   - `homeAutoUpgradeFlakeRef` (the LIVE ref that timer tracks -- always
     explicit; `loginFlakeRef` is never reused for it, see
     `homeManagerAutoUpgradeModule`)
-  - `systemAutoUpgrade` (keep the HOST current on a timer, and own the
-    reboot policy nixpkgs' own module has no place for; see
-    `systemAutoUpgradeModule`)
+  - `systemAutoUpgrade` (keep the HOST current on a timer, and own
+    its reboot policy; see `systemAutoUpgradeModule`)
   - `systemAutoUpgradeFlakeRef` (the LIVE ref that timer tracks --
     always explicit, for the same reason its home twin is)
   - `systemGarbageCollect` (prune stale system generations on a
     timer; see `systemGarbageCollectModule`. OFF by default, unlike
-    the auto-upgrade arguments -- deleting a generation cannot be
-    undone)
+    the auto-upgrade arguments)
   - `traceDiscoveredUsers`
   - `wrapHomeManagerSwitch`
   - `tags`
@@ -1017,9 +1002,8 @@ Turn built configurations into a flake `checks` output, so that
 
 Takes what `buildConfigurations` returns and produces the per-system
 attrset a flake's `checks` expects. Both halves default to empty, so
-one alone is fine -- but the single-purpose builders return a BARE
-attrset keyed by name, so their output must be named
-(`{ inherit nixosConfigurations; }`), not passed straight in.
+one alone is fine -- see the `configurations` argument for wrapping
+a single-purpose builder's bare output.
 
 Two things it does that a hand-written `mapAttrs` over
 `nixosConfigurations` reliably gets wrong:
@@ -1403,18 +1387,13 @@ mkHomeConfiguration :: Attribute -> HomeManagerConfiguration
   Accepted and IGNORED here, so one argument set can be shared with
   `mkNixosSystem` (where it selects which of the tree a host takes).
   This function builds the ONE user named by `username`, so there is
-  nothing to select. Users
-  are declared by DIRECTORIES under `users/` (read from `rootPath`,
-  default `inputs.self`, optionally combined with `loginFlakeRef` --
-  same forms as `mkNixosSystem`'s own `loginFlakeRef` entry, though
-  its trust dimension is moot here: this builder only ever reads one
-  user's `home.nix`, never a `configuration.nix`): this home is built
-  from `users/<username>/home.nix`, plus
-  `users/<username>/hosts/<hostname>/home.nix` merged on top when
-  `hostname` is given and that directory exists. Omitting `hostname`
-  builds the HOST-LESS home -- the user's own files alone, with no
-  `hosts/` override applying and `nixpkgsLibExtensions.hostname` set
-  to `null`.
+  nothing to select. Users are declared by DIRECTORIES under
+  `users/` (read from `rootPath`, default `inputs.self`, optionally
+  combined with `loginFlakeRef` -- same forms as `mkNixosSystem`'s
+  own `loginFlakeRef` entry, though its trust dimension is moot
+  here: this builder only ever reads one user's `home.nix`, never a
+  `configuration.nix`). Which of those files make up this home is
+  described above and under `hostname`.
 
 - **homeModules**
   home-manager modules added to the home configuration, on top of those
@@ -1480,9 +1459,7 @@ automatically when the matching input exists:
   -- export your helper functions there and every module gets them as
   `lib.flake.<helper>` with zero wiring.
 - every `nixpkgs-*` input as a package set under the
-  `nixpkgsLibExtensions.channels.<variant>` option (an unrelated reuse
-  of the word "channel" from the export-KIND sense above -- this one
-  names a package-set variant, not a kind of export) (e.g.
+  `nixpkgsLibExtensions.channels.<variant>` option (e.g.
   `inputs.nixpkgs-unstable` becomes
   `config.nixpkgsLibExtensions.channels.unstable`), built with the same
   overlays and config as the primary `pkgs`.
@@ -1492,9 +1469,7 @@ The whole `inputs` set is also passed through as the `inputs` specialArg
 covered by those conventions (e.g. `inputs.fenix`) themselves — the
 builders carry no policy for specific inputs. The only per-input hook
 is a normalization table for flakes with nonstandard export names,
-applied strictly by input name -- currently empty (NUR, the Nix User
-Repository, was its one former entry; it now contributes via
-`overlays.default` like any other input).
+applied strictly by input name -- currently empty.
 As a convenience, `nixpkgsLibExtensions.inputPkgs` holds every input's
 packages pre-selected for the host's system
 (`config.nixpkgsLibExtensions.inputPkgs.disko.disko-install`); they are
@@ -1526,14 +1501,11 @@ each user's `home.nix` is activated is selected by `loginHomes`:
   system via home-manager's NixOS module
   (`home-manager.users.<user>`), activated by `nixos-rebuild
   switch`. No flake outputs, no bootstrap.
-- listed in `loginHomes` — LOGIN-managed home: activated on first
-  login by the bootstrap (`homeManagerBootstrapModule`) running
-  `home-manager switch` against that flake's matching
-  `homeConfigurations` output (`<user>`, or `<user>@<host>` where the
-  user has a `hosts/<host>/` override -- resolved at evaluation
-  time); the flake must export one of them --
-  `buildConfigurations` does, from the same hosts attrset, and
-  `buildHomeConfigurations` from its own flat argument set.
+- listed in `loginHomes` — LOGIN-managed home: left out of the
+  system and activated on first login by the bootstrap
+  (`homeManagerBootstrapModule`) running `home-manager switch`
+  against that flake's own `homeConfigurations` output -- see the
+  `loginHomes` argument for which output and who must export it.
 
 A home is managed by exactly one mechanism, by construction.
 
@@ -1696,23 +1668,21 @@ mkNixosSystem :: Attribute -> NixosSystem
   and/or a list entry) throws -- ambiguous, pick one source per user.
   
   As the login-bootstrap target: on first login it runs
-  `home-manager switch` against that flake's matching output --
-  `"<user>@<hostname>"` when the user has a `hosts/<hostname>/`
-  override, else `"<user>"`, decided when the system is built. This
-  half assumes ONE flake shared by every `loginHomes` user on the
-  host -- a LIST value here throws at build time if any `loginHomes`
-  user actually needs resolving (per-user tree resolution for the
-  login bootstrap is not implemented; keep such users system-managed,
-  or use a single, non-list value for a host with login-managed
-  users). The default `inputs.self` is the IMMUTABLE store copy of
-  your flake that the running system was built from -- homes then
-  always match the last `nixos-rebuild`, but local edits are
-  invisible until the next rebuild. Point it at a mutable checkout
-  (e.g. `"/etc/nixos"` or `"git+https://..."`) to make the bootstrap
-  build from the live tree instead -- a real, supported capability
-  (not eval-time knowable, so the users tree cannot be scanned from
-  it either; passing one WARNS, naming the trade-off, not because it
-  is wrong).
+  `home-manager switch` against that flake's matching
+  `"<user>@<hostname>"`/`"<user>"` output, resolved when the system
+  is built -- see `homeManagerBootstrapModule`'s own `loginFlakeRef`
+  entry for how that choice is made. This half assumes ONE flake
+  shared by every `loginHomes` user on the host, so a LIST value here
+  throws at build time if any `loginHomes` user actually needs
+  resolving: keep such users system-managed, or use a single,
+  non-list value for a host with login-managed users. The default
+  `inputs.self` is the IMMUTABLE store copy of your flake that the
+  running system was built from, so homes always match the last
+  `nixos-rebuild`. Point it at a mutable checkout (e.g.
+  `"/etc/nixos"` or `"git+https://..."`) to build from the live tree
+  instead -- a real, supported capability, but not eval-time
+  knowable, so the users tree cannot be scanned from it either;
+  passing one WARNS, naming the trade-off, not because it is wrong.
   Default `inputs.self`.
 
 - **traceDiscoveredUsers**
@@ -1890,8 +1860,7 @@ mkNixosSystem :: Attribute -> NixosSystem
   not in `inputs` all throw, listing the valid options. An explicit
   selection also overrides the built-in skips (the home-manager input,
   nixpkgs trees), which only exist to prevent guessing. UNAFFECTED BY
-  ANY OF THIS: the `nixpkgsLibExtensions.channels` package-set variants
-  (an unrelated use of "channel" from the export-kind sense above),
+  ANY OF THIS: the `nixpkgsLibExtensions.channels` package-set variants,
   `inputPkgs`, and the home-manager capability detection are all
   computed from `inputs` directly, so no `inputContributions` case
   touches them --
@@ -2003,11 +1972,10 @@ argument list does not).
 The home-manager counterpart is `homeManagerAutoUpgradeModule`. This
 one never triggers that one -- a standalone home has its own daily
 timer. The single link runs the other way and is defensive: the home
-unit carries an `ExecCondition` that fails while
-`nixos-upgrade.service` is active
+unit defers while `nixos-upgrade.service` is active
 (`services.homeManagerAutoUpgrade.deferToSystemUpgrade`, on by
-default), so a home run never STARTS mid-system-upgrade. The library
-wires that itself because it knows both unit names.
+default, wired by the library because it knows both unit names), so
+a home run never STARTS mid-system-upgrade.
 
 ### Example
 
@@ -2061,14 +2029,11 @@ disable calendar GC for reasons that have nothing to do with
 generations -- because the sweep was deleting local builds with no
 GC root, say. A module that rode that timer would be silently inert
 on such a host; one that switched it back on would break something
-it was never asked to manage. Both were true of the first cut of
-this module.
+it was never asked to manage.
 
-`nix.gc` also cannot express what this is for. It offers "delete
-older than N days" and nothing else, so on a host that sat idle past
-the cutoff it deletes every generation but the running one --
-leaving no rollback target on precisely the machine that has been
-unattended longest. A retention FLOOR cannot be written as a flag.
+`nix.gc` also cannot express what this is for: it offers "delete
+older than N days" and nothing else, so a retention FLOOR (see
+`keepGenerations`) cannot be written as a flag.
 
 So: this module owns a timer of its own, decides which generations
 to delete -- older than `keepDays`, except the newest
@@ -2173,11 +2138,7 @@ journal tail dies with it.
 Returns a shell script FRAGMENT (a string), not a derivation -- splice
 it into a wrapper script (`interceptingWrapper` does this) or straight
 into a systemd unit's own `ExecStart` (a timer-triggered upgrade
-service is exactly this: wrapping its own `home-manager switch` call
-the same way protects it from the identical self-restart risk).
-`command`, like `interceptingWrapper`'s `shouldDetach`, is raw shell
-syntax spliced in verbatim (e.g. `"$real" "$@"`) -- not a Nix-modeled
-argv list.
+service running `home-manager switch` is exactly this).
 
 ### Example
 

@@ -179,10 +179,8 @@
     : partition in a hybrid MBR table, for a Raspberry-Pi-style bootrom
     : that cannot read GPT at all; on `x86_64-linux` it adds a raw `EF02`
     : partition for GRUB's BIOS+GPT boot embedding instead -- see the
-    : PARTITIONS section above for why these are unrelated mechanisms
-    : sharing one flag rather than one shared implementation. Throws if
-    : combined with `defineBootPartitions`, or on any other platform.
-    : Default `false`.
+    : PARTITIONS section above. Throws if combined with
+    : `defineBootPartitions`, or on any other platform. Default `false`.
 
     keySourceCommand
     : Overrides where the encryption key comes from. Default `null` (use
@@ -252,15 +250,11 @@
           throw "The argument `enableEncryption` must be of type `boolean`";
 
       # The encryption key file is written in THREE places -- at pool
-      # creation (preCreateHook) and at boot by either initrd flavor. They
-      # used to be three copies and had drifted: `cat <<<` appends a trailing
-      # newline where `echo -n` does not. That turned out to be harmless,
-      # because ZFS strips a single trailing newline from a
-      # `keyformat=passphrase` key file (verified in a VM by
-      # `nix build .#zfs-newline-probe`), but resting the ability to unlock
-      # a pool on that detail is not a plan. Hence ONE definition producing
-      # deterministic bytes, used by all three. It expects `KEY` to be set by
-      # the caller.
+      # creation (preCreateHook) and at boot by either initrd flavor. ONE
+      # definition producing deterministic bytes, so the three cannot drift
+      # (`cat <<<` appends a trailing newline where `echo -n` does not);
+      # checks/zfs-key-file.nix pins that invariant. It expects `KEY` to be
+      # set by the caller.
       #
       # `junkPatterns`: extra shell `case` alternatives (besides the
       # universal, source-independent bare `""`) naming values THIS
@@ -319,11 +313,10 @@
       # covers that case instead).
       cpuinfoSerialJunkPatterns = [ "0000000000000000" ];
 
-      # The load-key loop, shared verbatim by BOTH initrd flavors -- the
-      # script-initrd copy used to swallow failures with a bare `|| true`
-      # while the systemd one named the dataset. POSIX sh only (busybox ash
-      # in the script initrd): `[ ]` instead of `[[ ]]`, and the literal
-      # tab for IFS built with printf instead of bash's $'\t'.
+      # The load-key loop, shared verbatim by BOTH initrd flavors, so they
+      # cannot handle a failure differently. POSIX sh only (busybox ash in
+      # the script initrd): `[ ]` instead of `[[ ]]`, and the literal tab
+      # for IFS built with printf instead of bash's $'\t'.
       loadKeysScript = ''
         zfs list -rHo name,keylocation,keystatus -t volume,filesystem | \
         while IFS="$(printf '\t')" read -r dataset keylocation keystatus; do
@@ -404,12 +397,9 @@
       # layout wholesale, so there is nothing for it to attach to. Checked
       # against the ARGUMENTS, not the final partitions attrset: this is
       # about which layout is in effect, not about probing what ended up
-      # in it. ONE shared argument, valid on both predefined platforms, but
-      # NOT one shared mechanism: the platform dispatch below reads it
-      # twice, independently, for two unrelated purposes -- see the
-      # PARTITIONS section of this function's doc comment for why a
-      # Raspberry-Pi bootrom and a legacy BIOS need genuinely different
-      # treatment despite both being "legacy boot".
+      # in it. The platform dispatch below reads it twice, independently,
+      # for two unrelated purposes -- see the PARTITIONS section of this
+      # function's doc comment.
       checkedLegacyBoot =
         if !(lib.isBool legacyBoot) then
           throw "The argument `legacyBoot` must be a `boolean`, but is a value of type `${builtins.typeOf legacyBoot}`"
@@ -728,9 +718,7 @@
             # `legacyBoot = true` combined with `defineBootPartitions`
             # would otherwise never reach its own validation at all --
             # silently producing a config that looks fine but never had
-            # the argument checked. Caught by actually testing that
-            # combination, not just assuming a branch reading its own
-            # argument was enough.
+            # the argument checked.
             content =
               builtins.seq checkedLegacyBoot {
                 type = "gpt";
@@ -797,13 +785,11 @@
                     # code and embeds its `core.img` directly into it (no
                     # filesystem, never mounted) -- distinct from, and
                     # unrelated to, the `hybrid`/`efiGptPartitionFirst`
-                    # mechanism below (that one is for firmware that reads a
-                    # FAT partition via a raw MBR table entry, like a
-                    # Raspberry Pi's bootrom; GRUB just needs embedding space).
-                    # 1M matches disko's own `example/hybrid.nix`. Lands in the
-                    # gap ESP's `start = "2MiB"` already leaves before it --
-                    # verified via disko's actual generated sgdisk commands,
-                    # not just size arithmetic.
+                    # mechanism below. 1M matches disko's own
+                    # `example/hybrid.nix`. Lands in the gap ESP's
+                    # `start = "2MiB"` already leaves before it -- verified via
+                    # disko's actual generated sgdisk commands, not just size
+                    # arithmetic.
                     // (lib.optionalAttrs checkedLegacyBoot {
                       EF02 = {
                         label = "EF02";
@@ -892,7 +878,7 @@
               # disko's own default (before them) -- required for a
               # Raspberry-Pi-style bootrom, which only finds its boot
               # partition if it is the FIRST MBR entry. See the `hybrid`
-              # block on FIRMWARE below for the rest of this mechanism. Only
+              # block on FIRMWARE above for the rest of this mechanism. Only
               # meaningful on aarch64-linux: `legacyBoot` on x86_64-linux
               # never sets any partition's `.hybrid`, so this would be inert
               # there anyway, but gating on the platform too keeps this

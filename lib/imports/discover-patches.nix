@@ -84,27 +84,27 @@
     let
       entries = if lib.pathExists dir then builtins.readDir dir else { };
 
-      # Same symlink-resolution rule as importIfNixOr/readIfPlainOr: readDir
-      # reports "symlink" without following it, so a link is reclassified
-      # by what it resolves to. `toString target + "/."`, NOT
-      # `target + "/."`: the latter stays a Nix PATH value, and Nix
-      # silently normalizes away a trailing "/." when constructing one, so
-      # `pathExists` would see the same path either way and always report
-      # "directory". Stringifying first keeps the literal "/.", which only
-      # stat's successfully when the (possibly symlinked) target really is
-      # a directory.
+      # The symlink-resolution rule shared with importIfNixOr and
+      # readIfPlainOr: readDir reports "symlink" without following it and
+      # Nix exposes no readlink, so a link is reclassified by what it
+      # resolves to -- by stat, since `pathExists` DOES follow.
+      # `toString target +
+      # "/."`, NOT `target + "/."`: the latter stays a Nix PATH value, and
+      # Nix silently normalizes away a trailing "/." when constructing
+      # one, so `pathExists` would see the same path either way and always
+      # report "directory". Stringifying first keeps the literal "/.",
+      # which only stat's successfully when the (possibly symlinked)
+      # target really is a directory.
       #
-      # DANGLING symlinks are NOT specially detected here, deliberately:
+      # DANGLING symlinks are NOT specially detected, deliberately:
       # `builtins.pathExists` reports true for a broken symlink too (it
       # does not dereference for existence, only for the "/." directory
       # check), and the one primop that WOULD notice (`readFile`,
-      # attempting to actually open the target) throws an error `tryEval`
-      # does not catch -- confirmed by testing, not assumed. The same gap
-      # exists in importIfNixOr/readIfPlainOr, and is documented in their
-      # doc comments too. A broken symlink here is classified
-      # "regular" and only fails once `applyPatches`/`import` actually
-      # tries to use it -- a real, if less friendly, Nix error rather than
-      # a silently skipped or silently wrong patch either way.
+      # attempting to open the target) throws an error `tryEval` does not
+      # catch. A broken symlink is classified "regular" and only fails
+      # once `applyPatches`/`import` tries to use it -- a real, if less
+      # friendly, Nix error rather than a silently skipped or silently
+      # wrong patch.
       resolvedType =
         name: rawType:
         if rawType != "symlink" then
@@ -143,11 +143,9 @@
       patchPath = name: dir + "/${name}";
       toPatch = e: if e.class == "local" then patchPath e.name else import (patchPath e.name) pkgs;
 
-      # Names the exact file AND the directory it was found in -- discovery
-      # runs across however many `discoverPatches` call sites a consumer
-      # has, so "which file, in which directory" is the whole point of the
-      # message; naming just the filename would leave a multi-directory
-      # setup guessing which one warned.
+      # Names the directory as well as the file: a consumer may have
+      # several `discoverPatches` call sites, and a bare filename leaves
+      # them guessing which directory warned.
       warnMsg = e: ''
         nixpkgs-lib-extensions: discoverPatches ${toString dir}/${e.name}: ${
           if e.class == "skip" then

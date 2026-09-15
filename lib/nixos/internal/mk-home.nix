@@ -112,9 +112,7 @@ in
               # a flake INPUT is an immutable /nix/store path (can never
               # pick up a new commit), and the one shape that IS live --
               # a bare string -- cannot be scanned for users at all, so a
-              # home built that way does not exist to carry a timer. The
-              # combination that would make a fallback useful cannot
-              # occur; requiring an explicit ref is the honest interface.
+              # home built that way does not exist to carry a timer.
               (self.homeManagerAutoUpgradeModule {
                 enable = args.homeAutoUpgrade or true;
                 flakeRef = args.homeAutoUpgradeFlakeRef or null;

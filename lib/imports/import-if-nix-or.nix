@@ -27,53 +27,50 @@
     Accepted: a regular file with the `.nix` suffix whose content parses as
     Nix, or a directory whose `default.nix` does. Symlinks are followed
     and classified by what they resolve to (a link to a valid `.nix` file
-    imports like its target). A DANGLING link is NOT handled: `builtins.pathExists` returns true for
-    one, so it passes the guard and then aborts evaluation when the path
-    is realized -- uncatchably, since the failure is a primop error, not
-    a `throw`. `discoverPatches` documents the same gap; fixing it needs
-    a way to distinguish "link exists" from "target exists" that Nix
-    does not currently expose.
-    Everything else yields
-    `default` WITH an evaluation warning naming the reason (missing path,
-    unsupported file extension, directory without default.nix, or content
-    that is not valid Nix) -- a skipped import is never a silent mystery.
+    imports like its target). A DANGLING link is NOT handled:
+    `builtins.pathExists` returns true for one, so it passes the guard
+    and then aborts evaluation, uncatchably, when the path is realized --
+    see `discoverPatches` for why Nix cannot detect one. Everything else
+    yields `default` WITH an evaluation warning naming the reason (missing
+    path, unsupported file extension, directory without default.nix, or
+    content that is not valid Nix) -- a skipped import is never a silent
+    mystery.
     When scanning directories, filter names by the `.nix` suffix first so
     intentionally skipped files do not warn.
 
     Content validity cannot be checked in pure evaluation, so the probe
     runs `nix-instantiate --parse` in a small derivation --
-    import-from-derivation, built during evaluation on the machine doing
-    the evaluating (`preferLocalBuild`, no substitution), and cached per
-    file content. IFD is REQUIRED for any call that REACHES the probe --
-    an existing `.nix` file, or a directory with a `default.nix` -- and
-    such a call fails under `--no-allow-import-from-derivation` (the
-    builders' `patches` argument shares this constraint). The cheap
-    guards run first, so a missing path or an unsupported extension
-    still returns the default there, warning as usual.
+    import-from-derivation, built during evaluation on the evaluating
+    machine (`preferLocalBuild`, no substitution) and cached per file
+    content. IFD is REQUIRED for any call that REACHES the probe -- an
+    existing `.nix` file, or a directory with a `default.nix` -- and such
+    a call fails under `--no-allow-import-from-derivation` (the builders'
+    `patches` argument shares this constraint). The cheap guards run
+    first, so a missing path or an unsupported extension still returns
+    the default there, warning as usual.
 
     All three pure-eval escape routes were tried against upstream Nix
     2.34.8 and every one aborts past `builtins.tryEval`, which catches
     only `throw`/`assert`: `import` of an unparseable file, `import` of
     ciphertext, and `readFile` of it (`error: the contents of the file
-    ... cannot be represented as a Nix string`). Of the 118 builtins
-    that Nix exposes, `readFile` is the only one that reads content and
-    it refuses those bytes; `hashFile` reads any bytes but returns only
-    a whole-file digest, and nothing offers a byte-range read. So the
-    verdict needs a process, a process needs a derivation, and a
-    derivation needs a package set -- which is where the `pkgs` argument
-    below comes from, and why `builderPkgs` has to exist at all.
+    ... cannot be represented as a Nix string`). Of the 118 builtins Nix
+    exposes, `readFile` is the only one that reads content and it refuses
+    those bytes; `hashFile` reads any bytes but returns only a whole-file
+    digest, and nothing offers a byte-range read. So the verdict needs a
+    process, a process needs a derivation, and a derivation needs a
+    package set -- which is where the `pkgs` argument below comes from,
+    and why `builderPkgs` has to exist at all.
 
-    What would lift it: Determinate Nix (a fork, NOT upstream -- checked,
-    upstream's tree has no wasm anywhere) has `builtins.wasm`, whose
-    `read_file` host function is documented as handling exactly the files
-    `builtins.readFile` refuses. Running the check in WebAssembly during
-    evaluation would need no derivation, no package set and no
-    `builderPkgs`, and the module can be supplied as inline text (`wat`),
-    so not even a committed binary. Two reasons it is not used here: it
-    sits behind the `wasm-builtin` experimental feature on a fork this
-    library's consumers do not run, so the IFD path has to stay anyway;
-    and while `readIfPlainOr`'s magic-byte test ports over directly, THIS
-    function's parse verdict would need a Nix parser compiled to WASM.
+    Determinate Nix (a fork -- upstream's tree has no wasm anywhere) has
+    `builtins.wasm`, whose `read_file` host function is documented as
+    handling exactly the files `builtins.readFile` refuses: the check
+    could run during evaluation with no derivation, no package set and no
+    `builderPkgs`, the module supplied as inline text (`wat`) rather than
+    a committed binary. Unused here because it sits behind the
+    `wasm-builtin` experimental feature on a fork this library's
+    consumers do not run, so the IFD path has to stay anyway -- and while
+    `readIfPlainOr`'s magic-byte test ports over directly, THIS function's
+    parse verdict would need a Nix parser compiled to WASM.
     Feature-detecting `builtins ? wasm` could bypass the probe where
     available -- it could never replace it.
 
@@ -156,13 +153,12 @@
     let
       type = if lib.pathExists path then builtins.readFileType path else null;
 
-      # A symlink is classified by what it RESOLVES to. readFileType alone
-      # reports "symlink" without following, and Nix has no readlink -- but
-      # pathExists DOES follow, and stat'ing the path with a literal
-      # trailing "/." (as a string, so the "." is not normalized away)
-      # succeeds exactly when the link resolves to a directory. A
-      # DANGLING link DOES get here -- pathExists returns true for one --
-      # and fails later, when the path is realized; see the doc comment.
+      # A symlink is classified by what it RESOLVES to: stat'ing the path
+      # with a literal trailing "/." succeeds exactly when the link
+      # resolves to a directory. A DANGLING link DOES get here --
+      # pathExists returns true for one -- and fails later, when the path
+      # is realized. Both mechanisms in full: `discoverPatches`'
+      # `resolvedType`.
       resolvedType =
         if type != "symlink" then
           type
@@ -171,8 +167,6 @@
         else
           "regular";
 
-      # every skipped import says WHY -- a silently skipped file should
-      # never be a silent mystery
       skip =
         reason: lib.warn "importIfNixOr: ${toString path} ${reason}; using the default instead" default;
 

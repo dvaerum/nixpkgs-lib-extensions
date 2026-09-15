@@ -79,18 +79,13 @@ in
     : Accepted and IGNORED here, so one argument set can be shared with
     : `mkNixosSystem` (where it selects which of the tree a host takes).
     : This function builds the ONE user named by `username`, so there is
-    : nothing to select. Users
-    : are declared by DIRECTORIES under `users/` (read from `rootPath`,
-    : default `inputs.self`, optionally combined with `loginFlakeRef` --
-    : same forms as `mkNixosSystem`'s own `loginFlakeRef` entry, though
-    : its trust dimension is moot here: this builder only ever reads one
-    : user's `home.nix`, never a `configuration.nix`): this home is built
-    : from `users/<username>/home.nix`, plus
-    : `users/<username>/hosts/<hostname>/home.nix` merged on top when
-    : `hostname` is given and that directory exists. Omitting `hostname`
-    : builds the HOST-LESS home -- the user's own files alone, with no
-    : `hosts/` override applying and `nixpkgsLibExtensions.hostname` set
-    : to `null`.
+    : nothing to select. Users are declared by DIRECTORIES under
+    : `users/` (read from `rootPath`, default `inputs.self`, optionally
+    : combined with `loginFlakeRef` -- same forms as `mkNixosSystem`'s
+    : own `loginFlakeRef` entry, though its trust dimension is moot
+    : here: this builder only ever reads one user's `home.nix`, never a
+    : `configuration.nix`). Which of those files make up this home is
+    : described above and under `hostname`.
 
     homeModules
     : home-manager modules added to the home configuration, on top of those

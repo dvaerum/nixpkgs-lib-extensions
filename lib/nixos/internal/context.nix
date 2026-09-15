@@ -40,8 +40,8 @@ let
   # The DEFAULT VALUES of mkContextCore's optional core arguments, in one
   # place: the formals below read them from here, and planHosts reads the
   # same attrset to fill in what a host left unsaid before comparing hosts
-  # for core sharing. It used to hand-transcribe these values, and a changed
-  # default with a stale copy makes a host silently share the WRONG core.
+  # for core sharing. Transcribed by hand instead, a stale copy of a
+  # changed default makes a host silently share the WRONG core.
   # Not here: `inputs`/`system` (required, no default) and `nixpkgs`, whose
   # default is COMPUTED from `inputs` rather than a constant.
   # checks/builders/tests/defaults.nix asserts this table and the formals
@@ -142,12 +142,11 @@ let
           let
             candidate = nixpkgs.lib or null;
             # builtins.isAttrs, not lib.isAttrs: this let-block later binds
-            # its OWN `lib` (line ~281, extendedLib.extend ...), which is
-            # itself derived from `baseLib` -- referencing the module-level
-            # `lib` argument by that same name here would resolve to that
-            # LOCAL, not-yet-computed binding instead (Nix `let` is
-            # mutually recursive across all its own bindings), an infinite
-            # recursion caught the hard way once already.
+            # its OWN `lib` (`extendedLib.extend ...` below), itself derived
+            # from `baseLib` -- referencing the module-level `lib` argument
+            # by that same name here would resolve to that LOCAL,
+            # not-yet-computed binding instead (Nix `let` is mutually
+            # recursive across all its own bindings): infinite recursion.
             looksReal =
               builtins.isAttrs candidate
               && candidate ? foldl'
@@ -441,12 +440,10 @@ let
   # ones, so hosts agreeing on the core arguments share one nixpkgs
   # evaluation.
   #
-  # It used to arrive as a `_core` KEY in the argument attrset, which meant it
-  # was reachable from any public builder call: the argument allowlist had to
-  # wave every `_`-prefixed key through, and a core needed a marker attribute
-  # plus a throw so a hand-passed one could not silently swap the package set
-  # the whole system is built from. As a parameter of an internal function it
-  # is simply out of reach, and all three could go.
+  # A PARAMETER of an internal function, not a key in the public argument
+  # attrset: a hand-passed core would silently swap the package set the whole
+  # system is built from. Keeping it out of reach replaced a marker attribute
+  # plus a throw -- see ./mk-system.nix's header.
   mkContextCoreOrGiven = core: args: if core == null then mkContextCore args else core;
 
   # The option-backed half of mkContext's reserved specialArgs names:
@@ -501,36 +498,33 @@ let
       # builder derives lives in the always-imported `nixpkgsLibExtensions`
       # options module (./ext-options.nix), where values merge, carry types
       # and are guarded by the module system.
-      # Note: `pkgs` deliberately not included — modules already receive it from
-      # the module system, and `specialArgs.pkgs` would override that wiring
-      # (nixpkgs warns about it). `builderPkgs` below is that package set
-      # reached under a name the module system does not own, for the one
-      # job the module argument cannot do.
       builderOwned = {
         inherit inputs rootPath;
         # the specialArg keeps its user-facing name; its value is the lib
         # loader's fixed point
         extLib = self;
         # The core's own package set -- the very set the builders hand to
-        # the module system as `nixpkgs.pkgs`, reached without going
-        # through `config`. (Not always identical to the `pkgs` module
-        # argument: nixpkgs composes any module-level `nixpkgs.overlays`
-        # on top of it, and those reach `pkgs` but not this -- see
-        # checks/builders/tests/import-if-nix-in-imports.nix.) Being
-        # reachable outside the fixed point is why it exists: an `imports` entry
-        # decided by an IFD probe cannot force the module argument without
-        # recursing through the fixed point it is being assembled for. See
+        # the module system as `nixpkgs.pkgs`, under a name the module
+        # system does not own, because being reachable OUTSIDE its fixed
+        # point is the whole point: an `imports` entry decided by an IFD
+        # probe cannot force the `pkgs` module argument without recursing
+        # through the fixed point it is being assembled for. See
         # importIfNixOr's `pkgs` argument (lib/imports/import-if-nix-or.nix)
         # for the mechanism and why a call site building its own nixpkgs is
-        # not an acceptable substitute.
+        # not an acceptable substitute. A `pkgs` specialArg would not do:
+        # it overrides the module system's own wiring (see `reserved`
+        # below). Not always identical to the `pkgs` module argument
+        # either -- nixpkgs composes any module-level `nixpkgs.overlays` on
+        # top of it, and those reach `pkgs` but not this (see
+        # checks/builders/tests/import-if-nix-in-imports.nix).
         builderPkgs = core.pkgs;
       };
 
-      # Shadowing a builder-owned name used to "work" and produce a
-      # split-brain host: `specialArgs.hostname = "other"` reached modules
-      # while networking.hostName kept the real one, and `rootPath` silently
-      # moved the hosts/<host> file lookup. So: say so. Everything NOT
-      # reserved here still passes through freely.
+      # Shadowing a builder-owned name produces a split-brain host:
+      # `specialArgs.hostname = "other"` reaches modules while
+      # networking.hostName keeps the real one, and `rootPath` silently
+      # moves the hosts/<host> file lookup. Everything NOT reserved here
+      # still passes through freely.
       # The option-backed names (optionBackedReserved above) are reserved
       # for the same hazard: a module destructuring `{ tags, ... }` would
       # read the specialArg while the option keeps the builder's real value.

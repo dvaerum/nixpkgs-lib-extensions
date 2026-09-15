@@ -33,17 +33,13 @@
     Accepted: a regular file whose first bytes are not that header.
     Symlinks are followed and classified by what they resolve to (a link
     to such a file reads like its target). A DANGLING link is NOT
-    handled: `builtins.pathExists` returns true for
-    one, so it passes the guard and then aborts evaluation when the path
-    is realized -- uncatchably, since the failure is a primop error, not
-    a `throw`. `discoverPatches` documents the same gap; fixing it needs
-    a way to distinguish "link exists" from "target exists" that Nix
-    does not currently expose.
+    handled: `builtins.pathExists` returns true for one, so it passes the
+    guard and then aborts evaluation, uncatchably, when the path is
+    realized -- see `discoverPatches` for why Nix cannot detect one.
 
-    Everything else -- a missing path, a directory, or
-    genuine git-crypt ciphertext -- yields `default` WITH an evaluation
-    warning naming the reason, so a skipped read is never a silent
-    mystery.
+    Everything else -- a missing path, a directory, or genuine git-crypt
+    ciphertext -- yields `default` WITH an evaluation warning naming the
+    reason, so a skipped read is never a silent mystery.
 
     # Example
 
@@ -81,12 +77,10 @@
     let
       type = if lib.pathExists path then builtins.readFileType path else null;
 
-      # Same symlink-resolution logic as importIfNixOr: readFileType alone
-      # reports "symlink" without following it, so a link is reclassified
-      # by what it resolves to (stat'ing a literal trailing "/." succeeds
-      # exactly when the target is a directory). A DANGLING link DOES
-      # reach here -- pathExists returns true for one -- and fails later,
-      # when the path is realized; see the doc comment.
+      # Same symlink-resolution logic as `discoverPatches`' `resolvedType`,
+      # dangling-link gap included: a link is reclassified by what it
+      # resolves to, and the literal trailing "/." is load-bearing -- see
+      # there.
       resolvedType =
         if type != "symlink" then
           type
@@ -110,8 +104,7 @@
         };
 
       # git-crypt's own format: every encrypted blob begins with this
-      # fixed 10-byte header regardless of the plaintext underneath (a
-      # NUL byte, the ASCII string "GITCRYPT", another NUL byte).
+      # fixed 10-byte header regardless of the plaintext underneath.
       isGitCrypted =
         file:
         lib.readFile (

@@ -63,10 +63,10 @@ let
   ];
 
   # `extra` is the ONE per-host layering slot: a bare key REPLACES the
-  # default, `extra.<key>` ADDS to it. It replaced the two `additional*`
-  # twins, which layered only `modules` and `specialArgs` out of the full
-  # `allowedDefaultArgs` list and left no way to say "the shared home
-  # modules PLUS these" at all.
+  # default, `extra.<key>` ADDS to it -- for every argument in
+  # `allowedDefaultArgs` except `group` (see `effectiveGroup` below), so
+  # "the shared home modules PLUS these" is sayable for all of them, not
+  # just a chosen few.
   allowedHostArgs = allowedDefaultArgs ++ [
     "hostname"
     "extra"
@@ -94,11 +94,10 @@ let
       # builder ever runs. A direct call takes the already-merged arguments,
       # so accepting it here would silently drop whatever it carried.
       allowed = lib.filter (k: k != "extra") allowedHostArgs ++ extraAllowed;
-      # No `_`-prefix escape hatch. It existed so planHosts could pass
-      # `_core` through this very allowlist; the core is an explicit
-      # parameter of the internal mkSystem/mkHome now, so every unknown key
-      # is reported -- including a `_defaults` written inside a host entry
-      # instead of beside it, which used to be accepted and ignored.
+      # No `_`-prefix escape hatch: the core is an explicit parameter of
+      # the internal mkSystem/mkHome (see ./mk-system.nix's header), so
+      # every unknown key is reported -- including a `_defaults` written
+      # inside a host entry instead of beside it.
       bad = lib.filter (k: !(lib.elem k allowed)) (lib.attrNames args);
     in
     if bad == [ ] then
@@ -316,15 +315,10 @@ let
       badReserved ++ badDefaults ++ badGroups ++ badGroupRefs ++ badHostShapes ++ badHostKeys;
 
   # Validate a hosts attrset (the input of buildNixosConfigurations and
-  # buildConfigurations)
-  # and split it into { defaults, hostEntries }. The throwing face of
-  # hostsProblems -- same division of labor as
+  # buildConfigurations) and split it into { defaults, hostEntries }. The
+  # throwing face of hostsProblems -- same division of labor as
   # builderArgProblems/validateBuilderArgs -- so the thrown text and the
-  # problems-as-data can never disagree. Complains, naming fnName, about:
-  # a non-allowlisted `_defaults` key (with special explanations for
-  # `hostname` and `extra`), a non-allowlisted host entry key, or a host
-  # entry whose inner `hostname` conflicts with its attribute key (a
-  # redundant EQUAL one is tolerated).
+  # problems-as-data can never disagree.
   splitHostsArgs =
     fnName: hosts:
     let
@@ -415,8 +409,7 @@ let
 
       # A bare key replaces; `extra.<key>` adds to whatever the merge
       # produced. Lists concatenate, attrsets merge with `extra` winning a
-      # key conflict, anything else is replaced -- the same semantics the
-      # two `additional*` twins had, generalised to every argument.
+      # key conflict, anything else is replaced.
       combine =
         hostname: key: base: add:
         if lib.isList base && lib.isList add then
@@ -430,8 +423,8 @@ let
           # no error, because the fallback rule happens to succeed.
           lib.recursiveUpdate base add
         # `else add` is right for scalars (group, userModule, ...), but
-        # it also used to catch base and add being DIFFERENT container
-        # kinds, which is never a deliberate "add" -- it silently threw the
+        # base and add being DIFFERENT container kinds is never a
+        # deliberate "add" -- falling through to `add` silently threw the
         # fleet-wide base away.
         else if lib.isList base != lib.isList add || lib.isAttrs base != lib.isAttrs add then
           throw "${fnName}: host `${hostname}`: `extra.${key}` is a ${builtins.typeOf add} but the value it must add to is a ${builtins.typeOf base}. `extra` ADDS to the merged value (lists concatenate, attrsets merge); to replace it outright, set `${key}` directly on the host."
@@ -504,18 +497,17 @@ let
       # evaluations. Computing it once per class moves that back to one.
       # Lazy: a host nobody forces costs nothing beyond tuple comparisons.
       core = coreFor hostname;
-      # Normalized ONCE here so every consumer of the plan sees the
-      # SAME tree for every consumer of the plan, scanned ONCE (see
-      # `usersTree` above) rather than per host -- mk-system.nix/mk-home.nix
-      # take it from here via `args.usersTree` instead of rescanning.
+      # Normalized ONCE here so every consumer of the plan sees the SAME
+      # tree, scanned ONCE (see `usersTree` above) rather than per host --
+      # mk-system.nix/mk-home.nix take it from here via `args.usersTree`
+      # instead of rescanning.
       registry = usersTree;
     }) mergedArgs;
 
-  # A loginHomes typo is otherwise silent: the home flips to the
-  # system-managed mechanism and everything still builds and boots. Only
-  # checkable from a PLAN, where every host's registry is in view -- a name
-  # that matches no user on one host is legal, a name no registry mentions
-  # at all is a typo.
+  # A loginHomes typo is otherwise silent (see validateLoginUsers in
+  # registry.nix). Only checkable from a PLAN, where every host's registry
+  # is in view -- a name that matches no user on one host is legal, a name
+  # no registry mentions at all is a typo.
   planLoginUsers =
     fnName: plan:
     validateLoginUsers fnName (

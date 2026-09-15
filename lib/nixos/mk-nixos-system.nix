@@ -46,9 +46,7 @@ in
       -- export your helper functions there and every module gets them as
       `lib.flake.<helper>` with zero wiring.
     - every `nixpkgs-*` input as a package set under the
-      `nixpkgsLibExtensions.channels.<variant>` option (an unrelated reuse
-      of the word "channel" from the export-KIND sense above -- this one
-      names a package-set variant, not a kind of export) (e.g.
+      `nixpkgsLibExtensions.channels.<variant>` option (e.g.
       `inputs.nixpkgs-unstable` becomes
       `config.nixpkgsLibExtensions.channels.unstable`), built with the same
       overlays and config as the primary `pkgs`.
@@ -58,9 +56,7 @@ in
     covered by those conventions (e.g. `inputs.fenix`) themselves — the
     builders carry no policy for specific inputs. The only per-input hook
     is a normalization table for flakes with nonstandard export names,
-    applied strictly by input name -- currently empty (NUR, the Nix User
-    Repository, was its one former entry; it now contributes via
-    `overlays.default` like any other input).
+    applied strictly by input name -- currently empty.
     As a convenience, `nixpkgsLibExtensions.inputPkgs` holds every input's
     packages pre-selected for the host's system
     (`config.nixpkgsLibExtensions.inputPkgs.disko.disko-install`); they are
@@ -92,14 +88,11 @@ in
       system via home-manager's NixOS module
       (`home-manager.users.<user>`), activated by `nixos-rebuild
       switch`. No flake outputs, no bootstrap.
-    - listed in `loginHomes` — LOGIN-managed home: activated on first
-      login by the bootstrap (`homeManagerBootstrapModule`) running
-      `home-manager switch` against that flake's matching
-      `homeConfigurations` output (`<user>`, or `<user>@<host>` where the
-      user has a `hosts/<host>/` override -- resolved at evaluation
-      time); the flake must export one of them --
-      `buildConfigurations` does, from the same hosts attrset, and
-      `buildHomeConfigurations` from its own flat argument set.
+    - listed in `loginHomes` — LOGIN-managed home: left out of the
+      system and activated on first login by the bootstrap
+      (`homeManagerBootstrapModule`) running `home-manager switch`
+      against that flake's own `homeConfigurations` output -- see the
+      `loginHomes` argument for which output and who must export it.
 
     A home is managed by exactly one mechanism, by construction.
 
@@ -262,23 +255,21 @@ in
     : and/or a list entry) throws -- ambiguous, pick one source per user.
     :
     : As the login-bootstrap target: on first login it runs
-    : `home-manager switch` against that flake's matching output --
-    : `"<user>@<hostname>"` when the user has a `hosts/<hostname>/`
-    : override, else `"<user>"`, decided when the system is built. This
-    : half assumes ONE flake shared by every `loginHomes` user on the
-    : host -- a LIST value here throws at build time if any `loginHomes`
-    : user actually needs resolving (per-user tree resolution for the
-    : login bootstrap is not implemented; keep such users system-managed,
-    : or use a single, non-list value for a host with login-managed
-    : users). The default `inputs.self` is the IMMUTABLE store copy of
-    : your flake that the running system was built from -- homes then
-    : always match the last `nixos-rebuild`, but local edits are
-    : invisible until the next rebuild. Point it at a mutable checkout
-    : (e.g. `"/etc/nixos"` or `"git+https://..."`) to make the bootstrap
-    : build from the live tree instead -- a real, supported capability
-    : (not eval-time knowable, so the users tree cannot be scanned from
-    : it either; passing one WARNS, naming the trade-off, not because it
-    : is wrong).
+    : `home-manager switch` against that flake's matching
+    : `"<user>@<hostname>"`/`"<user>"` output, resolved when the system
+    : is built -- see `homeManagerBootstrapModule`'s own `loginFlakeRef`
+    : entry for how that choice is made. This half assumes ONE flake
+    : shared by every `loginHomes` user on the host, so a LIST value here
+    : throws at build time if any `loginHomes` user actually needs
+    : resolving: keep such users system-managed, or use a single,
+    : non-list value for a host with login-managed users. The default
+    : `inputs.self` is the IMMUTABLE store copy of your flake that the
+    : running system was built from, so homes always match the last
+    : `nixos-rebuild`. Point it at a mutable checkout (e.g.
+    : `"/etc/nixos"` or `"git+https://..."`) to build from the live tree
+    : instead -- a real, supported capability, but not eval-time
+    : knowable, so the users tree cannot be scanned from it either;
+    : passing one WARNS, naming the trade-off, not because it is wrong.
     : Default `inputs.self`.
 
     traceDiscoveredUsers
@@ -456,8 +447,7 @@ in
     : not in `inputs` all throw, listing the valid options. An explicit
     : selection also overrides the built-in skips (the home-manager input,
     : nixpkgs trees), which only exist to prevent guessing. UNAFFECTED BY
-    : ANY OF THIS: the `nixpkgsLibExtensions.channels` package-set variants
-    : (an unrelated use of "channel" from the export-kind sense above),
+    : ANY OF THIS: the `nixpkgsLibExtensions.channels` package-set variants,
     : `inputPkgs`, and the home-manager capability detection are all
     : computed from `inputs` directly, so no `inputContributions` case
     : touches them --

@@ -16,9 +16,7 @@ let
   inherit (import ./priorities.nix { inherit lib; }) builderDefaultPriority mkBuilderDefault;
 
   # One options module serves BOTH module systems (NixOS and home-manager);
-  # only `hostname` differs: a NixOS module reads config.networking.hostName
-  # (the builder sets it), while a home has no such option, so the home
-  # variant declares `nixpkgsLibExtensions.hostname` itself.
+  # only `hostname` differs -- see extHomeOptionsModule below.
 
   # The option declarations shared by both variants. `tags` is the one
   # MERGING option: the builder's `tags` argument arrives as an ordinary

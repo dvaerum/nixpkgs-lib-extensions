@@ -62,8 +62,7 @@ This works because of how NixOS's module system combines settings
 from multiple places (this function AND your own host config) into
 one final value: a plain list here merges by concatenation with
 another plain list, so your plain list and this function's plain `[ ]`
-combine automatically into `[ "mypool/mydataset" ]` -- no extra
-ceremony needed.
+combine automatically into `[ "mypool/mydataset" ]`.
 
 **Do not use `lib.mkDefault [ ... ]` for your own addition here.**
 NixOS's module system ranks every setting by a priority number; when

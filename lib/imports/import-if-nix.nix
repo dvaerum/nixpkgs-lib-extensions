@@ -18,13 +18,10 @@
     # Example
 
     ```nix
-    # CI-safe secrets: locally imported, an
-    # encrypted blob on CI becomes { }. In a module reached through this
-    # library's builders, `extLib` and `builderPkgs` are both specialArgs
-    # they provide -- and inside an `imports` list use
-    # `builderPkgs`, never the `pkgs` module argument (see importIfNixOr's
-    # `pkgs` argument for why: the probe is IFD, and forcing the module
-    # argument recurses through the fixed point being assembled).
+    # CI-safe secrets: locally imported, an encrypted blob on CI becomes
+    # { }. `extLib` and `builderPkgs` are both specialArgs this library's
+    # builders provide; inside an `imports` list use `builderPkgs`, never
+    # the `pkgs` module argument (see the `pkgs` argument below).
     { extLib, builderPkgs, ... }:
     {
       imports = [

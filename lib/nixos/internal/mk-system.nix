@@ -290,12 +290,12 @@ in
           # into a hard error (types.unique), but this builder BLESSES
           # module-level `nixpkgs.overlays`: nixpkgs composes them onto the
           # injected set via `cfg.pkgs.appendOverlays cfg.overlays` (see
-          # the NOTE below, pinned by the module-level-overlay-applies
-          # test), and third-party modules bringing their own overlays rely
-          # on exactly that. What readOnlyPkgs would guard beyond overlays
-          # is covered without it: `nixpkgs.config` hard-fails nixpkgs' own
-          # assertion, and hostPlatform/buildPlatform definitions get the
-          # warnings below instead of being silently ignored.
+          # below, pinned by the module-level-overlay-applies test), and
+          # third-party modules bringing their own overlays rely on exactly
+          # that. What readOnlyPkgs would guard beyond overlays is covered
+          # without it: `nixpkgs.config` hard-fails nixpkgs' own assertion,
+          # and hostPlatform/buildPlatform definitions get the warnings
+          # below instead of being silently ignored.
           (
             { config, options, ... }:
             {
@@ -310,10 +310,9 @@ in
               # so tags contributed by modules land there as well; a host
               # setting the option itself overrides this
               system.nixos.tags = lib.mkDefault config.nixpkgsLibExtensions.tags;
-              # NOTE: this used to warn that module-level nixpkgs.overlays /
-              # nixpkgs.config are ignored because the builder provides
-              # `pkgs`. That was WRONG. Passing `pkgs` as an eval-config
-              # ARGUMENT sets the `nixpkgs.pkgs` option
+              # Module-level `nixpkgs.overlays` are NOT ignored, despite
+              # the builder providing `pkgs`: passing `pkgs` as an
+              # eval-config ARGUMENT sets the `nixpkgs.pkgs` option
               # (nixos/lib/eval-config.nix), and the nixpkgs module then
               # builds `cfg.pkgs.appendOverlays cfg.overlays`
               # (nixos/modules/misc/nixpkgs.nix) -- so a module's overlays

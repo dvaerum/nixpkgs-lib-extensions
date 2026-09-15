@@ -40,11 +40,10 @@
     The home-manager counterpart is `homeManagerAutoUpgradeModule`. This
     one never triggers that one -- a standalone home has its own daily
     timer. The single link runs the other way and is defensive: the home
-    unit carries an `ExecCondition` that fails while
-    `nixos-upgrade.service` is active
+    unit defers while `nixos-upgrade.service` is active
     (`services.homeManagerAutoUpgrade.deferToSystemUpgrade`, on by
-    default), so a home run never STARTS mid-system-upgrade. The library
-    wires that itself because it knows both unit names.
+    default, wired by the library because it knows both unit names), so
+    a home run never STARTS mid-system-upgrade.
 
     # Example
 
@@ -613,25 +612,23 @@
                   wantedBy = [ "nixos-upgrade.service" ];
                   # This unit runs `switch-to-configuration switch`, which
                   # stops every unit whose store path changed -- including
-                  # THIS one, killing the activation half-way through.
-                  # Observed for real: "stopping the following units:
+                  # THIS one, killing the activation half-way through:
+                  # "stopping the following units:
                   # nixos-upgrade-policy.service / Main process exited,
                   # code=killed, status=15/TERM", unit left `failed` and
-                  # the generation half-applied. It fires exactly when the
+                  # the generation half-applied. It fires whenever the
                   # upgrade changes the module itself -- so on every bump
-                  # of this library, which is the common case, not an edge
-                  # one.
+                  # of this library.
                   #
                   # `restartIfChanged = false` renders X-RestartIfChanged,
                   # which switch-to-configuration reads to put the unit in
                   # units_to_skip (switch-to-configuration-ng main.rs:738)
                   # and then leaves it alone entirely. Correct for a
-                  # timer-driven oneshot: it is not a daemon, so there is
-                  # nothing to keep current -- the next timer firing picks
-                  # up the new version from the new /etc. The alternative,
-                  # detaching the switch the way the home half does, would
-                  # move this unit's own log lines into a transient unit
-                  # and cost the observability that made this bug findable.
+                  # timer-driven oneshot: it is not a daemon, so the next
+                  # timer firing picks up the new version from the new
+                  # /etc. Detaching the switch the way the home half does
+                  # would instead move this unit's own log lines into a
+                  # transient unit, costing that observability.
                   restartIfChanged = false;
                   serviceConfig = {
                     Type = "oneshot";

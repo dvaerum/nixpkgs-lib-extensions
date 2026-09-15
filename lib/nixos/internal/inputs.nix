@@ -11,13 +11,13 @@ let
   # Above this many entries, an exported-name listing switches to a count
   # instead -- nixos-hardware ships hundreds of mutually exclusive
   # profiles, and a wall of them helps nobody who has not asked for a
-  # specific one. Below it (a nixos-raspberrypi, a sops-nix), printing the
-  # names is exactly what resolves the ambiguity, so withholding them helps
-  # no one either. Shared by EVERY throw site that lists an input's
-  # exported names -- ambiguousExportMessage below, and resolveEntrySet's
-  # "you named an entry that does not exist" throw -- so a huge catalog
-  # cannot dump a wall of names through one path just because the other was
-  # capped.
+  # specific one. Below it (a sops-nix, or nixos-raspberrypi's 8 overlays),
+  # printing the names is exactly what resolves the ambiguity, so
+  # withholding them helps no one either. Shared by EVERY throw site that
+  # lists an input's exported names -- ambiguousExportMessage below, and
+  # resolveEntrySet's "you named an entry that does not exist" throw -- so
+  # a huge catalog cannot dump a wall of names through one path just
+  # because the other was capped.
   ambiguousListThreshold = 20;
 
   # One policy, used everywhere an input's exported names get listed in a
@@ -104,13 +104,11 @@ let
   # discards throw messages, like the other harness-error assertions (see
   # probeCoreOverrideMessage in checks/builders/default.nix for the same
   # pattern). `names` is `lib.attrNames` of the exported set; the exported
-  # names themselves are listed via describeAvailable IF there are few
-  # enough to be useful (see ambiguousListThreshold above for why --
-  # nixos-raspberrypi's 8 overlays are exactly what you need to pick one).
-  # This doubles as the "what's available" answer resolveEntrySet gives
-  # when you DO name an entry and it does not exist -- same policy, same
-  # helper, so neither throw site can dump a wall of names the other one
-  # was carefully capping.
+  # names themselves are listed via describeAvailable if there are few
+  # enough to be useful (ambiguousListThreshold above). Doubles as the
+  # "what's available" answer for a named entry that does not exist -- one
+  # helper for both throw sites, so neither can dump a wall of names the
+  # other one caps.
   ambiguousExportMessage = name: channel: names: ''
     nixpkgs-lib-extensions: input `${name}` exports ${toString (lib.length names)} ${channel} entries and no `default` -- auto-import will not guess. Select what you want via the builder's inputContributions argument:
       inputContributions."${name}".${channel} = [ "<entry>" ]; # these entries, in this order

@@ -8,9 +8,8 @@
 
     Takes what `buildConfigurations` returns and produces the per-system
     attrset a flake's `checks` expects. Both halves default to empty, so
-    one alone is fine -- but the single-purpose builders return a BARE
-    attrset keyed by name, so their output must be named
-    (`{ inherit nixosConfigurations; }`), not passed straight in.
+    one alone is fine -- see the `configurations` argument for wrapping
+    a single-purpose builder's bare output.
 
     Two things it does that a hand-written `mapAttrs` over
     `nixosConfigurations` reliably gets wrong:
