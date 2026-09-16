@@ -441,6 +441,27 @@
                 systemd.user.services."hm-auto-upgrade" = {
                   Unit = {
                     Description = "Home Manager auto upgrade (detached launcher)";
+                    # sd-switch must never restart this unit on a switch: it
+                    # is a detached launcher whose ExecStart spawns its OWN
+                    # independent `home-manager switch`, and every switch's
+                    # own reloadSystemd step restarts every managed unit
+                    # (this one included) unless exempted. Without
+                    # X-SwitchMethod=keep-old, that spawned switch reaches
+                    # its own reloadSystemd step and restarts this unit
+                    # again -- launching another detached switch, which
+                    # does the same, with no mutual exclusion anywhere in
+                    # the chain (deferCondition only guards against a
+                    # DIFFERENT, system-level upgrade unit). Confirmed live:
+                    # a switch that keeps failing at a later step (so it
+                    # never reaches a "nothing to do" no-op) turns this into
+                    # a genuine storm -- 4-6 concurrent `home-manager
+                    # switch` processes piling up, stopped only by killing
+                    # every hm-auto-upgrade-run-*.service by explicit PID.
+                    # Unit changes here apply on the next natural
+                    # invocation (timer fire, manual restart, or reboot)
+                    # instead of immediately on the next switch -- the same
+                    # trade-off any keep-old unit makes.
+                    "X-SwitchMethod" = "keep-old";
                     After = [
                       "network-online.target"
                       # secrets are decrypted by sops-nix's own user
