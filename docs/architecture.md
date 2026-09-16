@@ -14,8 +14,8 @@ lib/
                     the public surface -- dropping a file into a folder
                     publishes nothing until it is named there (checked
                     against the on-disk tree by the exports test).
-  attrsets/         small helpers (recursiveMerge, ...)
-  strings/          small helpers (stringToTitle, ...)
+  attrsets/         recursiveMerge
+  strings/          stringToTitle
   imports/          importIfNix / importIfNixOr, readIfPlain /
                     readIfPlainOr (git-crypt-friendly), discoverPatches
   systemd/          detachedRun, interceptingWrapper
@@ -47,6 +47,7 @@ lib/
                       `import nixpkgs` lives here
       inputs.nix      input conventions and inputContributions
       registry.nix    users-tree resolution and validation
+      user-defaults.nix  per-user users/<u>/_defaults.nix overrides
       mk-system.nix   mkSystem (the mkNixosSystem implementation)
       mk-home.nix     mkHome (the mkHomeConfiguration implementation)
       ext-options.nix the nixpkgsLibExtensions.* options module
@@ -154,3 +155,9 @@ imported into every system and every home.
   pinned by eval-time assertions in
   checks/builders/tests/ -- each one is a pair of things that used to
   be able to drift apart.
+- Three HAND-WRITTEN lists, gated because each one went stale in
+  practice: README's export enumeration and this file's map above
+  (`docs-integrity` RULES 6 and 7), and `mkNixosSystem`'s argument list
+  (`mk-nixos-system-arguments-documented`). No generator rebuilds
+  these; adding a `lib/nixos/` file or a builder argument means editing
+  them by hand, and the build says so if you forget.

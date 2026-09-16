@@ -22,6 +22,16 @@ in
     bootstrap instead of building in, which is a `mkNixosSystem`
     concern). Outputs are lazy, so ones nobody builds cost nothing.
 
+    A FLAT argument set means one `system` for the whole call -- fine
+    when every home targets the same architecture, but a host-less home
+    (the first bullet above) has no `hosts/<h>/` directory to take one
+    from otherwise. `users/<user>/_defaults.nix` (and its
+    `users/<user>/hosts/<h>/_defaults.nix` companion) exists for exactly
+    that: a per-user override of `system` and a handful of other
+    home-scoped arguments, read from the tree instead of the call. See
+    `mkNixosSystem`'s own reference for the full list of what it may set
+    and how the two files layer.
+
     This is the entry point for a home-manager-only flake. Because it has
     no declared host list, it discovers the host dimension from the tree
     alone -- so it emits `"<user>@<host>"` for EVERY override directory

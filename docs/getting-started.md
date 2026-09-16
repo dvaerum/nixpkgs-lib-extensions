@@ -197,6 +197,40 @@ override merged in. Adding one machine-specific override must not
 silently remove the ability to `home-manager switch --flake .#frank`
 everywhere else.
 
+### Per-user builder arguments
+
+`buildHomeConfigurations`/`buildConfigurations` build every home from
+ONE argument set (or one per host), so there is no per-user `system` to
+write in your flake -- which is a real gap for a home-less-than-a-host
+key like `"alice"` above: which architecture should it build for?
+
+`users/<u>/_defaults.nix` (and its `users/<u>/hosts/<h>/_defaults.nix`
+companion) answers that from the tree instead:
+
+```nix
+# users/alice/_defaults.nix -- a plain attrset is enough
+{
+  system = "aarch64-linux";
+}
+```
+
+A function form receives builder context (`inputs`, `rootPath`,
+`extLib`, `username`, `hostname`, and nixpkgs' own plain `lib` -- not
+this library's extended one) for the cases a constant can't cover.
+Beyond `system` it may set `homeModules`, `specialArgs`, `tags`,
+`homeAutoUpgrade`/`homeAutoUpgradeFlakeRef`, and the per-user nixpkgs
+knobs (`overlays`, `nixpkgsConfig`, `allowedUnfreePackages`,
+`permittedInsecurePackages`) -- see `mkNixosSystem`'s own reference
+entry for the complete list, the two files' merge rule, and what a
+DECLARED host's own `system` disagreeing with a user's file does (it
+throws, naming both -- a host's architecture is not a user's to
+override). Applies to standalone homes only; a system-managed home
+already has the system's own `pkgs`.
+
+A host-less home's `system` resolves in order: its own file, else the
+fleet's `_defaults.system`, else building it throws rather than
+guessing.
+
 ### Where the tree is read from
 
 `rootPath` (default: your flake, `inputs.self`) -- or `loginFlakeRef`
@@ -238,6 +272,7 @@ lives in one repo, and `bo` in another -- give `loginFlakeRef` a
 
 ```nix
 mkNixosSystem {
+  # ...
   # rootPath's own tree (dennis, here) always applies and is always
   # trusted; loginFlakeRef only decides what gets ADDED to it. Two
   # DIFFERENT sources here -- the same source named twice would make
@@ -880,7 +915,8 @@ its grace period.
 
 Without this, logging out is the only way to say "go ahead" -- a silly
 thing to have to do to a machine you are using. `nixos-allow-reboot` is
-on every user's PATH:
+on every user's PATH -- installed with the status line, so
+`console.enable = false;` takes the consent command with it:
 
 ```
 $ nixos-allow-reboot
@@ -974,8 +1010,11 @@ described for the home timer above.
 - `desktop.enable` (default on) -- `notify-send` inside each logged-in
   user's own session bus, falling back to `wall` for anyone without one.
 - `onResult` -- shell run **once per engine run**, not once per poll,
-  with `$RESULT`, `$REBOOT_PENDING` and `$GENERATION` in scope. This is
-  where a push notification goes; the library bakes in none.
+  with `$RESULT`, `$REBOOT_PENDING`, `$GENERATION` and `$STATE_FILE` in
+  scope. This is where a push notification goes; the library bakes in
+  none. Appending `warn=<text>` to `$STATE_FILE` is how a hook reports
+  its OWN failure, so a push that never arrived still shows up in
+  `nixos-upgrade-status`.
 
 The home timer and this one are deliberately independent: this never
 triggers that. A standalone home has its own daily timer, and coupling
@@ -1096,7 +1135,7 @@ The policy is inspectable without waiting for the timer:
 
 ```
 $ nixos-prune-generations --dry-run
-nixos-prune-generations: 86 generation(s); deleting 43 older than 30d
+nixos-prune-generations: 86 generation(s); would delete 43 older than 30d
   (keeping the newest 10 and the current one)
 nixos-prune-generations: DRY-RUN: would delete generations: 644 645 646 ...
 ```

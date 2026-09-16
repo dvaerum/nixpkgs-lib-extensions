@@ -22,6 +22,172 @@ let
     filterUsers
     ;
   inherit (import ./inputs.nix { inherit lib self; }) detectHomeManager;
+  inherit (import ./user-defaults.nix { inherit lib self; })
+    allowedUserDefaultsArgs
+    allowedUserHostDefaultsArgs
+    userDefaultsPath
+    readUserDefaults
+    ;
+
+  # ---- argument-merge primitives, shared by planHosts' host layering and
+  # userHomesStandalone/userHomesFromPlan's user layering below. Hoisted
+  # out of planHosts (which used to be their only caller) rather than
+  # transcribed a second time -- `fnName` becomes an explicit leading
+  # argument in place of what used to be a closure.
+
+  coreArgSet = lib.listToAttrs (
+    map (n: {
+      name = n;
+      value = null;
+    }) coreArgNames
+  );
+  # Cheap identity first: flake inputs carry `outPath`, so two of them
+  # are the same tree iff those match. Plain `==` on genuinely different
+  # same-size attrsets descends arbitrarily deep -- a probe comparing
+  # two nixpkgs instantiations took ~6 seconds and forced thousands of
+  # attributes this library is otherwise careful never to force.
+  sameValue =
+    a: b:
+    if lib.isAttrs a && lib.isAttrs b && a ? outPath && b ? outPath then
+      a.outPath == b.outPath
+    else
+      # `==` does NOT throw on functions (it returns false); tryEval is
+      # here only for a `throw` embedded in the compared data.
+      let
+        probe = builtins.tryEval (a == b);
+      in
+      probe.success && probe.value;
+  # A host's (or a user's) EFFECTIVE core-argument tuple: every core
+  # argument made explicit -- what the merged arguments state, over the
+  # builder's own defaults. Compared over effective VALUES, not presence:
+  # restating `inherit inputs system;` or writing a documented default
+  # (`patches = [ ]`, ...) -- the most natural things to write -- must
+  # still share. `coreDefaults` is mkContextCore's OWN defaults table
+  # (context.nix), so the comparison cannot disagree with what
+  # mkContextCore would build; `nixpkgs` is the one COMPUTED default and
+  # is filled in from the caller's `inputs`.
+  coreArgsOf =
+    args:
+    coreDefaults
+    // {
+      nixpkgs = args.nixpkgs or (args.inputs.nixpkgs or null);
+    }
+    // lib.intersectAttrs coreArgSet args;
+  sameCoreArgs = a: b: lib.all (n: sameValue (a.${n} or null) (b.${n} or null)) coreArgNames;
+
+  # A bare key replaces; `extra.<key>` adds to whatever the merge
+  # produced. Lists concatenate, attrsets merge with `extra` winning a
+  # key conflict, anything else is replaced.
+  combine =
+    fnName: hostname: key: base: add:
+    if lib.isList base && lib.isList add then
+      base ++ add
+    else if lib.isAttrs base && lib.isAttrs add then
+      # recursiveUpdate, not `//`: `inputContributions` is two levels
+      # (input -> channel), so a shallow merge let
+      # `extra.inputContributions.vendor.overlays = null;` replace the
+      # whole per-input entry and silently drop a sibling
+      # `nixosModules` selection -- the wrong modules got imported with
+      # no error, because the fallback rule happens to succeed.
+      lib.recursiveUpdate base add
+    # `else add` is right for scalars (group, userModule, ...), but
+    # base and add being DIFFERENT container kinds is never a
+    # deliberate "add" -- falling through to `add` silently threw the
+    # fleet-wide base away.
+    else if lib.isList base != lib.isList add || lib.isAttrs base != lib.isAttrs add then
+      throw "${fnName}: host `${hostname}`: `extra.${key}` is a ${builtins.typeOf add} but the value it must add to is a ${builtins.typeOf base}. `extra` ADDS to the merged value (lists concatenate, attrsets merge); to replace it outright, set `${key}` directly on the host."
+    else
+      add;
+  applyExtra =
+    fnName: hostname: merged: extra:
+    lib.foldl' (
+      acc: k:
+      acc
+      // {
+        ${k} = if acc ? ${k} then combine fnName hostname k acc.${k} extra.${k} else extra.${k};
+      }
+    ) merged (lib.attrNames extra);
+
+  # ---- per-user layering (users/<u>/_defaults.nix, and its
+  # users/<u>/hosts/<h>/_defaults.nix companion), used by
+  # userHomesStandalone and userHomesFromPlan below.
+
+  # The per-user override attrset, fully resolved: the base file (if any)
+  # then the `hosts/<h>` override file (if any) layered on top with the
+  # SAME semantics as above -- a bare key REPLACES, `extra.<key>` ADDS.
+  # `hostname == null` (a host-less home) reads only the base file: there
+  # is no override directory to layer, by construction.
+  userOverridesFor =
+    fnName: contextFor: baseDir: hostname:
+    let
+      base = readUserDefaults allowedUserDefaultsArgs false baseDir (contextFor hostname);
+    in
+    if hostname == null || baseDir == null then
+      base
+    else
+      let
+        hostDir = baseDir + "/hosts/${hostname}";
+        hostOverrides = readUserDefaults allowedUserHostDefaultsArgs true hostDir (contextFor hostname);
+      in
+      applyExtra fnName (toString hostDir) (base // (lib.removeAttrs hostOverrides [ "extra" ])) (
+        hostOverrides.extra or { }
+      );
+
+  # A user's overrides only need a core OF THEIR OWN when they touch a
+  # CORE argument (coreArgNames) -- otherwise the shared core already in
+  # hand is correct and reused, so most users cost nothing extra. Never
+  # hands mkHome a core built from DIFFERENT arguments than the ones it
+  # receives: context.nix documents that a stale core is undetectable,
+  # and a per-user `system` on a REUSED core would silently pair the
+  # host's `pkgs` with the user's own `home-manager` package.
+  coreForOverrides =
+    sharedCore: baseArgs: overrides:
+    if lib.any (k: overrides ? ${k}) coreArgNames then
+      mkContextCore (coreArgsOf (baseArgs // overrides))
+    else
+      sharedCore;
+
+  # A host-less home's `system`: the user's own file wins; else the
+  # fleet's `_defaults.system`; else this is genuinely undecidable --
+  # refuse to guess (same posture as ambiguousExportMessage, inputs.nix).
+  # `systemsInPlay` is only for the message.
+  hostlessSystemOrThrow =
+    fnName: username: defaultsSystem: systemsInPlay: overrides:
+    if overrides ? system then
+      overrides.system
+    else if defaultsSystem != null then
+      defaultsSystem
+    else
+      throw "${fnName}: hosts span ${lib.concatStringsSep ", " systemsInPlay} and no `_defaults.system` says which a host-less home should use -- `${username}` has no users/${username}/hosts/<host>/ directory to take an architecture from instead. Set `_defaults.system` (the fleet-wide default), or give ${username} a users/${username}/hosts/<host>/ directory so their home follows that host.";
+
+  # `alice@laptop`'s `system` is decided TWICE if the user's own file
+  # also sets it: once by the host (physical reality) and once by the
+  # file. Silently preferring either is exactly the bug this file exists
+  # to remove, so the two must AGREE -- never merely pick one.
+  #
+  # Exposed as DATA (like stringFlakeRefWarning/ambiguousExportMessage):
+  # a throw's own text is not observable in-language, so tests pin this
+  # by calling the message builder directly rather than catching the
+  # real throw.
+  hostSystemConflictMessage = fnName: username: hostname: hostSystem: userSystem: ''
+    ${fnName}: home `${username}@${hostname}`: host `${hostname}` declares
+    system = "${hostSystem}", but users/${username}/hosts/${hostname}/_defaults.nix
+    sets system = "${userSystem}". A host's architecture is not a
+    user's to choose. Fix by either:
+      - dropping `system` from users/${username}/hosts/${hostname}/_defaults.nix, or
+      - correcting `${hostname}`'s own `system` if the host really is ${userSystem}.
+    (A user file's `system` applies to their host-less home, where there
+     is no host to contradict.)
+  '';
+
+  # Returns `overrides` unchanged (a pass-through, like
+  # validateBuilderArgs) so a call site can pipe it straight into the merge.
+  checkHostSystemConflict =
+    fnName: username: hostname: hostSystem: overrides:
+    if overrides ? system && overrides.system != hostSystem then
+      throw (hostSystemConflictMessage fnName username hostname hostSystem overrides.system)
+    else
+      overrides;
 
   # ONE hosts attrset is meant to feed BOTH buildNixosConfigurations and
   # buildConfigurations, so both validate against the same allowlists:
@@ -345,7 +511,7 @@ let
   # `{ <hostname> = { args; core; registry; }; }`.
   #
   # Doing this once is not only deduplication: buildNixosConfigurations and
-  # buildHomeConfigurations each used to compute their own core from the
+  # buildConfigurations each used to compute their own core from the
   # SAME `_defaults`, so the documented "define hosts once, pass to both"
   # pattern paid for two full nixpkgs evaluations. Nix memoizes
   # `import <path>` but never the application, so both were held live.
@@ -367,78 +533,6 @@ let
         label = fnName;
         traceDiscoveredUsers = split.defaults.traceDiscoveredUsers or true;
       };
-      coreArgSet = lib.listToAttrs (
-        map (n: {
-          name = n;
-          value = null;
-        }) coreArgNames
-      );
-      # Cheap identity first: flake inputs carry `outPath`, so two of them
-      # are the same tree iff those match. Plain `==` on genuinely different
-      # same-size attrsets descends arbitrarily deep -- a probe comparing
-      # two nixpkgs instantiations took ~6 seconds and forced thousands of
-      # attributes this library is otherwise careful never to force.
-      sameValue =
-        a: b:
-        if lib.isAttrs a && lib.isAttrs b && a ? outPath && b ? outPath then
-          a.outPath == b.outPath
-        else
-          # `==` does NOT throw on functions (it returns false); tryEval is
-          # here only for a `throw` embedded in the compared data.
-          let
-            probe = builtins.tryEval (a == b);
-          in
-          probe.success && probe.value;
-      # A host's EFFECTIVE core-argument tuple: every core argument made
-      # explicit -- what the merged arguments state, over the builder's own
-      # defaults. Compared over effective VALUES, not presence: a host
-      # restating `inherit inputs system;` or writing a documented default
-      # (`patches = [ ]`, ...) -- the most natural things to write -- must
-      # still share. `coreDefaults` is mkContextCore's OWN defaults table
-      # (context.nix), so the comparison cannot disagree with what
-      # mkContextCore would build; `nixpkgs` is the one COMPUTED default
-      # and is filled in from the host's `inputs`.
-      coreArgsOf =
-        args:
-        coreDefaults
-        // {
-          nixpkgs = args.nixpkgs or (args.inputs.nixpkgs or null);
-        }
-        // lib.intersectAttrs coreArgSet args;
-      sameCoreArgs = a: b: lib.all (n: sameValue (a.${n} or null) (b.${n} or null)) coreArgNames;
-
-      # A bare key replaces; `extra.<key>` adds to whatever the merge
-      # produced. Lists concatenate, attrsets merge with `extra` winning a
-      # key conflict, anything else is replaced.
-      combine =
-        hostname: key: base: add:
-        if lib.isList base && lib.isList add then
-          base ++ add
-        else if lib.isAttrs base && lib.isAttrs add then
-          # recursiveUpdate, not `//`: `inputContributions` is two levels
-          # (input -> channel), so a shallow merge let
-          # `extra.inputContributions.vendor.overlays = null;` replace the
-          # whole per-input entry and silently drop a sibling
-          # `nixosModules` selection -- the wrong modules got imported with
-          # no error, because the fallback rule happens to succeed.
-          lib.recursiveUpdate base add
-        # `else add` is right for scalars (group, userModule, ...), but
-        # base and add being DIFFERENT container kinds is never a
-        # deliberate "add" -- falling through to `add` silently threw the
-        # fleet-wide base away.
-        else if lib.isList base != lib.isList add || lib.isAttrs base != lib.isAttrs add then
-          throw "${fnName}: host `${hostname}`: `extra.${key}` is a ${builtins.typeOf add} but the value it must add to is a ${builtins.typeOf base}. `extra` ADDS to the merged value (lists concatenate, attrsets merge); to replace it outright, set `${key}` directly on the host."
-        else
-          add;
-      applyExtra =
-        hostname: merged: extra:
-        lib.foldl' (
-          acc: k:
-          acc
-          // {
-            ${k} = if acc ? ${k} then combine hostname k acc.${k} extra.${k} else extra.${k};
-          }
-        ) merged (lib.attrNames extra);
       # `_defaults` merged under each entry, the host's `_groups` layer (if
       # it declares a `group` that has one) BETWEEN the two, `extra` layered
       # on top -- the arguments each builder finally receives. The group
@@ -452,11 +546,11 @@ let
         let
           groupName = effectiveGroup split.defaults entry;
           groupLayer = if groupName == null then { } else split.groups.${groupName} or { };
-          base = applyExtra hostname (split.defaults // (lib.removeAttrs groupLayer [ "extra" ])) (
+          base = applyExtra fnName hostname (split.defaults // (lib.removeAttrs groupLayer [ "extra" ])) (
             groupLayer.extra or { }
           );
         in
-        applyExtra hostname (base // (lib.removeAttrs entry [ "extra" ]) // { inherit hostname; }) (
+        applyExtra fnName hostname (base // (lib.removeAttrs entry [ "extra" ]) // { inherit hostname; }) (
           entry.extra or { }
         )
       ) split.hostEntries;
@@ -559,10 +653,27 @@ let
         traceDiscoveredUsers = checked.traceDiscoveredUsers or true;
       };
       tree = resolved.tree;
+      # `users/<u>/_defaults.nix` (and its `hosts/<h>/_defaults.nix`
+      # companion) merged on top of `checked`. Most users touch none of
+      # this: `userOverridesFor` returns `{ }` when no file exists, and
+      # `coreForOverrides` reuses the ONE `core` above unless an override
+      # actually changes a core argument -- so a user with no file, or
+      # one that only sets e.g. `homeModules`, costs nothing extra.
       homeFor =
         username: hostname:
-        mkHome core (
+        let
+          contextFor = hostname: {
+            inherit (checked) inputs;
+            rootPath = checked.rootPath or (checked.inputs.self or null);
+            extLib = self;
+            inherit username hostname lib;
+          };
+          overrides = userOverridesFor fnName contextFor (tree.${username} or null) hostname;
+          userCore = coreForOverrides core checked overrides;
+        in
+        mkHome userCore (
           checked
+          // overrides
           // {
             inherit username hostname;
             usersTree = resolved;
@@ -612,19 +723,31 @@ let
   #
   # A `"<user>@<host>"` home is built against THAT host's core -- the same
   # `mkContextCore` thunk `systemsFromPlan` uses for its system, so it
-  # costs no extra nixpkgs evaluation. A host-less home uses the
-  # core of whichever host sorts first -- they share one core class in
-  # the common case, and a host-less home has no host of its own to take
-  # one from.
+  # costs no extra nixpkgs evaluation, UNLESS the user's own
+  # `hosts/<h>/_defaults.nix` changes a core argument, in which case a
+  # `system` conflicting with the host's own throws (a host's
+  # architecture is physical reality, not a user's to override) and
+  # anything else gets that user their own core. A host-less home has no
+  # host to take a core from -- its `system` comes from its OWN
+  # `_defaults.nix` if it has one, else the fleet's `_defaults.system`,
+  # else building it throws rather than silently picking one (this used
+  # to pick "whichever declared host sorts first alphabetically", which
+  # changed a host-less home's architecture on an unrelated host rename;
+  # see checks/builders/tests/user-defaults.nix for the regression this
+  # closes).
+  #
+  # `hosts` is the RAW attrset `planHosts` built `plan` from -- needed for
+  # its `_defaults`, which `plan` itself does not carry (a plan is keyed
+  # by hostname only, and `_defaults` is not a hostname).
   userHomesFromPlan =
-    fnName: plan:
+    fnName: plan: hosts:
     lib.seq (planLoginUsers fnName plan) (
       let
-        anyHost = lib.head (lib.attrNames plan);
-        # `registry` is the plan's shared `{ tree; untrustedUsers; }`
-        # (identical object on every host -- one scan for the whole
-        # plan, see planHosts); `tree` is the bare map this function's
-        # own discovery below needs.
+        # Safe here (unlike a core): `registry` is IDENTICAL on every
+        # host in the plan by construction (planHosts's one shared
+        # `usersTree` scan), so picking any one host to read it off of is
+        # not the arbitrary-choice problem `system` was.
+        firstHost = lib.head (lib.attrNames plan);
         registry =
           if plan == { } then
             {
@@ -632,7 +755,7 @@ let
               untrustedUsers = [ ];
             }
           else
-            plan.${anyHost}.registry;
+            plan.${firstHost}.registry;
         tree = registry.tree;
         # a plan whose hosts have no home-manager contributes nothing; an
         # explicit `homeManager` counts as having one WITHOUT re-running
@@ -640,19 +763,64 @@ let
         hasHomeManager =
           p: (p.args.homeManager or null) != null || detectHomeManager (p.args.inputs or { }) != null;
 
+        # `_defaults` alone, same as the plan's own users-tree scan
+        # (planHosts) -- a host-less home is by definition not any one
+        # host's concern, so only the fleet-wide layer is consulted, not
+        # any host's merged args (which may differ per host precisely in
+        # the ways that matter here: system, homeManager, inputs).
+        defaultsArgs = hosts._defaults or { };
+        defaultsSystem = defaultsArgs.system or null;
+        systemsInPlay = lib.unique (map (h: plan.${h}.args.system) (lib.attrNames plan));
+        hasHomeManagerFleetWide =
+          (defaultsArgs.homeManager or null) != null
+          || detectHomeManager (defaultsArgs.inputs or { }) != null;
+        # Lazy, like every core: unforced unless some host-less home
+        # with NO core-changing override of its own actually gets built.
+        defaultsCore = mkContextCore (coreArgsOf (defaultsArgs // { system = defaultsSystem; }));
+
         # host-less homes, one per user with a home.nix of their own
         bare = lib.listToAttrs (
-          map (u: {
-            name = u;
-            value = mkHome plan.${anyHost}.core (
-              plan.${anyHost}.args
-              // {
+          map (
+            u:
+            let
+              contextFor = hostname: {
+                inputs = defaultsArgs.inputs or { };
+                rootPath = defaultsArgs.rootPath or (defaultsArgs.inputs.self or null);
+                extLib = self;
                 username = u;
-                hostname = null;
-                usersTree = registry;
-              }
-            );
-          }) (lib.filter (u: (resolveUser tree null u).homeModules != [ ]) (lib.attrNames tree))
+                inherit hostname lib;
+              };
+              overrides = userOverridesFor fnName contextFor (tree.${u} or null) null;
+              effectiveSystem = hostlessSystemOrThrow fnName u defaultsSystem systemsInPlay overrides;
+              finalArgs = defaultsArgs // overrides // { system = effectiveSystem; };
+              # `lib.seq effectiveSystem` is load-bearing, not decoration:
+              # `defaultsCore` was built from raw `defaultsSystem`, which
+              # CAN be null (no fleet-wide default, this user's own file
+              # sets none either). Reusing it unconditionally let a null
+              # system reach `import nixpkgs` before `effectiveSystem`'s
+              # own clean throw ever got forced -- nixpkgs' own
+              # system-parsing then failed with an unrelated, confusing
+              # "cannot coerce null to a string" instead. Forcing
+              # `effectiveSystem` FIRST guarantees the intended throw
+              # fires; reaching `defaultsCore` at all proves it didn't.
+              userCore =
+                if lib.any (k: overrides ? ${k}) coreArgNames then
+                  mkContextCore (coreArgsOf finalArgs)
+                else
+                  lib.seq effectiveSystem defaultsCore;
+            in
+            {
+              name = u;
+              value = mkHome userCore (
+                finalArgs
+                // {
+                  username = u;
+                  hostname = null;
+                  usersTree = registry;
+                }
+              );
+            }
+          ) (lib.filter (u: (resolveUser tree null u).homeModules != [ ]) (lib.attrNames tree))
         );
 
         # per-host homes, one per (user, hosts/<host>) override that a
@@ -675,21 +843,42 @@ let
           else
             acc
             // lib.listToAttrs (
-              map (u: {
-                name = "${u}@${hostname}";
-                value = mkHome p.core (
-                  p.args
-                  // {
+              map (
+                u:
+                let
+                  contextFor = hn: {
+                    inputs = p.args.inputs or { };
+                    rootPath = p.args.rootPath or (p.args.inputs.self or null);
+                    extLib = self;
                     username = u;
-                    inherit hostname;
-                    usersTree = registry;
-                  }
-                );
-              }) (lib.filter (u: (resolveUser hostTree hostname u).homeModules != [ ]) usersHere)
+                    hostname = hn;
+                    inherit lib;
+                  };
+                  rawOverrides = userOverridesFor fnName contextFor (hostTree.${u} or null) hostname;
+                  # The host's OWN `system` wins any contest with the
+                  # user's file -- checked here, not merely assumed by
+                  # merge order, so the two disagreeing throws instead of
+                  # one silently shadowing the other.
+                  overrides = checkHostSystemConflict fnName u hostname p.args.system rawOverrides;
+                  userCore = coreForOverrides p.core p.args overrides;
+                in
+                {
+                  name = "${u}@${hostname}";
+                  value = mkHome userCore (
+                    p.args
+                    // overrides
+                    // {
+                      username = u;
+                      inherit hostname;
+                      usersTree = registry;
+                    }
+                  );
+                }
+              ) (lib.filter (u: (resolveUser hostTree hostname u).homeModules != [ ]) usersHere)
             )
         ) { } (lib.attrNames plan);
       in
-      if plan == { } || !(hasHomeManager plan.${anyHost}) then { } else bare // perHost
+      if plan == { } || !hasHomeManagerFleetWide then { } else bare // perHost
     );
 
 in
@@ -705,5 +894,6 @@ in
     systemsFromPlan
     userHomesFromPlan
     userHomesStandalone
+    hostSystemConflictMessage
     ;
 }

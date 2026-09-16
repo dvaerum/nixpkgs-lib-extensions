@@ -313,6 +313,48 @@ in
     : host.
     : Defaults `true` / `null`.
 
+    `users/<u>/_defaults.nix`
+    : NOT a builder argument -- documented here because this is the
+    : natural place to find it. It, and its
+    : `users/<u>/hosts/<h>/_defaults.nix` companion, let a STANDALONE
+    : home (`mkHomeConfiguration`/`buildHomeConfigurations`/
+    : `buildConfigurations` -- never a system-managed one, which already
+    : has the system's own `pkgs`) carry its own `system` and a handful
+    : of other home-scoped arguments, read from the tree instead of from
+    : the caller. Either an attrset or a function receiving `{ inputs,
+    : rootPath, extLib, lib, username, hostname, ... }` (`lib` is
+    : nixpkgs' PLAIN lib here, not the module lib -- it has none of this
+    : library's own additions, because those live inside the very core
+    : this file may decide the shape of). May set: `system`,
+    : `homeModules`, `specialArgs`, `tags`, `homeAutoUpgrade`,
+    : `homeAutoUpgradeFlakeRef`, `overlays`, `nixpkgsConfig`,
+    : `allowedUnfreePackages`, `permittedInsecurePackages`. Anything else
+    : throws, naming the file -- notably `rootPath`/`loginFlakeRef`/
+    : `inputs` (circular: they locate this very file) and every
+    : host-only argument (`system` on a DECLARED host is physical
+    : reality, not a user's to override -- a user file's `system`
+    : disagreeing with `<user>@<host>`'s own host throws, naming both).
+    : The two files layer like `_defaults` and a host entry do: a bare
+    : key in the `hosts/<h>` file REPLACES the base file's value,
+    : `extra.<key>` ADDS to it (lists concatenate, attrsets merge). A
+    : user touching no core argument (`system`, `overlays`,
+    : `nixpkgsConfig`, `allowedUnfreePackages`,
+    : `permittedInsecurePackages`) costs nothing extra -- they share
+    : whatever core the call already built; one who does gets a core of
+    : their own, never a shared one (`mkContext` cannot detect a stale
+    : core, so reusing one built from different arguments would silently
+    : pair one architecture's `pkgs` with another's `home-manager`
+    : package). A host-less home (no `hosts/<h>` directory) resolves its
+    : `system` in order: the user's own file, else the fleet's
+    : `_defaults.system`, else building it throws rather than silently
+    : guessing -- this is what replaced picking "whichever declared host
+    : sorts first alphabetically", which changed a host-less home's
+    : architecture on an unrelated host's rename. A malformed or
+    : still-encrypted file aborts evaluation rather than degrading to a
+    : default: unlike `importIfNixOr`, this read cannot use IFD to tell
+    : the two apart (the probe needs a `pkgs`, and a `pkgs` needs the
+    : very core this file may decide the shape of).
+
     wrapHomeManagerSwitch
     : Whether a login-managed user's host also gets a detach-safe
     : `home-manager` on `environment.systemPackages`, so they can manually

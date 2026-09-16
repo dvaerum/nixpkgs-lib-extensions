@@ -21,6 +21,13 @@
     | a dotfile or dot-directory (`.gitkeep`, `.git`, ...)      | ignored, no warning |
     | anything else (a plain file, `README.md`, ...)            | ignored, no warning -- only a directory could ever be a user, so a stray file is not a mistake worth flagging |
 
+    A `users/<u>/_defaults.nix` sitting alongside those files is not one
+    of the two that qualifies a directory here, and this function never
+    reads it -- it is a per-user builder-argument override, consulted
+    only by `buildHomeConfigurations`/`buildConfigurations` when they
+    build that user's home, not by this scan. See `mkNixosSystem`'s own
+    reference for what it does.
+
     A symlink is resolved and classified by what it points at, same rule as
     `discoverPatches`/`importIfNixOr`. A missing `dir` is not an error: it
     is treated the same as an empty one (`{ }`) -- most flakes have no

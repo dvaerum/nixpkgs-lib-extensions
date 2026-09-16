@@ -29,6 +29,14 @@ in
     never evaluated, so a setup with no login users pays nothing for the
     `homeConfigurations` half.
 
+    A host-less home's `system` (no `users/<u>/hosts/<h>/` directory to
+    take one from) resolves from `users/<u>/_defaults.nix`, else this
+    hosts attrset's own `_defaults.system`, else building it throws
+    rather than guessing; a `"<user>@<host>"` home's `system` is the
+    declared host's, and a user file disagreeing with it throws too,
+    naming both -- see `mkNixosSystem`'s own reference for the full
+    mechanism and what else such a file may set.
+
     # Example
 
     ```nix
@@ -76,6 +84,6 @@ in
     in
     {
       nixosConfigurations = shared.systemsFromPlan "buildConfigurations" plan;
-      homeConfigurations = shared.userHomesFromPlan "buildConfigurations" plan;
+      homeConfigurations = shared.userHomesFromPlan "buildConfigurations" plan hosts;
     };
 }

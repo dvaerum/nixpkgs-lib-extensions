@@ -35,6 +35,14 @@ in
     `home.nix` on this host — a single requested home that cannot be
     built is an error, not an empty result.
 
+    `users/<user>/_defaults.nix` is NOT consulted here: this builder
+    already takes `system`/`hostname` explicitly from the caller, so
+    there is nothing to resolve. It exists for
+    `buildHomeConfigurations`/`buildConfigurations`, which build every
+    user's home from one shared argument set and need a per-user
+    override to do otherwise -- see `mkNixosSystem`'s own reference for
+    the full mechanism.
+
     # Example
 
     ```nix

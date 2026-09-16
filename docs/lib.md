@@ -745,6 +745,14 @@ Laziness makes producing both free: a flake output nobody forces is
 never evaluated, so a setup with no login users pays nothing for the
 `homeConfigurations` half.
 
+A host-less home's `system` (no `users/<u>/hosts/<h>/` directory to
+take one from) resolves from `users/<u>/_defaults.nix`, else this
+hosts attrset's own `_defaults.system`, else building it throws
+rather than guessing; a `"<user>@<host>"` home's `system` is the
+declared host's, and a user file disagreeing with it throws too,
+naming both -- see `mkNixosSystem`'s own reference for the full
+mechanism and what else such a file may set.
+
 ### Example
 
 ```nix
@@ -806,6 +814,16 @@ Every user with a `home.nix` gets an output; `loginHomes` does not
 gate this (it selects which homes a NixOS system leaves to the login
 bootstrap instead of building in, which is a `mkNixosSystem`
 concern). Outputs are lazy, so ones nobody builds cost nothing.
+
+A FLAT argument set means one `system` for the whole call -- fine
+when every home targets the same architecture, but a host-less home
+(the first bullet above) has no `hosts/<h>/` directory to take one
+from otherwise. `users/<user>/_defaults.nix` (and its
+`users/<user>/hosts/<h>/_defaults.nix` companion) exists for exactly
+that: a per-user override of `system` and a handful of other
+home-scoped arguments, read from the tree instead of the call. See
+`mkNixosSystem`'s own reference for the full list of what it may set
+and how the two files layer.
 
 This is the entry point for a home-manager-only flake. Because it has
 no declared host list, it discovers the host dimension from the tree
@@ -1106,6 +1124,13 @@ tree; the "registry" in the name is historical.
 | a dotfile or dot-directory (`.gitkeep`, `.git`, ...)      | ignored, no warning |
 | anything else (a plain file, `README.md`, ...)            | ignored, no warning -- only a directory could ever be a user, so a stray file is not a mistake worth flagging |
 
+A `users/<u>/_defaults.nix` sitting alongside those files is not one
+of the two that qualifies a directory here, and this function never
+reads it -- it is a per-user builder-argument override, consulted
+only by `buildHomeConfigurations`/`buildConfigurations` when they
+build that user's home, not by this scan. See `mkNixosSystem`'s own
+reference for what it does.
+
 A symlink is resolved and classified by what it points at, same rule as
 `discoverPatches`/`importIfNixOr`. A missing `dir` is not an error: it
 is treated the same as an empty one (`{ }`) -- most flakes have no
@@ -1350,6 +1375,14 @@ regardless of the input's name.
 Throws when no home-manager input exists or the user has no matching
 `home.nix` on this host — a single requested home that cannot be
 built is an error, not an empty result.
+
+`users/<user>/_defaults.nix` is NOT consulted here: this builder
+already takes `system`/`hostname` explicitly from the caller, so
+there is nothing to resolve. It exists for
+`buildHomeConfigurations`/`buildConfigurations`, which build every
+user's home from one shared argument set and need a per-user
+override to do otherwise -- see `mkNixosSystem`'s own reference for
+the full mechanism.
 
 ### Example
 
@@ -1733,6 +1766,48 @@ mkNixosSystem :: Attribute -> NixosSystem
   system-managed home never gets a timer at all: it switches with the
   host.
   Defaults `true` / `null`.
+
+- **`users/<u>/_defaults.nix`**
+  NOT a builder argument -- documented here because this is the
+  natural place to find it. It, and its
+  `users/<u>/hosts/<h>/_defaults.nix` companion, let a STANDALONE
+  home (`mkHomeConfiguration`/`buildHomeConfigurations`/
+  `buildConfigurations` -- never a system-managed one, which already
+  has the system's own `pkgs`) carry its own `system` and a handful
+  of other home-scoped arguments, read from the tree instead of from
+  the caller. Either an attrset or a function receiving `{ inputs,
+  rootPath, extLib, lib, username, hostname, ... }` (`lib` is
+  nixpkgs' PLAIN lib here, not the module lib -- it has none of this
+  library's own additions, because those live inside the very core
+  this file may decide the shape of). May set: `system`,
+  `homeModules`, `specialArgs`, `tags`, `homeAutoUpgrade`,
+  `homeAutoUpgradeFlakeRef`, `overlays`, `nixpkgsConfig`,
+  `allowedUnfreePackages`, `permittedInsecurePackages`. Anything else
+  throws, naming the file -- notably `rootPath`/`loginFlakeRef`/
+  `inputs` (circular: they locate this very file) and every
+  host-only argument (`system` on a DECLARED host is physical
+  reality, not a user's to override -- a user file's `system`
+  disagreeing with `<user>@<host>`'s own host throws, naming both).
+  The two files layer like `_defaults` and a host entry do: a bare
+  key in the `hosts/<h>` file REPLACES the base file's value,
+  `extra.<key>` ADDS to it (lists concatenate, attrsets merge). A
+  user touching no core argument (`system`, `overlays`,
+  `nixpkgsConfig`, `allowedUnfreePackages`,
+  `permittedInsecurePackages`) costs nothing extra -- they share
+  whatever core the call already built; one who does gets a core of
+  their own, never a shared one (`mkContext` cannot detect a stale
+  core, so reusing one built from different arguments would silently
+  pair one architecture's `pkgs` with another's `home-manager`
+  package). A host-less home (no `hosts/<h>` directory) resolves its
+  `system` in order: the user's own file, else the fleet's
+  `_defaults.system`, else building it throws rather than silently
+  guessing -- this is what replaced picking "whichever declared host
+  sorts first alphabetically", which changed a host-less home's
+  architecture on an unrelated host's rename. A malformed or
+  still-encrypted file aborts evaluation rather than degrading to a
+  default: unlike `importIfNixOr`, this read cannot use IFD to tell
+  the two apart (the probe needs a `pkgs`, and a `pkgs` needs the
+  very core this file may decide the shape of).
 
 - **wrapHomeManagerSwitch**
   Whether a login-managed user's host also gets a detach-safe
