@@ -200,6 +200,12 @@ firmwares, chosen by platform:
   this never touches the MBR partition table at all; GRUB reads GPT
   normally once its embedded code has run.
 
+Operational notes live next to the implementation in
+`lib/disko/README.md` -- including the manual `gdisk` sequence for
+rebuilding the aarch64 hybrid MBR by hand when a disk is replaced,
+which is the one procedure here that cannot be expressed
+declaratively.
+
 ### Example
 
 ```nix
@@ -1071,8 +1077,10 @@ checksForConfigurations ::
   builders return a BARE attrset of configurations rather than one
   under either key, so wrap theirs:
   `checksForConfigurations { inherit nixosConfigurations; }`.
-  Passing such an output directly is not an error -- it simply
-  matches neither key and yields no checks at all.
+  Passing such an output directly matches neither key and yields no
+  checks; because that leaves `checks` gating nothing while
+  `nix flake check` still passes, it WARNS (naming the stray keys)
+  rather than failing quietly. An empty result warns either way.
 
 
 
@@ -2037,7 +2045,7 @@ older than N days" and nothing else, so a retention FLOOR (see
 
 So: this module owns a timer of its own, decides which generations
 to delete -- older than `keepDays`, except the newest
-`keepGenerations` and the running one -- and then reclaims what they
+`keepGenerations` and the profile's CURRENT one -- and then reclaims what they
 were pinning with `nix-collect-garbage`, in the same unit. Deleting
 a generation only makes its closure collectable; without the
 reclaim the generation count falls while the disk stays exactly as

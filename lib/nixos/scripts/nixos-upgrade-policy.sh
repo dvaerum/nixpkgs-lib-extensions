@@ -140,7 +140,7 @@ read_field() {
   sed -n "s/^$1=//p" "$2"
 }
 
-# ── the three questions, kept apart ──────────────────────────────────
+# ── the two questions, kept apart ──────────────────────────────────
 # booted vs profile  -> is a REBOOT needed
 # current vs profile -> is an ACTIVATION needed
 link_of() {

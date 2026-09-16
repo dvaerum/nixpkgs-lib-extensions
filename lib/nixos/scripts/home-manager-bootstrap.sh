@@ -3,7 +3,7 @@
 # Invoked by the `home-manager-bootstrap` systemd *user* service. Binaries
 # (home-manager, coreutils) are provided on PATH via the wrapper's
 # runtimeInputs; the wrapper (writeShellApplication) also provides the
-# shebang and `set -eu`. Parameters are passed as CLI arguments:
+# shebang and `set -euo pipefail`. Parameters are passed as CLI arguments:
 #
 #   --flake-ref <ref>          flake reference to build from
 #   --hostname <name>          this host's name

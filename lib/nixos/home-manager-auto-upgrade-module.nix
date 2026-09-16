@@ -111,7 +111,7 @@
             stateFile = "${config.xdg.stateHome}/hm-auto-upgrade/last-run";
 
             # Arbitrary consumer shell reaches the script as a FILE it
-            # sources, not as spliced text: the script itself stays a
+            # runs, not as spliced text: the script itself stays a
             # real, shellcheck-verified .sh file rather than becoming a
             # Nix string concatenation.
             fragmentFor =

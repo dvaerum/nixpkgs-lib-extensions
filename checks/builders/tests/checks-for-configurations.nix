@@ -82,4 +82,15 @@ in
     && (myLib.checksForConfigurations {
       inherit (built) nixosConfigurations;
     }).${system} ? "nixos-laptop";
+
+  # An empty result is a silent no-op gate, so the function warns. The
+  # WARNING TEXT is not assertable in pure eval (lib.warn is a trace, and
+  # tryEval does not catch it), so this pins the two things that are: the
+  # bug case still returns `{ }` rather than throwing, and the correct
+  # call is unaffected. The messages themselves were verified live --
+  # both branches fire, the correct path is silent.
+  checks-for-configurations-bare-output-yields-nothing =
+    myLib.checksForConfigurations built.nixosConfigurations == { };
+
+  checks-for-configurations-empty-input-yields-nothing = myLib.checksForConfigurations { } == { };
 }

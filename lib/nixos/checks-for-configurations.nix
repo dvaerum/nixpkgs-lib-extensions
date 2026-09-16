@@ -77,16 +77,26 @@
     : builders return a BARE attrset of configurations rather than one
     : under either key, so wrap theirs:
     : `checksForConfigurations { inherit nixosConfigurations; }`.
-    : Passing such an output directly is not an error -- it simply
-    : matches neither key and yields no checks at all.
+    : Passing such an output directly matches neither key and yields no
+    : checks; because that leaves `checks` gating nothing while
+    : `nix flake check` still passes, it WARNS (naming the stray keys)
+    : rather than failing quietly. An empty result warns either way.
   */
   checksForConfigurations =
-    {
+    args@{
       nixosConfigurations ? { },
       homeConfigurations ? { },
       ...
     }:
     let
+      # Keys that are neither half. The `...` above accepts them silently,
+      # which is exactly how a BARE builder output (keyed by hostname)
+      # produces no checks at all -- so they are the evidence for the
+      # warning below, not noise to ignore.
+      strayKeys = lib.filter (k: k != "nixosConfigurations" && k != "homeConfigurations") (
+        lib.attrNames args
+      );
+
       entries =
         lib.mapAttrsToList (name: host: {
           name = "nixos-${name}";
@@ -96,8 +106,20 @@
           name = "home-${name}";
           drv = home.activationPackage;
         }) homeConfigurations;
+
+      result = lib.mapAttrs (_: group: lib.listToAttrs (map (e: lib.nameValuePair e.name e.drv) group)) (
+        lib.groupBy (e: e.drv.system) entries
+      );
     in
-    lib.mapAttrs (_: group: lib.listToAttrs (map (e: lib.nameValuePair e.name e.drv) group)) (
-      lib.groupBy (e: e.drv.system) entries
-    );
+    # An empty result is never what a caller wanted: `checks` then gates
+    # NOTHING while `nix flake check` still reports success, so the gate
+    # looks green precisely because it is doing no work. Warn rather than
+    # throw -- a flake mid-migration with no configurations yet is a real
+    # state, just not one to reach silently.
+    if entries != [ ] then
+      result
+    else if strayKeys != [ ] then
+      lib.warn "checksForConfigurations: nothing to check -- got ${lib.concatStringsSep ", " strayKeys} but neither `nixosConfigurations` nor `homeConfigurations`. The single-purpose builders return a BARE attrset keyed by name, so their output must be NAMED: `checksForConfigurations { inherit nixosConfigurations; }`, not passed straight in. As written, `checks` gates nothing and `nix flake check` still passes." result
+    else
+      lib.warn "checksForConfigurations: nothing to check -- both `nixosConfigurations` and `homeConfigurations` are empty, so `checks` gates nothing and `nix flake check` passes without building anything." result;
 }

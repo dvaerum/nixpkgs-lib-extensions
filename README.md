@@ -80,7 +80,10 @@ namespaced duplicates exist for discoverability.
   does to a checkout without the decryption key). A `private.nix`
   that is an encrypted blob in the checkout (CI without the
   git-crypt key) evaluates to a default value with a warning instead
-  of breaking evaluation.
+  of breaking evaluation -- provided IFD is enabled, since the probe
+  is a during-evaluation build; under
+  `--no-allow-import-from-derivation` it fails instead. See
+  `importIfNixOr` in `docs/lib.md`.
 - `readIfPlain` / `readIfPlainOr`: the same idea for a file that isn't
   Nix -- a plain secret or token. Reads it as a string when it's real
   plaintext, or returns a default (empty string, or your own) when
@@ -93,7 +96,7 @@ namespaced duplicates exist for discoverability.
   in a transient `systemd-run --user` unit so it survives its own
   side effects. Built for `home-manager switch`, whose activation can
   restart the very unit the calling shell lives in.
-- Small string/attrset helpers (`stringToTitle`, `recursiveMerge`, ...).
+- Small string/attrset helpers (`stringToTitle`, `recursiveMerge`).
 
 ## Working on this repo
 
@@ -106,6 +109,14 @@ nix fmt              # nixfmt the tree             (check: formatting)
 nix run .#gen-docs   # rebuild docs/lib.md from    (check: docs-up-to-date)
                      # the doc comments in lib/
 ```
+
+Three lists are hand-maintained and build-gated rather than generated,
+so running the two commands above is not enough on its own: a new
+`lib.nixos` export must be added to the reference sentence earlier in
+this file, a new `lib/nixos/` file to the map in
+[docs/architecture.md](docs/architecture.md), and a new builder
+argument to `mkNixosSystem`'s own argument list. `nix flake check`
+names whichever one you missed.
 
 The full suite is `nix flake check`; three of its checks boot a VM and
 need `/dev/kvm`.

@@ -24,7 +24,7 @@
 
     So: this module owns a timer of its own, decides which generations
     to delete -- older than `keepDays`, except the newest
-    `keepGenerations` and the running one -- and then reclaims what they
+    `keepGenerations` and the profile's CURRENT one -- and then reclaims what they
     were pinning with `nix-collect-garbage`, in the same unit. Deleting
     a generation only makes its closure collectable; without the
     reclaim the generation count falls while the disk stays exactly as
@@ -130,7 +130,11 @@
                   is the one with nothing to roll back to.
 
                   `0` disables the floor and lets age alone govern. The
-                  running generation is still never deleted.
+                  profile's CURRENT generation is still never deleted --
+                  which on a host with a staged upgrade is NOT the booted
+                  one (`system.autoUpgrade.operation` is pinned to
+                  `"boot"`), so at `0` the generation you are running can
+                  be pruned.
                 '';
               };
 

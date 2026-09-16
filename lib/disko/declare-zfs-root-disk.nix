@@ -111,6 +111,12 @@
       this never touches the MBR partition table at all; GRUB reads GPT
       normally once its embedded code has run.
 
+    Operational notes live next to the implementation in
+    `lib/disko/README.md` -- including the manual `gdisk` sequence for
+    rebuilding the aarch64 hybrid MBR by hand when a disk is replaced,
+    which is the one procedure here that cannot be expressed
+    declaratively.
+
     # Example
 
     ```nix

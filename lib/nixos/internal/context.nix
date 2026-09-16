@@ -40,8 +40,9 @@ let
   # The DEFAULT VALUES of mkContextCore's optional core arguments, in one
   # place: the formals below read them from here, and planHosts reads the
   # same attrset to fill in what a host left unsaid before comparing hosts
-  # for core sharing. Transcribed by hand instead, a stale copy of a
-  # changed default makes a host silently share the WRONG core.
+  # for core sharing. Read from here rather than transcribed by hand: a
+  # stale copy of a changed default would make a host silently share the
+  # WRONG core.
   # Not here: `inputs`/`system` (required, no default) and `nixpkgs`, whose
   # default is COMPUTED from `inputs` rather than a constant.
   # checks/builders/tests/defaults.nix asserts this table and the formals

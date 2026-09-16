@@ -234,13 +234,27 @@ else:
 #
 # ONE DIRECTION again: every real file must be named. The reverse would
 # false-positive on prose that mentions a file from another namespace.
+#
+# Scoped to the MAP -- the first fenced block -- not the whole document. A
+# whole-file substring match looks equivalent and is not: six filenames also
+# appear in the prose below the map, so those six could vanish from the map
+# with the rule still green. The mutation test that first "proved" this rule
+# used a name appearing ONLY in the map, which is exactly how a half-working
+# check passes for the wrong reason.
 _arch = pathlib.Path("docs/architecture.md")
 _arch_txt = _arch.read_text()
-for _d in ("lib/nixos", "lib/nixos/internal"):
-    for _f in sorted(pathlib.Path(_d).glob("*.nix")):
-        if _f.name not in _arch_txt:
-            bad("architecture-file-map", str(_arch),
-                f"{_f} exists but is not named in the file-layout map")
+_map_m = re.search(r"^```\n(.*?)^```", _arch_txt, re.S | re.M)
+if not _map_m:
+    bad("architecture-file-map", "docs/architecture.md",
+        "the fenced file-layout map is gone -- RULE 7 has nothing to check; "
+        "restore it or drop the rule")
+else:
+    _map = _map_m.group(1)
+    for _d in ("lib/nixos", "lib/nixos/internal"):
+        for _f in sorted(pathlib.Path(_d).glob("*.nix")):
+            if _f.name not in _map:
+                bad("architecture-file-map", str(_arch),
+                    f"{_f} exists but is not named in the file-layout map")
 
 if fail:
     print("docs-integrity: %d problem(s)\n" % len(fail), file=sys.stderr)

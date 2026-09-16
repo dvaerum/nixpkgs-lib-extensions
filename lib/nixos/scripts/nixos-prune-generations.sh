@@ -22,7 +22,7 @@ usage() {
 usage: nixos-prune-generations [options]
 
 Delete system-profile generations older than --keep-days, except the
-newest --keep-generations of them and the currently-booted one.
+newest --keep-generations of them and the profile's current one.
 
   --profile PATH          default /nix/var/nix/profiles/system
   --keep-days N           age cutoff in days
@@ -113,7 +113,9 @@ if [ "$keep_generations" -gt 0 ]; then
     protected="${protected}${id} "
   done
 fi
-# The running system is protected unconditionally: deleting it would
+# The profile's CURRENT generation is protected unconditionally -- the one
+# `nix-env --list-generations` marks, i.e. what the profile symlink points
+# at, NOT necessarily the booted system. Deleting it would
 # remove the closure the machine is currently using.
 [ -n "$current" ] && protected="${protected}${current} "
 
