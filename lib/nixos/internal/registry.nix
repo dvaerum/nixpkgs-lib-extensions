@@ -5,6 +5,7 @@
 # calling convention).
 { lib, self, ... }:
 let
+  inherit (import ./inputs.nix { inherit lib self; }) collectFromInputs;
 
   # Registry values must be directories: a path literal or an absolute string
   # pointing at an existing directory.
@@ -333,6 +334,37 @@ let
       traceDiscoveredUsers,
     }:
     let
+      # A source flake may export its OWN builder context -- the same
+      # vocabulary `mkContext` accepts (`inputs`, `specialArgs`, ...) --
+      # as a top-level flake output, `nixpkgsLibExtensionsLoginContext`.
+      # Deliberately NOT nested under `nixpkgsLibExtensions.*` -- that
+      # name is already the NixOS/home-manager OPTION namespace
+      # (ext-options.nix), read out of a built `config`; this is a flake
+      # OUTPUT, read before any core exists, and docs-integrity's
+      # `ext-options-documented-in-guide` check treats every
+      # `nixpkgsLibExtensions.<name>` mention in the guide as a claim
+      # about a declared OPTION -- reusing the prefix here would make a
+      # doc mention of this feature look like an undeclared option.
+      # Detected by shape, the same "check what it exports, not what
+      # it's called" convention `isNixpkgsTree`/`detectHomeManager`
+      # already use (inputs.nix). A source with no such export (a plain
+      # path, the common case, or a flake that simply doesn't declare
+      # one) yields `null` here, which is what keeps every EXISTING
+      # `loginFlakeRef` consumer unaffected. `lib.isAttrs source` first:
+      # a bare path/string source cannot carry attributes at all, and
+      # `?` on one throws rather than returning false. tryEval on top:
+      # an attrset shaped unexpectedly (some OTHER flake's arbitrary
+      # export of this name) must not break a caller not even using
+      # this feature -- same reasoning as `usersDirProbe` below.
+      loginContextOf =
+        source:
+        let
+          probe = builtins.tryEval (
+            if lib.isAttrs source then source.nixpkgsLibExtensionsLoginContext or null else null
+          );
+        in
+        if probe.success then probe.value else null;
+
       scanOne =
         { source, trusted }:
         # A flake input (attrset) or a path both name a real tree. A bare
@@ -344,6 +376,7 @@ let
             discovered = { };
             inherit trusted;
             usersDir = null;
+            loginContext = null;
           }
         else
           let
@@ -359,6 +392,7 @@ let
           {
             inherit discovered trusted;
             usersDir = if usersDirProbe.success then usersDirProbe.value else null;
+            loginContext = loginContextOf source;
           };
 
       scanned = map scanOne sources;
@@ -376,8 +410,14 @@ let
       let
         tree = lib.foldl' (acc: s: acc // s.discovered) { } scanned;
         untrustedUsers = lib.concatMap (s: if s.trusted then [ ] else lib.attrNames s.discovered) scanned;
+        # Per-source metadata that would otherwise be lost in the `tree`
+        # flatten above -- same "survives the fold as a parallel map"
+        # pattern `untrustedUsers` already establishes on this line.
+        userLoginContext = lib.foldl' (
+          acc: s: acc // (lib.genAttrs (lib.attrNames s.discovered) (_: s.loginContext))
+        ) { } scanned;
         result = {
-          inherit tree untrustedUsers;
+          inherit tree untrustedUsers userLoginContext;
         };
         traceMsgs =
           if !traceDiscoveredUsers then
@@ -391,6 +431,28 @@ let
             ) (lib.filter (s: s.discovered != { } && s.usersDir != null) scanned);
       in
       lib.foldl' (acc: msg: lib.trace msg acc) result traceMsgs;
+
+  # The loginContext (or `null`) a given user was discovered under --
+  # `userLoginContext` from `resolveUsers`' result, looked up by username.
+  # `null` means "no source declared one", the overwhelmingly common case
+  # today, which is what keeps every existing `loginFlakeRef` consumer
+  # unaffected: mk-home.nix/mk-system.nix build that user exactly as
+  # before whenever this is `null`.
+  loginContextForUser = userLoginContext: username: userLoginContext.${username} or null;
+
+  # A loginContext's own auto-collected home-manager modules -- computed
+  # WITHOUT building a `pkgs` (no `system`/`nixpkgs` needed): a
+  # system-managed home cannot use a source's own package set anyway (see
+  # mk-system.nix's `useGlobalPkgs`), so only the module-collection half
+  # of `collectFromInputs` is needed here, over the loginContext's OWN
+  # `inputs` -- never the consumer's.
+  homeModulesFromLoginContext =
+    loginContext:
+    (collectFromInputs {
+      inputs = loginContext.inputs;
+      inputContributions = loginContext.inputContributions or { };
+      baseLib = lib;
+    }).collected.homeModules;
 
 in
 {
@@ -406,5 +468,7 @@ in
     loginFlakeRefSources
     discoverHostsForUser
     entryDirsFor
+    loginContextForUser
+    homeModulesFromLoginContext
     ;
 }

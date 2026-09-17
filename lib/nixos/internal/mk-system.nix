@@ -28,6 +28,8 @@ let
     resolveUsers
     filterUsers
     loginFlakeRefSources
+    loginContextForUser
+    homeModulesFromLoginContext
     ;
   inherit (import ./priorities.nix { inherit lib; }) builderDefaultPriority mkBuilderDefault;
 in
@@ -167,12 +169,75 @@ in
                   # would make that same file fail to evaluate here.
                   (self.homeManagerAutoUpgradeModule { systemManaged = true; })
                 ];
-              users = lib.genAttrs systemUsersWithHome (u: {
-                # `username` as a module arg (extraSpecialArgs cannot
-                # vary per user)
-                _module.args.username = u;
-                imports = (resolveUser userTree hostname u).homeModules;
-              });
+              users = lib.genAttrs systemUsersWithHome (
+                u:
+                let
+                  # `null` unless `u` was discovered from a `loginFlakeRef`
+                  # source that declared its own builder context (see
+                  # mk-home.nix's own use of this). A system-managed home
+                  # shares the SYSTEM's own pkgs/nixpkgs/overlays by
+                  # construction (useGlobalPkgs above) -- a source's own
+                  # core-shaping arguments cannot apply here, so only
+                  # `rootPath`/`specialArgs` and the source's own
+                  # auto-collected home modules are used. A home that
+                  # genuinely needs the source's own nixpkgs must be
+                  # login-managed instead (added to `loginHomes`).
+                  sourceLoginContext = loginContextForUser (discoveredTree.userLoginContext or { }) u;
+                  # Same default `mkContext` itself applies (context.nix)
+                  # -- a source declaring only `inputs` (with its own
+                  # `self`) needs no explicit `rootPath`.
+                  sourceRootPath =
+                    sourceLoginContext.rootPath or (sourceLoginContext.inputs.self
+                      or (throw "nixpkgs-lib-extensions: mkNixosSystem: host `${hostname}`: user `${u}`'s loginContext has no `rootPath` and its `inputs` has no `self` either -- nothing to resolve the source's own hosts/<h> convention or rootPath specialArg against.")
+                    );
+                  # `rootPath`/`inputs`/`specialArgs` cannot vary per user
+                  # through home-manager's `extraSpecialArgs` (ONE shared
+                  # value for the whole `home-manager.users` set) or
+                  # through `_module.args` (nixpkgs' own module-arg
+                  # resolution, lib/modules.nix's `applyModuleArgs`,
+                  # prefers a name already in specialArgs over the SAME
+                  # name in `_module.args` -- and `rootPath` always is,
+                  # since `builderOwned` sets it unconditionally; worse,
+                  # `_module.args` only resolves AFTER module collection,
+                  # so it cannot supply a value a home.nix uses inside its
+                  # OWN `imports` list, which is exactly how `rootPath` is
+                  # meant to be used -- see checks/builders/tests/
+                  # login-context.nix for how this was caught). Instead,
+                  # the source's own home.nix FILES are called directly,
+                  # splicing the override in at the Nix-expression level,
+                  # bypassing specialArgs entirely -- this is safe because
+                  # nixpkgs' `applyModuleArgs` gives a single-parameter
+                  # module function (no `{ ... }` pattern, so
+                  # `functionArgs` reports none) the FULL merged args
+                  # attrset (config/lib/pkgs/options/specialArgs) as ONE
+                  # value, which is exactly `moduleArgs` below.
+                  wrapSourceHomeModule =
+                    path: moduleArgs:
+                    (import path) (
+                      moduleArgs
+                      // {
+                        rootPath = sourceRootPath;
+                        inherit (sourceLoginContext) inputs;
+                      }
+                      // (sourceLoginContext.specialArgs or { })
+                    );
+                in
+                {
+                  # `username` as a module arg (extraSpecialArgs cannot
+                  # vary per user); safe via `_module.args` because it is
+                  # only ever used in ordinary config bodies, never inside
+                  # an `imports` list (see the comment above).
+                  _module.args.username = u;
+                  imports =
+                    (
+                      if sourceLoginContext == null then
+                        (resolveUser userTree hostname u).homeModules
+                      else
+                        map (wrapSourceHomeModule) (resolveUser userTree hostname u).homeModules
+                    )
+                    ++ (if sourceLoginContext == null then [ ] else homeModulesFromLoginContext sourceLoginContext);
+                }
+              );
             };
           }
         );

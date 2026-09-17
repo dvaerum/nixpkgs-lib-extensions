@@ -305,6 +305,49 @@ so a list `loginFlakeRef` throws at build time if the host also has a
 multi-tree users system-managed, or use a single value on a host with
 login-managed users.
 
+### A source flake's own builder context
+
+The example above works unmodified only as long as home-manager-config's
+`home.nix` files need nothing beyond what the CONSUMING flake already
+provides: its own `rootPath`, its own `specialArgs`, its own
+auto-collected home-manager modules. A source that needs its OWN --
+say it has an input the consumer doesn't (a custom home-manager module),
+or its `home.nix` does `(rootPath + /shared/desktop.nix)` relative to
+ITS OWN tree -- exports `nixpkgsLibExtensionsLoginContext`:
+
+```nix
+# home-manager-config/flake.nix
+outputs = inputs@{ self, ... }: {
+  homeConfigurations = ...;
+  nixpkgsLibExtensionsLoginContext = {
+    inherit inputs;                 # its OWN inputs -- self resolves rootPath
+                                     # the same way `rootPath` already defaults
+    specialArgs = { desktop_environment = "plasma"; };
+  };
+};
+```
+
+Nothing else changes on the consuming side -- `loginFlakeRef =
+inputs.home-manager-config;` picks this up automatically. A source that
+exports nothing keeps today's behavior exactly: its `home.nix` builds
+with the consumer's own context, which is fine as long as it needs
+nothing the consumer doesn't already have.
+
+**Standalone homes** (`mkHomeConfiguration`/`buildHomeConfigurations`)
+get the FULL swap: the source's own `pkgs`/`lib`/`home-manager` too, not
+just `rootPath`/`specialArgs`/modules -- each standalone home is already
+its own independent build.
+
+**System-managed homes** (built into a `mkNixosSystem` host, the
+reported-bug shape: the user is NOT in that host's `loginHomes`) always
+share the HOST's own `pkgs`/`nixpkgs`/`overlays` -- that sharing is the
+entire point of "system-managed", so a loginContext's own `nixpkgs`/
+`overlays`/`system`/`homeManager` are silently not used there. Only
+`rootPath`, `specialArgs`, and the source's own auto-collected home
+modules apply. A home that genuinely needs the source's own nixpkgs
+revision (not just its modules) must be login-managed instead -- add it
+to that host's `loginHomes`.
+
 ### Selecting which users apply to a host
 
 By default every user in the tree applies to every host. A host's

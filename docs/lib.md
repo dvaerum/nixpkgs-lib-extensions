@@ -1434,7 +1434,12 @@ mkHomeConfiguration :: Attribute -> HomeManagerConfiguration
   own `loginFlakeRef` entry, though its trust dimension is moot
   here: this builder only ever reads one user's `home.nix`, never a
   `configuration.nix`). Which of those files make up this home is
-  described above and under `hostname`.
+  described above and under `hostname`. A source's own
+  `nixpkgsLibExtensionsLoginContext` (see `mkNixosSystem`'s
+  `loginFlakeRef` entry) gets the FULL swap here -- its own
+  `pkgs`/`lib`/`home-manager` too, not just `rootPath`/`specialArgs`/
+  modules -- since every home built here is already its own
+  independent `homeManagerConfiguration` call.
 
 - **homeModules**
   home-manager modules added to the home configuration, on top of those
@@ -1707,6 +1712,20 @@ mkNixosSystem :: Attribute -> NixosSystem
   (`userModule`) are never gated by trust -- only `configuration.nix`.
   The same username discovered from more than one source (rootPath
   and/or a list entry) throws -- ambiguous, pick one source per user.
+  
+  A source may export `nixpkgsLibExtensionsLoginContext = { inputs;
+  specialArgs; ... };` (the same vocabulary `mkContext` itself
+  accepts) to declare its OWN builder context -- without one, a
+  source's `home.nix` builds with the CONSUMING flake's own
+  `rootPath`/`specialArgs`/auto-collected modules, which breaks any
+  source relying on values only IT has (see docs/getting-started.md's
+  cross-flake-homes section for a worked example, and this argument's
+  own `rootPath` entry above). Standalone homes get the source's full
+  context (its own `pkgs`/`lib`/`home-manager` too); a system-managed
+  home (this builder) always keeps the HOST's own `pkgs`/`nixpkgs`/
+  `overlays` -- only `rootPath`, `specialArgs` and the source's own
+  auto-collected home modules apply -- a home genuinely needing the
+  source's own nixpkgs must be login-managed instead (`loginHomes`).
   
   As the login-bootstrap target: on first login it runs
   `home-manager switch` against that flake's matching
