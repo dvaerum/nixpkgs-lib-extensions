@@ -804,6 +804,15 @@ independently:
 Both read one state file (`$XDG_STATE_HOME/hm-auto-upgrade/last-run`),
 so they cannot disagree.
 
+`onResult` is a third, independent hook: a shell run after every
+switch (`$RESULT`, `$TARGET`, `$STATE_FILE`, `$PREVIOUS_STATUS` and
+`$TRANSITION` in scope) for your own alerting on top of the two above.
+It has a blind spot -- it cannot announce that its own push failed,
+since the broken channel is the one it would use -- so appending
+`warn=<text>` to `$STATE_FILE` is the way back: `hm-auto-upgrade-status`
+prints it at the next interactive shell start, on an otherwise
+successful run too, with no dependency on notifications working.
+
 **A caveat worth knowing:** without lingering enabled
 (`loginctl enable-linger <user>`), there is no user manager after a
 reboot until someone logs in -- so no user timer fires at all, this one
@@ -1011,10 +1020,8 @@ described for the home timer above.
   user's own session bus, falling back to `wall` for anyone without one.
 - `onResult` -- shell run **once per engine run**, not once per poll,
   with `$RESULT`, `$REBOOT_PENDING`, `$GENERATION` and `$STATE_FILE` in
-  scope. This is where a push notification goes; the library bakes in
-  none. Appending `warn=<text>` to `$STATE_FILE` is how a hook reports
-  its OWN failure, so a push that never arrived still shows up in
-  `nixos-upgrade-status`.
+  scope. This is where a push notification or a monitoring ping goes;
+  the library bakes in neither.
 
 The home timer and this one are deliberately independent: this never
 triggers that. A standalone home has its own daily timer, and coupling
@@ -1046,8 +1053,9 @@ a home.
 Either half on its own works too, since both default to empty. Note
 that `buildNixosConfigurations`/`buildHomeConfigurations` return a BARE
 attrset keyed by name, not one wrapped under `nixosConfigurations` --
-so name the key, otherwise the unknown keys are ignored and you get an
-empty `checks` set that gates nothing:
+so name the key, or the unknown keys match neither and you get an
+empty `checks` set that gates nothing. That mistake WARNS, naming the
+stray keys and the fix, rather than passing silently:
 
 ```nix
 checks = extLib.checksForConfigurations {

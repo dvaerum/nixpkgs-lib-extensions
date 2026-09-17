@@ -15,10 +15,14 @@
 { lib, self, ... }:
 let
   # What a user's `_defaults.nix` may set: arguments that shape ONE
-  # person's own home. Deliberately excludes: `rootPath`/`loginFlakeRef`/
+  # person's own home. `system` (bare) is exactly what this file exists
+  # to let a user set -- see build-home-configurations.nix's own doc
+  # comment for why. Deliberately excludes: `rootPath`/`loginFlakeRef`/
   # `inputs` (circular -- they LOCATE this very file); `users`/
-  # `loginHomes`/`group`/`hostFolder`/`userModule`/`modules`/`system*`/
-  # `wrapHomeManagerSwitch` (host concerns, not a user's to set); and
+  # `loginHomes`/`group`/`hostFolder`/`userModule`/`modules`/
+  # `systemAutoUpgrade`/`systemAutoUpgradeFlakeRef`/`systemGarbageCollect`/
+  # `wrapHomeManagerSwitch`/`loginReactivateEveryLogin`/
+  # `traceDiscoveredUsers` (host concerns, not a user's to set); and
   # `patches`/`nixpkgs`/`homeManager`/`inputContributions` (fleet
   # decisions -- `patches` is also IFD-heavy, which this file's own read
   # cannot absorb, see readUserDefaultsRaw below).
