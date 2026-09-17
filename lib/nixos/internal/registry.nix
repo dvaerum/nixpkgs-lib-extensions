@@ -289,13 +289,28 @@ let
       {
         source = value.source;
         trusted = value.allowNixosConfig or false;
+        isRootPath = false;
       }
     else
       {
         source = value;
         trusted = false;
+        isRootPath = false;
       };
 
+  # `isRootPath = true` marks the ONE entry that is the consumer's own
+  # identity, never a foreign source -- see `scanOne`'s use of it: a
+  # flake's own `rootPath` (default `inputs.self`) may ALSO happen to
+  # export `nixpkgsLibExtensionsLoginContext` (for OTHER consumers'
+  # benefit, e.g. home-manager-config exporting it for a THIRD flake to
+  # use), and probing it here would rebuild that flake's OWN users with
+  # a fresh, minimal core -- losing whatever `overlays`/
+  # `allowedUnfreePackages`/`nixpkgsConfig` the ACTUAL build call passed
+  # directly (a loginContext only ever carries `inputs`/`specialArgs`,
+  # never those), since a login-context-sourced ctx is built from
+  # scratch rather than sharing the one this build already has. Caught
+  # deploying home-manager-config's own switch once it started exporting
+  # this for OTHERS to consume.
   loginFlakeRefSources =
     loginFlakeRef: rootPath:
     if loginFlakeRef == null then
@@ -303,6 +318,7 @@ let
         {
           source = rootPath;
           trusted = true;
+          isRootPath = true;
         }
       ]
     else if lib.isList loginFlakeRef then
@@ -310,6 +326,7 @@ let
         {
           source = rootPath;
           trusted = true;
+          isRootPath = true;
         }
       ]
       ++ map normalizeSource loginFlakeRef
@@ -366,7 +383,11 @@ let
         if probe.success then probe.value else null;
 
       scanOne =
-        { source, trusted }:
+        {
+          source,
+          trusted,
+          isRootPath ? false,
+        }:
         # A flake input (attrset) or a path both name a real tree. A bare
         # STRING flake ref ("/etc/nixos", "git+https://...") names
         # something only resolvable at activation time, so it yields no
@@ -392,7 +413,9 @@ let
           {
             inherit discovered trusted;
             usersDir = if usersDirProbe.success then usersDirProbe.value else null;
-            loginContext = loginContextOf source;
+            # `isRootPath`: never probed for a loginContext -- see
+            # `loginFlakeRefSources`' own comment on that flag.
+            loginContext = if isRootPath then null else loginContextOf source;
           };
 
       scanned = map scanOne sources;

@@ -89,6 +89,23 @@ let
   # pre-existing case, and cycle 1's regression fixture.
   plainSource = fixturesDir + "/tree-per";
 
+  # A rootPath that ALSO exports a loginContext -- for OTHER consumers'
+  # benefit (home-manager-config does exactly this so a THIRD flake can
+  # use it), never meant to apply to the tree's OWN users. Caught live:
+  # without `isRootPath` (registry.nix's `loginFlakeRefSources`), alice
+  # here would be rebuilt from a FRESH core carrying only this
+  # loginContext's `inputs`/`specialArgs`, silently losing whatever
+  # `overlays`/`allowedUnfreePackages` the actual build call passed.
+  selfExportingRootPath = {
+    outPath = toString exampleDir;
+    nixpkgsLibExtensionsLoginContext = {
+      inherit inputs;
+      specialArgs = {
+        selfExportMarker = "should-not-apply-to-self";
+      };
+    };
+  };
+
   systemManagedProbe = mkProbeSystem {
     inherit inputs system;
     hostname = "logincontext-system";
@@ -196,6 +213,37 @@ in
       loginHomes = [ ];
       loginFlakeRef = [ fakeSourceWithLoginContext ]; # list form: untrusted unless wrapped
     }).config.home-manager.users.dennis.home.sessionVariables.SOURCE_SPECIALARG_MARKER == "from-source";
+
+  # -- 13: a self-exporting rootPath is never its own loginContext source --
+
+  self-exporting-rootpath-keeps-shared-core-overlays =
+    (myLib.mkHomeConfiguration {
+      inherit inputs system;
+      rootPath = selfExportingRootPath;
+      username = "alice";
+      overlays = [ (final: prev: { selfRootPathOverlayMarker = "present"; }) ];
+    }).pkgs.selfRootPathOverlayMarker or null == "present";
+
+  # A self-exporting rootPath must not change the core AT ALL for its
+  # own tree's users -- same `pkgs` derivation as an identical build
+  # whose rootPath does NOT export a loginContext. `? selfExportMarker`
+  # alone would not prove this (alice's home.nix never destructures
+  # that name, so an unused extra specialArg is silently harmless
+  # either way) -- core identity is the only real proof.
+  self-exporting-rootpath-shares-core-with-plain-rootpath =
+    let
+      withExport = myLib.mkHomeConfiguration {
+        inherit inputs system;
+        rootPath = selfExportingRootPath;
+        username = "alice";
+      };
+      plain = myLib.mkHomeConfiguration {
+        inherit inputs system;
+        rootPath = exampleDir;
+        username = "alice";
+      };
+    in
+    withExport.pkgs.hello.outPath == plain.pkgs.hello.outPath;
 
   # -- 12: laziness ---------------------------------------------------------
 
