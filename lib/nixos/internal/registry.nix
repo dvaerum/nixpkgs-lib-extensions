@@ -454,6 +454,64 @@ let
       baseLib = lib;
     }).collected.homeModules;
 
+  # Splices `overrides` (a loginContext's `rootPath`/`inputs`/
+  # `specialArgs`) into a module VALUE and every module it transitively
+  # `imports` by PATH -- needed because a real home.nix is rarely one
+  # file: home-manager-config's own users/<u>/home.nix imports a sibling
+  # `imports.nix`, which is where `rootPath` is actually used, one level
+  # below the file mk-system.nix calls directly. Overriding only the
+  # outer call's args (a plain `(import path) (moduleArgs // overrides)`)
+  # never reaches that nested file: NixOS's own module collection
+  # resolves ITS args the standard way (specialArgs/`_module.args`),
+  # which is exactly the shared, unoverridable channel this feature
+  # exists to route around. So each PATH/function `imports` entry a
+  # module returns is wrapped the same way, recursively -- an entry that
+  # is already a plain attrset (no args to resolve) is left alone except
+  # for recursing into ITS OWN `imports`, in case one of those is a path.
+  #
+  # Calling the target function directly (bypassing nixpkgs'
+  # `applyModuleArgs`) must still replicate ITS per-name resolution
+  # (lib/modules.nix: `args.${name} or config._module.args.${name}`) --
+  # `pkgs` for a home-manager module is delivered ONLY via
+  # `_module.args` (home-manager's own nixpkgs.nix module sets it there,
+  # never via specialArgs), so a naive `moduleArgs // overrides` (every
+  # OTHER name already present in `moduleArgs`) broke every module
+  # destructuring `{ pkgs, ... }:` with "called without required
+  # argument 'pkgs'" -- caught against the REAL home-manager-config
+  # repo (common/user/tmux/default.nix), which no synthetic fixture in
+  # this suite happened to need `pkgs` to expose.
+  resolveArgsFor =
+    overrides: f: moduleArgs:
+    (lib.mapAttrs (name: _: moduleArgs.${name} or moduleArgs.config._module.args.${name}) (
+      lib.functionArgs f
+    ))
+    // moduleArgs
+    // overrides;
+
+  wrapModuleWithOverrides =
+    overrides: value:
+    # A module reference from a REAL flake input is a STRING, not a Nix
+    # Path: `entry + "/home.nix"` (entryFiles above) coerces via `+` on
+    # an attrset (the input itself), which yields a string-with-context,
+    # never a Path value -- `lib.isPath` alone missed this entirely, the
+    # gap a synthetic path-literal-only fixture could not have caught
+    # (see checks/builders/tests/login-context.nix's nested-imports
+    # cycle, added after this was found against the REAL
+    # home-manager-config repo). `import` accepts a string path exactly
+    # like a Path value, so both resolve the same way. `import`ing a
+    # path does not always yield a FUNCTION either -- a module file can
+    # just be a plain attrset (`{ imports = [ ... ]; }`, no `{ ... }:`
+    # wrapper) -- so that result is recursed into like any other value,
+    # never called.
+    if lib.isPath value || lib.isString value then
+      wrapModuleWithOverrides overrides (import value)
+    else if lib.isFunction value then
+      moduleArgs: wrapModuleWithOverrides overrides (value (resolveArgsFor overrides value moduleArgs))
+    else if lib.isAttrs value && value ? imports then
+      value // { imports = map (wrapModuleWithOverrides overrides) value.imports; }
+    else
+      value;
+
 in
 {
   inherit
@@ -470,5 +528,6 @@ in
     entryDirsFor
     loginContextForUser
     homeModulesFromLoginContext
+    wrapModuleWithOverrides
     ;
 }

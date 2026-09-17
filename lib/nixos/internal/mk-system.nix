@@ -30,6 +30,7 @@ let
     loginFlakeRefSources
     loginContextForUser
     homeModulesFromLoginContext
+    wrapModuleWithOverrides
     ;
   inherit (import ./priorities.nix { inherit lib; }) builderDefaultPriority mkBuilderDefault;
 in
@@ -201,26 +202,18 @@ in
                   # `_module.args` only resolves AFTER module collection,
                   # so it cannot supply a value a home.nix uses inside its
                   # OWN `imports` list, which is exactly how `rootPath` is
-                  # meant to be used -- see checks/builders/tests/
-                  # login-context.nix for how this was caught). Instead,
-                  # the source's own home.nix FILES are called directly,
-                  # splicing the override in at the Nix-expression level,
-                  # bypassing specialArgs entirely -- this is safe because
-                  # nixpkgs' `applyModuleArgs` gives a single-parameter
-                  # module function (no `{ ... }` pattern, so
-                  # `functionArgs` reports none) the FULL merged args
-                  # attrset (config/lib/pkgs/options/specialArgs) as ONE
-                  # value, which is exactly `moduleArgs` below.
-                  wrapSourceHomeModule =
-                    path: moduleArgs:
-                    (import path) (
-                      moduleArgs
-                      // {
-                        rootPath = sourceRootPath;
-                        inherit (sourceLoginContext) inputs;
-                      }
-                      // (sourceLoginContext.specialArgs or { })
-                    );
+                  # meant to be used). Instead, the source's own home.nix
+                  # -- and everything it transitively `imports` by path,
+                  # e.g. home-manager-config's own home.nix -> imports.nix
+                  # split -- is resolved directly via
+                  # `wrapModuleWithOverrides`, splicing the override in at
+                  # the Nix-expression level, bypassing specialArgs
+                  # entirely (see its own doc comment in registry.nix).
+                  overrides = {
+                    rootPath = sourceRootPath;
+                    inherit (sourceLoginContext) inputs;
+                  }
+                  // (sourceLoginContext.specialArgs or { });
                 in
                 {
                   # `username` as a module arg (extraSpecialArgs cannot
@@ -233,7 +226,7 @@ in
                       if sourceLoginContext == null then
                         (resolveUser userTree hostname u).homeModules
                       else
-                        map (wrapSourceHomeModule) (resolveUser userTree hostname u).homeModules
+                        map (wrapModuleWithOverrides overrides) (resolveUser userTree hostname u).homeModules
                     )
                     ++ (if sourceLoginContext == null then [ ] else homeModulesFromLoginContext sourceLoginContext);
                 }
