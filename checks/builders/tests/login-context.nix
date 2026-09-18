@@ -18,13 +18,19 @@
 let
   sourceDir = fixturesDir + "/tree-logincontext-source";
 
-  # A home-manager-shaped input present ONLY in the source's OWN
-  # loginContext.inputs, never the consumer's -- proves auto-collected
-  # homeModules come from the SOURCE, not the caller.
+  # An input present ONLY in the source's OWN loginContext.inputs, never
+  # the consumer's -- proves auto-collected homeModules/nixosModules
+  # come from the SOURCE, not the caller. Both channels on one input:
+  # a real cross-flake source (nix-it-in) happens to ship only a
+  # homeModule, but the collection mechanism is channel-symmetric, so
+  # one fixture covers both without duplicating the input.
   fakeSourceAutoInput = {
     outPath = "/nix/store/fake-logincontext-auto-input";
     homeModules.default = {
       home.sessionVariables.SOURCE_AUTO_MODULE_MARKER = "yes";
+    };
+    nixosModules.default = {
+      users.groups.source-auto-nixos-module-marker = { };
     };
   };
 
@@ -114,6 +120,23 @@ let
     loginFlakeRef = fakeSourceWithLoginContext;
     rootPath = exampleDir; # the CONSUMER's own rootPath -- must NOT be used for dennis
   };
+
+  # `allowNixosConfig = true`: configuration.nix is only ever imported
+  # for a TRUSTED source (see registry.nix's loginFlakeRefSources) --
+  # dennis's fixture configuration.nix (rootPath-relative, mirroring
+  # home-manager-config's users/dvv/configuration.nix) needs a trusted
+  # probe to be exercised at all.
+  systemManagedTrustedProbe = mkProbeSystem {
+    inherit inputs system;
+    hostname = "logincontext-system-trusted";
+    users = [ "dennis" ];
+    loginHomes = [ ];
+    loginFlakeRef = {
+      source = fakeSourceWithLoginContext;
+      allowNixosConfig = true;
+    };
+    rootPath = exampleDir;
+  };
 in
 {
   # -- 1: regression -----------------------------------------------------
@@ -202,6 +225,23 @@ in
     in
     probe.config.home-manager.users.dennis.home.stateVersion == "24.05"
     && probe.pkgs.stdenv.hostPlatform.system == system;
+
+  # A trusted source's configuration.nix needs the SAME rootPath
+  # override home.nix already gets -- userNixosConfigs (mk-system.nix)
+  # is a separate code path from the per-user home-manager submodule,
+  # and the original loginContext feature only wrapped the latter. Found
+  # live: home-manager-config's users/dvv/configuration.nix imports a
+  # sibling's configuration.nix via `rootPath`, which broke the moment
+  # nixos-developer-system (a consumer with no users/ tree of its own)
+  # built dvv system-managed from it.
+  system-managed-configuration-nix-rootpath-from-source =
+    systemManagedTrustedProbe.config.users.groups ? source-rootpath-nixos-marker;
+
+  # Symmetric with the home.nix auto-module cycle: a trusted source's
+  # configuration.nix gets the source's own auto-collected NixOS
+  # modules too, not just the consumer's.
+  system-managed-configuration-nix-auto-modules-from-source =
+    systemManagedTrustedProbe.config.users.groups ? source-auto-nixos-module-marker;
 
   # -- 11: untrusted source, ungated ---------------------------------------
 

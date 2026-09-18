@@ -5,7 +5,11 @@
 # calling convention).
 { lib, self, ... }:
 let
-  inherit (import ./inputs.nix { inherit lib self; }) collectFromInputs;
+  inherit (import ./inputs.nix { inherit lib self; })
+    collectFromInputs
+    detectHomeManager
+    isNixpkgsTree
+    ;
 
   # Registry values must be directories: a path literal or an absolute string
   # pointing at an existing directory.
@@ -463,19 +467,43 @@ let
   # before whenever this is `null`.
   loginContextForUser = userLoginContext: username: userLoginContext.${username} or null;
 
-  # A loginContext's own auto-collected home-manager modules -- computed
-  # WITHOUT building a `pkgs` (no `system`/`nixpkgs` needed): a
-  # system-managed home cannot use a source's own package set anyway (see
+  # A loginContext's own auto-collected modules -- computed WITHOUT
+  # building a `pkgs` (no `system`/`nixpkgs` needed): a system-managed
+  # home/host cannot use a source's own package set anyway (see
   # mk-system.nix's `useGlobalPkgs`), so only the module-collection half
   # of `collectFromInputs` is needed here, over the loginContext's OWN
-  # `inputs` -- never the consumer's.
-  homeModulesFromLoginContext =
+  # `inputs` -- never the consumer's. Two thin wrappers, one per channel
+  # -- `homeModulesFromLoginContext` for a system-managed home.nix,
+  # `nixosModulesFromLoginContext` for a trusted source's
+  # configuration.nix (userNixosConfigs, mk-system.nix) -- since a
+  # caller only ever wants one or the other, never both at once.
+  collectedFromLoginContext =
     loginContext:
+    let
+      # Same skip context.nix's own `fromInputs` computes: without it,
+      # `nixosModulesFromLoginContext` throws the instant a loginContext's
+      # `inputs` (a real source's own inputs, always including its OWN
+      # nixpkgs/home-manager) is scanned for nixosModules -- nixpkgs
+      # exports several with no `default`, ambiguous by construction, and
+      # the home-manager input is used standalone here regardless. Caught
+      # by the first real test to exercise `nixosModulesFromLoginContext`
+      # at all; `homeModulesFromLoginContext` never needed this because
+      # neither nixpkgs nor home-manager export a `homeModules` channel.
+      homeManagerFromContext = loginContext.homeManager or (detectHomeManager loginContext.inputs);
+      homeManagerId =
+        if homeManagerFromContext == null then null else homeManagerFromContext.outPath or null;
+      skipNixosModule =
+        _name: v: (homeManagerId != null && (v.outPath or null) == homeManagerId) || isNixpkgsTree v;
+    in
     (collectFromInputs {
       inputs = loginContext.inputs;
       inputContributions = loginContext.inputContributions or { };
       baseLib = lib;
-    }).collected.homeModules;
+      skipFor.nixosModules = skipNixosModule;
+    }).collected;
+
+  homeModulesFromLoginContext = loginContext: (collectedFromLoginContext loginContext).homeModules;
+  nixosModulesFromLoginContext = loginContext: (collectedFromLoginContext loginContext).nixosModules;
 
   # Splices `overrides` (a loginContext's `rootPath`/`inputs`/
   # `specialArgs`) into a module VALUE and every module it transitively
@@ -551,6 +579,7 @@ in
     entryDirsFor
     loginContextForUser
     homeModulesFromLoginContext
+    nixosModulesFromLoginContext
     wrapModuleWithOverrides
     ;
 }

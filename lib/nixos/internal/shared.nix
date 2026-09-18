@@ -44,6 +44,7 @@
     loginFlakeRefSources
     loginContextForUser
     homeModulesFromLoginContext
+    nixosModulesFromLoginContext
     wrapModuleWithOverrides
     ;
   inherit (import ./context.nix { inherit lib self; }) coreArgNames mkContextCore mkContext;
