@@ -479,7 +479,7 @@ let
   # resolves `rootPath`/`inputs`, after the home.nix/configuration.nix
   # instances of this were fixed.
   contextInputsAndRootPathFor =
-    userLoginContext: username: fallbackInputs: fallbackRootPath:
+    fnName: userLoginContext: username: fallbackInputs: fallbackRootPath:
     let
       sourceLoginContext = loginContextForUser userLoginContext username;
     in
@@ -491,27 +491,48 @@ let
     else
       {
         inherit (sourceLoginContext) inputs;
-        rootPath = sourceLoginContext.rootPath or (sourceLoginContext.inputs.self or fallbackRootPath);
+        # `or fallbackRootPath` here would be the SAME silent-substitution
+        # bug this whole helper exists to prevent -- a source's loginContext
+        # missing both `rootPath` and `inputs.self` must throw, matching
+        # `loginContextOverridesFor`'s (mk-system.nix) sibling check,
+        # not quietly hand `_defaults.nix` the CONSUMER's rootPath.
+        rootPath =
+          sourceLoginContext.rootPath or (sourceLoginContext.inputs.self
+            or (throw "nixpkgs-lib-extensions: ${fnName}: user `${username}`'s loginContext has no `rootPath` and its `inputs` has no `self` either -- nothing to resolve users/${username}/_defaults.nix's own `rootPath` context argument against.")
+          );
       };
 
-  # A loginContext's own auto-collected modules -- computed WITHOUT
-  # building a `pkgs` (no `system`/`nixpkgs` needed): a system-managed
-  # home cannot use a source's own package set anyway (see
-  # mk-system.nix's `useGlobalPkgs`), so only the module-collection half
-  # of `collectFromInputs` is needed here, over the loginContext's OWN
-  # `inputs` -- never the consumer's. home.nix ONLY, deliberately: the
-  # NixOS-module equivalent (auto-collecting a trusted source's own
-  # configuration.nix-side modules) was tried and reverted -- a NixOS
-  # system is far more likely to already carry the SAME logical input as
-  # the source, independently and without a `follows` tying them to one
-  # resolved copy, so this threw "option already declared" the instant a
-  # real source (home-manager-config, `celler`) overlapped a consumer's
-  # own top-level input for a capability the loginContext feature never
-  # actually needed to add. See mk-system.nix's `userNixosConfigs`.
+  # A loginContext's own auto-collected home-manager modules -- computed
+  # WITHOUT building a `pkgs` (no `system`/`nixpkgs` needed): a
+  # system-managed home cannot use a source's own package set anyway
+  # (see mk-system.nix's `useGlobalPkgs`), so only the module-collection
+  # half of `collectFromInputs` is needed here, over the loginContext's
+  # OWN `inputs`.
+  #
+  # `consumerInputs` EXCLUDES, by name, any input the loginContext's own
+  # `inputs` shares with it -- this is what stops the exact collision
+  # that got the NixOS-module equivalent (auto-collecting a trusted
+  # source's own configuration.nix-side modules) reverted outright: a
+  # real source (home-manager-config, `celler`) independently carrying
+  # the SAME-NAMED input as the consumer, unfollowed, so BOTH copies got
+  # auto-collected and threw "option already declared" the instant they
+  # merged into one evalModules call. Untested until a second real
+  # bug report surfaced the identical shape here too (mk-system.nix's
+  # per-user home-manager submodule DOES merge sharedModules/imports
+  # from both the consumer's own auto-collection and this one, unlike
+  # mk-home.nix's standalone path, which fully swaps rather than
+  # merging and so was never at risk). A same-NAME input is excluded
+  # outright rather than compared by content: this is exactly the
+  # signal an author forgetting a `follows` produces, and it costs
+  # nothing to skip when the consumer's own copy of that name (if it
+  # contributes anything) already covers it -- unlike nix-it-in/
+  # plasma-manager, whose names the reported bug's own consumer never
+  # had at all, so this exclusion never touches the case it was added
+  # for.
   homeModulesFromLoginContext =
-    loginContext:
+    consumerInputs: loginContext:
     (collectFromInputs {
-      inputs = loginContext.inputs;
+      inputs = removeAttrs loginContext.inputs (lib.attrNames consumerInputs);
       inputContributions = loginContext.inputContributions or { };
       baseLib = lib;
     }).collected.homeModules;

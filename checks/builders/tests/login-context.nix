@@ -204,6 +204,32 @@ in
     in
     built."hugo".config.home.sessionVariables.SOURCE_ROOTPATH_MARKER == "reached-via-source-rootpath";
 
+  # A loginContext missing BOTH `rootPath` and `inputs.self` must throw
+  # naming the problem -- not silently hand `_defaults.nix` the
+  # CONSUMER's own rootPath. Found by adversarial review: the original
+  # fix's `contextInputsAndRootPathFor` diverged from its sibling
+  # `loginContextOverridesFor` (mk-system.nix), which already throws in
+  # this exact situation for home.nix/configuration.nix.
+  user-defaults-nix-throws-when-source-has-no-rootpath-and-no-self =
+    let
+      sourceWithNoRootPathOrSelf = {
+        outPath = toString sourceDir;
+        nixpkgsLibExtensionsLoginContext = {
+          # `self` must be genuinely ABSENT, not merely null -- `or`
+          # only falls through when the attribute doesn't exist at all.
+          inputs = removeAttrs fakeSourceInputs [ "self" ];
+        };
+      };
+    in
+    !(builtins.tryEval
+      (myLib.buildHomeConfigurations {
+        inherit inputs system;
+        rootPath = exampleDir;
+        loginFlakeRef = sourceWithNoRootPathOrSelf;
+        users = [ "hugo" ];
+      }).hugo.config.home.username
+    ).success;
+
   # -- 7..10: system-managed -----------------------------------------------
 
   system-managed-specialargs-from-source =
@@ -217,6 +243,51 @@ in
   system-managed-rootpath-from-source =
     systemManagedProbe.config.home-manager.users.dennis.home.sessionVariables.SOURCE_ROOTPATH_MARKER
     == "reached-via-source-rootpath";
+
+  # Regression: a trusted source's OWN auto-collected home.nix modules
+  # must not collide with the CONSUMER's own -- found by adversarial
+  # review (the same collision class as `no-duplicate-nixos-module-
+  # from-source` below, but for home-manager's `sharedModules`/`imports`
+  # merge instead of the flat NixOS `modules` list, which the system-
+  # managed path DOES merge unlike mk-home.nix's standalone full swap).
+  # Two DIFFERENT store paths, same option, same INPUT NAME -- the name
+  # match is what `homeModulesFromLoginContext` now excludes on, mirroring
+  # exactly the shape a missing `follows` produces.
+  no-duplicate-home-module-from-source =
+    let
+      sharedModuleShape =
+        { lib, ... }:
+        {
+          options.programs.sharedHomeModuleProbe.enable = lib.mkEnableOption "shared home module regression probe";
+        };
+      consumerSharedInput = {
+        outPath = "/nix/store/consumer-shared-home-module-probe";
+        homeModules.default = sharedModuleShape;
+      };
+      sourceSharedInput = {
+        outPath = "/nix/store/source-shared-home-module-probe-DIFFERENT";
+        homeModules.default = sharedModuleShape;
+      };
+      probe = myLib.mkNixosSystem {
+        inputs = inputs // {
+          sharedHomeModuleProbeInput = consumerSharedInput;
+        };
+        inherit system;
+        hostname = "logincontext-no-duplicate-home-module";
+        users = [ "dennis" ];
+        loginHomes = [ ];
+        loginFlakeRef = fakeSourceWithLoginContext // {
+          nixpkgsLibExtensionsLoginContext = fakeSourceWithLoginContext.nixpkgsLibExtensionsLoginContext // {
+            inputs = fakeSourceInputs // {
+              sharedHomeModuleProbeInput = sourceSharedInput;
+            };
+          };
+        };
+        rootPath = exampleDir;
+      };
+    in
+    (builtins.tryEval probe.config.home-manager.users.dennis.programs.sharedHomeModuleProbe.enable)
+    .success;
 
   # the system's own pkgs build the home regardless of loginContext --
   # never a separate nixpkgs eval from the source. Uses the

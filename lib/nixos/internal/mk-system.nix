@@ -274,7 +274,7 @@ in
                       else
                         map (wrapModuleWithOverrides overrides) (resolveUser userTree hostname u).homeModules
                     )
-                    ++ (if overrides == null then [ ] else homeModulesFromLoginContext sourceLoginContext);
+                    ++ (if overrides == null then [ ] else homeModulesFromLoginContext inputs sourceLoginContext);
                 }
               );
             };

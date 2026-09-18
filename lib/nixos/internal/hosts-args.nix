@@ -670,7 +670,7 @@ let
           # `_defaults.nix` using `rootPath` needs the SOURCE's own tree.
           contextFor =
             hostname:
-            (contextInputsAndRootPathFor (resolved.userLoginContext or { }) username (checked.inputs) (
+            (contextInputsAndRootPathFor fnName (resolved.userLoginContext or { }) username (checked.inputs) (
               checked.rootPath or (checked.inputs.self or null)
             ))
             // {
@@ -795,9 +795,8 @@ let
             let
               contextFor =
                 hostname:
-                (contextInputsAndRootPathFor (registry.userLoginContext or { }) u (defaultsArgs.inputs or { }) (
-                  defaultsArgs.rootPath or (defaultsArgs.inputs.self or null)
-                ))
+                (contextInputsAndRootPathFor fnName (registry.userLoginContext or { }) u (defaultsArgs.inputs or { }
+                ) (defaultsArgs.rootPath or (defaultsArgs.inputs.self or null)))
                 // {
                   extLib = self;
                   username = u;
@@ -861,7 +860,7 @@ let
                 let
                   contextFor =
                     hn:
-                    (contextInputsAndRootPathFor (registry.userLoginContext or { }) u (p.args.inputs or { }) (
+                    (contextInputsAndRootPathFor fnName (registry.userLoginContext or { }) u (p.args.inputs or { }) (
                       p.args.rootPath or (p.args.inputs.self or null)
                     ))
                     // {
