@@ -333,6 +333,13 @@ exports nothing keeps today's behavior exactly: its `home.nix` builds
 with the consumer's own context, which is fine as long as it needs
 nothing the consumer doesn't already have.
 
+Exporting this is safe for the source's OWN build too: a flake's own
+`rootPath` (the tree its own `home.nix`/`configuration.nix` come from)
+is never treated as a loginContext source for itself, even though it
+now exports one for others -- home-manager-config's own users still
+build with its own directly-passed `overlays`/`allowedUnfreePackages`,
+not a fresh core carrying only `inputs`/`specialArgs`.
+
 **Standalone homes** (`mkHomeConfiguration`/`buildHomeConfigurations`)
 get the FULL swap: the source's own `pkgs`/`lib`/`home-manager` too, not
 just `rootPath`/`specialArgs`/modules -- each standalone home is already

@@ -53,7 +53,7 @@ in
       userTree = registryResult.tree;
 
       # `null` unless `username` was discovered from a source that
-      # declared its OWN builder context (`nixpkgsLibExtensions.loginContext`,
+      # declared its OWN builder context (`nixpkgsLibExtensionsLoginContext`,
       # registry.nix) -- the fix for a `loginFlakeRef` source's home.nix
       # otherwise being built with the CONSUMING flake's own `rootPath`/
       # `specialArgs`/auto-collected modules instead of its own (see
