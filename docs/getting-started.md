@@ -216,13 +216,19 @@ companion) answers that from the tree instead:
 
 A function form receives builder context (`inputs`, `rootPath`,
 `extLib`, `username`, `hostname`, and nixpkgs' own plain `lib` -- not
-this library's extended one) for the cases a constant can't cover.
-Beyond `system` it may set `homeModules`, `specialArgs`, `tags`,
-`homeAutoUpgrade`/`homeAutoUpgradeFlakeRef`, and the per-user nixpkgs
-knobs (`overlays`, `nixpkgsConfig`, `allowedUnfreePackages`,
+this library's extended one) for the cases a constant can't cover. When
+this user's tree came from another flake (a `loginFlakeRef` source --
+see [Where the tree is read from](#where-the-tree-is-read-from)),
+`inputs`/`rootPath` here are that source's own, exactly like its
+`home.nix`/`configuration.nix` -- so a `_defaults.nix` doing `(rootPath
++ /shared/x.nix)` resolves against the source's tree, not the
+consumer's. Beyond `system` it may set `homeModules`, `specialArgs`,
+`tags`, `homeAutoUpgrade`/`homeAutoUpgradeFlakeRef`, and the per-user
+nixpkgs knobs (`overlays`, `nixpkgsConfig`, `allowedUnfreePackages`,
 `permittedInsecurePackages`) -- see `mkNixosSystem`'s own reference
-entry for the complete list, the two files' merge rule, and what a
-DECLARED host's own `system` disagreeing with a user's file does (it
+entry for the complete list, the two `_defaults.nix` files' merge rule,
+and what a DECLARED host's own `system` disagreeing with a user's file
+does (it
 throws, naming both -- a host's architecture is not a user's to
 override). Applies to standalone homes only; a system-managed home
 already has the system's own `pkgs`.
@@ -369,6 +375,10 @@ configuration.nix importing a sibling's the same way, via `rootPath`).
 A home that genuinely needs the source's own nixpkgs revision (not just
 its modules) must be login-managed instead -- add it to that host's
 `loginHomes`.
+
+A user's own [`_defaults.nix`](#per-user-builder-arguments) gets the
+same `rootPath`/`inputs` too, for the same reason: it is also a file
+that came from the discovered source, not the consumer.
 
 Exporting this changes nothing about the source's OWN build: a flake's
 own `rootPath` -- the tree its own `home.nix`/`configuration.nix` come
