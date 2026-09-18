@@ -307,53 +307,96 @@ login-managed users.
 
 ### A source flake's own builder context
 
-The example above works unmodified only as long as home-manager-config's
-`home.nix` files need nothing beyond what the CONSUMING flake already
-provides: its own `rootPath`, its own `specialArgs`, its own
-auto-collected home-manager modules. A source that needs its OWN --
-say it has an input the consumer doesn't (a custom home-manager module),
-or its `home.nix` does `(rootPath + /shared/desktop.nix)` relative to
-ITS OWN tree -- exports `nixpkgsLibExtensionsLoginContext`:
+Recall the single-source example from [Where the tree is read
+from](#where-the-tree-is-read-from): `loginFlakeRef =
+inputs.home-manager-config;`. That works unmodified only as long as
+home-manager-config's `home.nix`/`configuration.nix` files need nothing
+beyond what the CONSUMING flake already provides: its own `rootPath`,
+its own `specialArgs`, its own auto-collected modules.
+
+A source whose files need something the consumer doesn't have -- its
+own extra input (e.g. a custom home-manager module), or a path like
+`(rootPath + /shared/desktop.nix)` resolved against ITS OWN tree --
+needs its own builder context. It exports
+`nixpkgsLibExtensionsLoginContext` to provide one. This requires your
+`outputs` function to capture the whole argument set as `inputs`
+(`outputs = inputs@{ self, ... }: ...`) -- if yours destructures inputs
+by name only, add the `@inputs` binding first. Reuse the exact
+`specialArgs`/`inputs` values you already pass to your own build call
+here -- don't write a second copy, or the two will drift apart the
+first time either one is edited:
 
 ```nix
 # home-manager-config/flake.nix
-outputs = inputs@{ self, ... }: {
-  homeConfigurations = ...;
-  nixpkgsLibExtensionsLoginContext = {
-    inherit inputs;                 # its OWN inputs -- self resolves rootPath
-                                     # the same way `rootPath` already defaults
+outputs =
+  inputs@{ self, ... }:
+  let
     specialArgs = { desktop_environment = "plasma"; };
+  in
+  {
+    homeConfigurations = extLib.buildHomeConfigurations { inherit inputs system specialArgs; };
+    nixpkgsLibExtensionsLoginContext = {
+      inherit inputs specialArgs; # the SAME values passed above -- not a second copy
+    };
   };
-};
 ```
 
 Nothing else changes on the consuming side -- `loginFlakeRef =
 inputs.home-manager-config;` picks this up automatically. A source that
-exports nothing keeps today's behavior exactly: its `home.nix` builds
-with the consumer's own context, which is fine as long as it needs
-nothing the consumer doesn't already have.
+exports nothing simply builds with the consumer's own context -- the
+default described above -- which is fine as long as it needs nothing
+the consumer doesn't already have.
 
-Exporting this is safe for the source's OWN build too: a flake's own
-`rootPath` (the tree its own `home.nix`/`configuration.nix` come from)
-is never treated as a loginContext source for itself, even though it
-now exports one for others -- home-manager-config's own users still
-build with its own directly-passed `overlays`/`allowedUnfreePackages`,
-not a fresh core carrying only `inputs`/`specialArgs`.
+**Standalone homes** (`mkHomeConfiguration`/`buildHomeConfigurations` --
+which is also how a **login-managed** home is built, so the same swap
+applies there) get the FULL swap: the source's own
+`pkgs`/`lib`/`home-manager` too, not just `rootPath`/`specialArgs`/
+modules, since each is already its own independent build. This is
+unconditional -- there is no way to export only `specialArgs`/paths
+while leaving a standalone consumer's own `pkgs` alone. Export this
+once you're fine with every standalone consumer of your tree building
+against your own nixpkgs/home-manager too.
 
-**Standalone homes** (`mkHomeConfiguration`/`buildHomeConfigurations`)
-get the FULL swap: the source's own `pkgs`/`lib`/`home-manager` too, not
-just `rootPath`/`specialArgs`/modules -- each standalone home is already
-its own independent build.
+**System-managed homes and configuration.nix files** (built into a
+`mkNixosSystem` host -- the user is NOT in that host's `loginHomes`)
+always share the HOST's own `pkgs`/`nixpkgs`/`overlays` -- that sharing
+is the entire point of "system-managed", so a loginContext's own
+`nixpkgs`/`overlays`/`system`/`homeManager` are silently not used
+there. Only `rootPath`, `specialArgs`, and the source's own
+auto-collected modules apply -- to a system-managed home.nix and to a
+trusted source's configuration.nix alike (e.g. one user's
+configuration.nix importing a sibling's the same way, via `rootPath`).
+A home that genuinely needs the source's own nixpkgs revision (not just
+its modules) must be login-managed instead -- add it to that host's
+`loginHomes`.
 
-**System-managed homes** (built into a `mkNixosSystem` host, the
-reported-bug shape: the user is NOT in that host's `loginHomes`) always
-share the HOST's own `pkgs`/`nixpkgs`/`overlays` -- that sharing is the
-entire point of "system-managed", so a loginContext's own `nixpkgs`/
-`overlays`/`system`/`homeManager` are silently not used there. Only
-`rootPath`, `specialArgs`, and the source's own auto-collected home
-modules apply. A home that genuinely needs the source's own nixpkgs
-revision (not just its modules) must be login-managed instead -- add it
-to that host's `loginHomes`.
+Exporting this changes nothing about the source's OWN build: a flake's
+own `rootPath` -- the tree its own `home.nix`/`configuration.nix` come
+from -- is never treated as a loginContext source for itself, even
+though it now exports one for everyone else. Concretely:
+home-manager-config's own users still build with its own
+directly-passed `overlays`/`allowedUnfreePackages`, not the partial
+`rootPath`/`specialArgs`-only context a foreign consumer would get.
+
+Verify it took: build the consumer's `homeConfigurations."<user>"` (or
+`"<user>@<host>"`, or the system-managed host itself) and confirm a
+value you set via `specialArgs` actually reached it. An output-name
+typo (`nixpkgsLibExtensionsLoginContext` misspelled) is silently
+ignored, same failure mode as any other unrecognized flake output.
+
+This diagram recaps the mechanism once you've already decided to
+export -- see the criteria above to decide whether you need to at all:
+
+```mermaid
+flowchart TD
+    A(["building a loginFlakeRef-discovered user's home.nix/configuration.nix"]) --> B{"is this the CONSUMER's<br/>own rootPath tree?"}
+    B -->|yes, always| C["consumer's own rootPath/specialArgs/<br/>auto-collected modules -- no swap, ever"]
+    B -->|no, a foreign source| D{"does the source export<br/>nixpkgsLibExtensionsLoginContext?"}
+    D -->|no| C
+    D -->|yes| E{"mkHomeConfiguration/buildHomeConfigurations<br/>(standalone or login-managed),<br/>or a mkNixosSystem host?"}
+    E -->|standalone/login-managed| F["FULL swap: source's own<br/>pkgs / lib / home-manager /<br/>rootPath / specialArgs / modules"]
+    E -->|system-managed host| G["source's rootPath / specialArgs /<br/>modules -- pkgs / nixpkgs / overlays<br/>stay the HOST's own"]
+```
 
 ### Selecting which users apply to a host
 
