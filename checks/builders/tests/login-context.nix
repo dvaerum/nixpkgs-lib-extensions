@@ -21,16 +21,13 @@ let
   # An input present ONLY in the source's OWN loginContext.inputs, never
   # the consumer's -- proves auto-collected homeModules/nixosModules
   # come from the SOURCE, not the caller. Both channels on one input:
-  # a real cross-flake source (nix-it-in) happens to ship only a
-  # homeModule, but the collection mechanism is channel-symmetric, so
-  # one fixture covers both without duplicating the input.
+  # a real cross-flake source (nix-it-in). home.nix ONLY -- a trusted
+  # source's own NixOS modules are deliberately never auto-collected
+  # for configuration.nix (see mk-system.nix's userNixosConfigs).
   fakeSourceAutoInput = {
     outPath = "/nix/store/fake-logincontext-auto-input";
     homeModules.default = {
       home.sessionVariables.SOURCE_AUTO_MODULE_MARKER = "yes";
-    };
-    nixosModules.default = {
-      users.groups.source-auto-nixos-module-marker = { };
     };
   };
 
@@ -251,11 +248,55 @@ in
   system-managed-configuration-nix-rootpath-from-source =
     systemManagedTrustedProbe.config.users.groups ? source-rootpath-nixos-marker;
 
-  # Symmetric with the home.nix auto-module cycle: a trusted source's
-  # configuration.nix gets the source's own auto-collected NixOS
-  # modules too, not just the consumer's.
-  system-managed-configuration-nix-auto-modules-from-source =
-    systemManagedTrustedProbe.config.users.groups ? source-auto-nixos-module-marker;
+  # Regression: a trusted source's NixOS modules are NEVER
+  # auto-collected (unlike home.nix's autoHomeModules) -- found live
+  # (home-manager-config/celler, both pulled in independently, no
+  # `follows` tying them to one resolved copy) as "option already
+  # declared", the instant a consumer's own top-level input and a
+  # loginContext source's happened to overlap. Two DIFFERENT store
+  # paths exporting the SAME option, mirroring that exactly -- must not
+  # throw, because the source's copy must simply never be imported.
+  no-duplicate-nixos-module-from-source =
+    let
+      sharedModuleShape =
+        { lib, ... }:
+        {
+          options.services.sharedModuleProbe.enable = lib.mkEnableOption "shared module regression probe";
+        };
+      consumerSharedInput = {
+        outPath = "/nix/store/consumer-shared-module-probe";
+        nixosModules.default = sharedModuleShape;
+      };
+      sourceSharedInput = {
+        outPath = "/nix/store/source-shared-module-probe-DIFFERENT";
+        nixosModules.default = sharedModuleShape;
+      };
+      probe = myLib.mkNixosSystem {
+        inputs = inputs // {
+          sharedModuleProbeInput = consumerSharedInput;
+        };
+        inherit system;
+        hostname = "logincontext-no-duplicate-module";
+        users = [ "dennis" ];
+        loginHomes = [ ];
+        loginFlakeRef = {
+          source = {
+            outPath = toString sourceDir;
+            nixpkgsLibExtensionsLoginContext = {
+              inputs = fakeSourceInputs // {
+                sharedModuleProbeInput = sourceSharedInput;
+              };
+              specialArgs = {
+                sourceMarker = "from-source";
+              };
+            };
+          };
+          allowNixosConfig = true;
+        };
+        rootPath = exampleDir;
+      };
+    in
+    (builtins.tryEval probe.config.services.sharedModuleProbe.enable).success;
 
   # -- 11: untrusted source, ungated ---------------------------------------
 

@@ -45,7 +45,6 @@
     loginContextForUser
     contextInputsAndRootPathFor
     homeModulesFromLoginContext
-    nixosModulesFromLoginContext
     wrapModuleWithOverrides
     ;
   inherit (import ./context.nix { inherit lib self; }) coreArgNames mkContextCore mkContext;

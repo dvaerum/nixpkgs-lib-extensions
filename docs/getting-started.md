@@ -368,13 +368,18 @@ against your own nixpkgs/home-manager too.
 always share the HOST's own `pkgs`/`nixpkgs`/`overlays` -- that sharing
 is the entire point of "system-managed", so a loginContext's own
 `nixpkgs`/`overlays`/`system`/`homeManager` are silently not used
-there. Only `rootPath`, `specialArgs`, and the source's own
-auto-collected modules apply -- to a system-managed home.nix and to a
-trusted source's configuration.nix alike (e.g. one user's
-configuration.nix importing a sibling's the same way, via `rootPath`).
-A home that genuinely needs the source's own nixpkgs revision (not just
-its modules) must be login-managed instead -- add it to that host's
-`loginHomes`.
+there. `rootPath` and `specialArgs` apply -- to a system-managed
+home.nix and to a trusted source's configuration.nix alike (e.g. one
+user's configuration.nix importing a sibling's the same way, via
+`rootPath`) -- but the source's own auto-collected modules do NOT: a
+NixOS system is far more likely to already carry the SAME logical
+input as the source, independently and without a `follows` tying them
+to one resolved copy, than a home-manager module is -- tried once,
+which threw "option already declared" the instant a real source
+(`celler`, pulled in by both a consumer and, transitively, by
+home-manager-config) overlapped unfollowed. A home genuinely needing a
+module (or the nixpkgs revision) only the source's own inputs carry
+must be login-managed instead -- add it to that host's `loginHomes`.
 
 A user's own [`_defaults.nix`](#per-user-builder-arguments) gets the
 same `rootPath`/`inputs` too, for the same reason: it is also a file
@@ -405,7 +410,7 @@ flowchart TD
     D -->|no| C
     D -->|yes| E{"mkHomeConfiguration/buildHomeConfigurations<br/>(standalone or login-managed),<br/>or a mkNixosSystem host?"}
     E -->|standalone/login-managed| F["FULL swap: source's own<br/>pkgs / lib / home-manager /<br/>rootPath / specialArgs / modules"]
-    E -->|system-managed host| G["source's rootPath / specialArgs /<br/>modules -- pkgs / nixpkgs / overlays<br/>stay the HOST's own"]
+    E -->|system-managed host| G["source's rootPath / specialArgs --<br/>plus its own auto-collected modules<br/>for home.nix, NEVER for configuration.nix.<br/>pkgs / nixpkgs / overlays stay the HOST's own"]
 ```
 
 ### Selecting which users apply to a host

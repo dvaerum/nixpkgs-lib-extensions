@@ -30,7 +30,6 @@ let
     loginFlakeRefSources
     loginContextForUser
     homeModulesFromLoginContext
-    nixosModulesFromLoginContext
     wrapModuleWithOverrides
     ;
   inherit (import ./priorities.nix { inherit lib; }) builderDefaultPriority mkBuilderDefault;
@@ -154,6 +153,20 @@ in
       # -- EXCEPT an untrusted user's (see loginFlakeRefSources): that
       # file gets full, unrestricted NixOS module authority, so a source
       # this host does not fully trust does not get it by default.
+      # Deliberately NOT auto-collecting the source's own NixOS modules
+      # here (unlike home.nix's autoHomeModules, below): a NixOS system
+      # is far more likely to already carry the SAME logical input as
+      # the source, independently and without a `follows` tying them to
+      # one resolved copy (system-level components are commonly shared
+      # across sibling repos under common authorship, exactly nixos-
+      # developer-system's and home-manager-config's relationship) --
+      # unlike a home-manager module, which the consumer's own system
+      # essentially never already has. Tried once (a real celler.
+      # nixosModules.cellerd, pulled in independently by both), which
+      # then throws "already declared" the instant a consumer's own
+      # top-level input and a loginContext source's happen to overlap
+      # unfollowed -- a real regression, on its first real exercise,
+      # for a capability the original bug report never asked for.
       userNixosConfigs = lib.concatMap (
         u:
         if lib.elem u untrustedUsers then
@@ -163,15 +176,7 @@ in
             overrides = loginContextOverridesFor u;
             nixosModules = (resolveUser userTree hostname u).nixosModules;
           in
-          if overrides == null then
-            nixosModules
-          else
-            map (wrapModuleWithOverrides overrides) nixosModules
-            # the source's own auto-collected NixOS modules -- symmetric
-            # with home.nix's autoHomeModules (below): a trusted source's
-            # configuration.nix may need a module only ITS OWN inputs
-            # carry, same as nix-it-in/plasma-manager do for home.nix.
-            ++ nixosModulesFromLoginContext (loginContextForUser (discoveredTree.userLoginContext or { }) u)
+          if overrides == null then nixosModules else map (wrapModuleWithOverrides overrides) nixosModules
       ) hostUsers;
 
       # SYSTEM-MANAGED HOMES: the home.nix of every user NOT in
