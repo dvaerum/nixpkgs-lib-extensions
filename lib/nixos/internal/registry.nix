@@ -467,6 +467,33 @@ let
   # before whenever this is `null`.
   loginContextForUser = userLoginContext: username: userLoginContext.${username} or null;
 
+  # Resolves the `inputs`/`rootPath` a `users/<u>/_defaults.nix`
+  # function-form file's context should see -- the discovering source's
+  # OWN, when `username` was found via a `loginFlakeRef` source that
+  # declared `nixpkgsLibExtensionsLoginContext`; otherwise the caller's
+  # own fallback, unchanged. Same bug class as home.nix/configuration.nix
+  # (mk-system.nix's `loginContextOverridesFor`): a `_defaults.nix` that
+  # uses `rootPath` (e.g. `homeModules = [ (rootPath + /shared/x.nix) ];`)
+  # needs the SOURCE's own tree, not the consumer's -- found by
+  # cross-checking every OTHER place a discovered user's own file
+  # resolves `rootPath`/`inputs`, after the home.nix/configuration.nix
+  # instances of this were fixed.
+  contextInputsAndRootPathFor =
+    userLoginContext: username: fallbackInputs: fallbackRootPath:
+    let
+      sourceLoginContext = loginContextForUser userLoginContext username;
+    in
+    if sourceLoginContext == null then
+      {
+        inputs = fallbackInputs;
+        rootPath = fallbackRootPath;
+      }
+    else
+      {
+        inherit (sourceLoginContext) inputs;
+        rootPath = sourceLoginContext.rootPath or (sourceLoginContext.inputs.self or fallbackRootPath);
+      };
+
   # A loginContext's own auto-collected modules -- computed WITHOUT
   # building a `pkgs` (no `system`/`nixpkgs` needed): a system-managed
   # home/host cannot use a source's own package set anyway (see
@@ -578,6 +605,7 @@ in
     discoverHostsForUser
     entryDirsFor
     loginContextForUser
+    contextInputsAndRootPathFor
     homeModulesFromLoginContext
     nixosModulesFromLoginContext
     wrapModuleWithOverrides

@@ -193,6 +193,20 @@ in
     (sourced.config.home.sessionVariables ? SOURCE_SPECIALARG_MARKER)
     && !(plain.config.home.sessionVariables ? SOURCE_SPECIALARG_MARKER);
 
+  # A `users/<u>/_defaults.nix` function-form file gets the SAME
+  # rootPath override home.nix/configuration.nix already get -- it
+  # predates the loginContext feature and was never wired to it.
+  user-defaults-nix-rootpath-from-source =
+    let
+      built = myLib.buildHomeConfigurations {
+        inherit inputs system;
+        rootPath = exampleDir;
+        loginFlakeRef = fakeSourceWithLoginContext;
+        users = [ "hugo" ];
+      };
+    in
+    built."hugo".config.home.sessionVariables.SOURCE_ROOTPATH_MARKER == "reached-via-source-rootpath";
+
   # -- 7..10: system-managed -----------------------------------------------
 
   system-managed-specialargs-from-source =

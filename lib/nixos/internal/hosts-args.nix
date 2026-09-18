@@ -20,6 +20,7 @@ let
     loginFlakeRefSources
     discoverHostsForUser
     filterUsers
+    contextInputsAndRootPathFor
     ;
   inherit (import ./inputs.nix { inherit lib self; }) detectHomeManager;
   inherit (import ./user-defaults.nix { inherit lib self; })
@@ -662,12 +663,20 @@ let
       homeFor =
         username: hostname:
         let
-          contextFor = hostname: {
-            inherit (checked) inputs;
-            rootPath = checked.rootPath or (checked.inputs.self or null);
-            extLib = self;
-            inherit username hostname lib;
-          };
+          # `inputs`/`rootPath` come from `username`'s OWN loginContext
+          # when they were discovered from a foreign `loginFlakeRef`
+          # source that declared one -- otherwise the caller's own, same
+          # as before. Same bug class as home.nix/configuration.nix: a
+          # `_defaults.nix` using `rootPath` needs the SOURCE's own tree.
+          contextFor =
+            hostname:
+            (contextInputsAndRootPathFor (resolved.userLoginContext or { }) username (checked.inputs) (
+              checked.rootPath or (checked.inputs.self or null)
+            ))
+            // {
+              extLib = self;
+              inherit username hostname lib;
+            };
           overrides = userOverridesFor fnName contextFor (tree.${username} or null) hostname;
           userCore = coreForOverrides core checked overrides;
         in
@@ -753,6 +762,7 @@ let
             {
               tree = { };
               untrustedUsers = [ ];
+              userLoginContext = { };
             }
           else
             plan.${firstHost}.registry;
@@ -783,13 +793,16 @@ let
           map (
             u:
             let
-              contextFor = hostname: {
-                inputs = defaultsArgs.inputs or { };
-                rootPath = defaultsArgs.rootPath or (defaultsArgs.inputs.self or null);
-                extLib = self;
-                username = u;
-                inherit hostname lib;
-              };
+              contextFor =
+                hostname:
+                (contextInputsAndRootPathFor (registry.userLoginContext or { }) u (defaultsArgs.inputs or { }) (
+                  defaultsArgs.rootPath or (defaultsArgs.inputs.self or null)
+                ))
+                // {
+                  extLib = self;
+                  username = u;
+                  inherit hostname lib;
+                };
               overrides = userOverridesFor fnName contextFor (tree.${u} or null) null;
               effectiveSystem = hostlessSystemOrThrow fnName u defaultsSystem systemsInPlay overrides;
               finalArgs = defaultsArgs // overrides // { system = effectiveSystem; };
@@ -846,14 +859,17 @@ let
               map (
                 u:
                 let
-                  contextFor = hn: {
-                    inputs = p.args.inputs or { };
-                    rootPath = p.args.rootPath or (p.args.inputs.self or null);
-                    extLib = self;
-                    username = u;
-                    hostname = hn;
-                    inherit lib;
-                  };
+                  contextFor =
+                    hn:
+                    (contextInputsAndRootPathFor (registry.userLoginContext or { }) u (p.args.inputs or { }) (
+                      p.args.rootPath or (p.args.inputs.self or null)
+                    ))
+                    // {
+                      extLib = self;
+                      username = u;
+                      hostname = hn;
+                      inherit lib;
+                    };
                   rawOverrides = userOverridesFor fnName contextFor (hostTree.${u} or null) hostname;
                   # The host's OWN `system` wins any contest with the
                   # user's file -- checked here, not merely assumed by

@@ -43,6 +43,7 @@
     resolveUsers
     loginFlakeRefSources
     loginContextForUser
+    contextInputsAndRootPathFor
     homeModulesFromLoginContext
     nixosModulesFromLoginContext
     wrapModuleWithOverrides
