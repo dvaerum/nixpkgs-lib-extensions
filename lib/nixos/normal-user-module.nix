@@ -41,6 +41,43 @@
     };
     ```
 
+    # Making a users-tree entry a system account
+
+    A tree user that's really a service account (still needs its own
+    `configuration.nix`/`home.nix`, but shouldn't get a normal login)
+    becomes a system account by pinning `uid` below 1000 and
+    declaring `isSystemUser`, its `group`, and `home` itself -- this
+    module then leaves it alone, same as `root` above:
+
+    ```nix
+    # users/<name>/configuration.nix
+    {
+      users.users.<name> = {
+        uid = 411;
+        isSystemUser = true;
+        group = "<name>";
+        home = "/var/lib/<name>";
+        createHome = true;
+      };
+      users.groups.<name> = { };
+    }
+    ```
+
+    Picking the uid: 0-399 is fully claimed by nixpkgs' own static
+    `ids.nix` (400+ services); 400-999 is what NixOS's *dynamic*
+    system-user allocator owns (`isSystemUser = true` with `uid`
+    left `null` picks one from here on activation, RFC 0052), handed
+    out from 999 **downward**. A manually pinned uid in that same
+    range never collides with it -- the allocator always checks
+    `/etc/passwd` first and skips anything already taken -- but
+    picking low (400-450) keeps it as far as possible from the end
+    the allocator actually reaches on any real host.
+
+    `uid = null` (the allocator-assigned default) is not an option
+    *here*: this module decides "system or normal" by reading the
+    tree user's merged uid at eval time, so an account meant to skip
+    it needs a uid this module can actually see.
+
     # Type
 
     ```
