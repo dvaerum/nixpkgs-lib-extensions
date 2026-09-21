@@ -34,7 +34,10 @@ lib.fix (
     namespacePaths = {
       attrsets = [ ./attrsets/default.nix ];
       strings = [ ./strings/default.nix ];
-      disko = [ ./disko/declare-zfs-root-disk.nix ];
+      disko = [
+        ./disko/declare-zfs-root-disk.nix
+        ./disko/declare-zfs-data-disk.nix
+      ];
       imports = [
         ./imports/import-if-nix.nix
         ./imports/import-if-nix-or.nix

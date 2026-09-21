@@ -157,6 +157,18 @@
             pkgs = nixpkgs.legacyPackages.${system};
             inherit myLib;
           };
+          zfs-data-disk = import ./checks/zfs-data-disk.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            inherit myLib;
+          };
+          zfs-data-key-file = import ./checks/zfs-data-key-file.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            inherit myLib;
+          };
+          zfs-data-disk-vm = import ./checks/zfs-data-disk-vm.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            inherit myLib;
+          };
           discover-patches = import ./checks/discover-patches.nix {
             pkgs = nixpkgs.legacyPackages.${system};
             inherit myLib;

@@ -1,0 +1,17 @@
+title = "nixpkgs-lib-extensions gitleaks config"
+
+[extend]
+# Start from gitleaks' own bundled default ruleset; this file only ADDS
+# an allowlist entry on top, it does not redefine any rules.
+useDefault = true
+
+[allowlist]
+description = "known false positives: deliberately-fake test fixtures"
+regexes = [
+  # checks/zfs-data-disk-vm.nix's `keySourceCommand` -- a fixed,
+  # obviously-fake key literal used to bypass the hardware-identity
+  # dispatch in a VM test (declareZfsDataDisk's `keySourceCommand`
+  # escape hatch). Matches the generic-api-key rule on the "KEY="
+  # shape plus entropy, not a real secret.
+  '''KEY=fixed-test-key''',
+]

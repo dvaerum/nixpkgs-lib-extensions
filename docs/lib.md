@@ -10,6 +10,7 @@ builders? Start with the
 - [attrsets](#attrsets)
   - [`lib.attrsets.recursiveMerge`](#libattrsetsrecursivemerge)
 - [disko](#disko)
+  - [`lib.disko.declareZfsDataDisk`](#libdiskodeclarezfsdatadisk)
   - [`lib.disko.declareZfsRootDisk`](#libdiskodeclarezfsrootdisk)
 - [imports](#imports)
   - [`lib.imports.discoverPatches`](#libimportsdiscoverpatches)
@@ -87,6 +88,146 @@ recursiveMerge [
 ---
 
 # disko
+
+
+## `lib.disko.declareZfsDataDisk`
+
+Declare a non-root ZFS data pool as a NixOS module: one or more disks,
+partitioned and assigned to one pool -- `nameFn name` (default
+`zdata-<name>`) -- with a configurable vdev topology (single disks,
+mirrors, or raidz, mixed freely within one pool), a single `DATA`
+dataset mounted at `poolMountpoint`, and optional encryption keyed to
+the machine's hardware identity, exactly like `declareZfsRootDisk`.
+(See that function's own doc comment for the shared hardware-identity
+scheme and its THREAT MODEL -- both functions use the identical,
+deliberately unsalted derivation.)
+
+Prerequisites: same as `declareZfsRootDisk` -- the disko NixOS module
+imported, and `networking.hostId` set. Unlike the root disk, this pool
+is NOT required for the system to boot at all: it is imported during
+regular (post-initrd) boot via `boot.zfs.extraPools`, which this
+function wires up itself, alongside `boot.zfs.forceImportAll = true`.
+NixOS's own `zfs-import-<pool>.service` already performs the actual
+key-load automatically for any locked dataset whose `keylocation` is
+a file (`boot.zfs.requestEncryptionCredentials` defaults to `true`),
+so this function only needs to make sure a valid key FILE exists
+before that unit runs -- it does not reimplement key-loading itself.
+
+THREAT MODEL: identical to `declareZfsRootDisk` -- see that function's
+doc comment. One data-pool-specific addition: a pool built from
+multiple `vdevs` is only as resilient as its WEAKEST vdev -- ZFS
+requires every top-level vdev to stay healthy for the pool to stay
+importable at all, so mixing e.g. a small mirror and a large raidz1 in
+one pool means the pool's overall failure risk is the SUM of each
+vdev's own risk, not just whichever vdev happens to hold the data you
+care about.
+
+KEY MIGRATION: `keyFilePath` names where the encryption key should
+ultimately live (e.g. a sops-managed secret), but pool CREATION always
+uses the ephemeral default (`/tmp/secrets/zpool.key`, hardware-derived,
+regenerated every boot) regardless of what `keyFilePath` is set to --
+the pool must be creatable during an unattended install (e.g.
+`nixos-anywhere`), before any secrets machinery necessarily exists on
+the target machine. Once `keyFilePath` names something other than
+that ephemeral default AND a real file exists there (e.g. sops has
+since been provisioned), the NEXT boot migrates the pool onto it
+permanently: `zfs change-key` adopts that file's content as the
+pool's real key and repoints `keylocation` at it. From then on the
+pool no longer depends on the hardware-derived key at all. Migration
+is idempotent -- it reads the pool's OWN live `keylocation` property
+each boot, not a separate stamp, so there is nothing to fall out of
+sync with reality. Leaving `keyFilePath` at its default never
+migrates: the pool stays on the ephemeral hardware-derived key
+indefinitely, exactly like `declareZfsRootDisk`.
+
+### Example
+
+```nix
+# extLib = inputs.nixpkgs-lib-extensions.lib
+imports = [
+  (extLib.declareZfsDataDisk {
+    name = "bulk";
+    vdevs = [
+      {
+        mode = "mirror";
+        devicePaths = [
+          "/dev/disk/by-id/ata-bulk-1"
+          "/dev/disk/by-id/ata-bulk-2"
+        ];
+      }
+    ];
+    enableEncryption = true;
+  })
+];
+```
+
+### Type
+
+```
+declareZfsDataDisk :: Attribute -> Module
+```
+
+### Arguments
+
+- **name**
+  Names the pool: `nameFn name` (default `zdata-<name>`).
+
+- **nameFn**
+  Formats `name` into the pool name. Default `name: "zdata-${name}"`.
+
+- **vdevs**
+  A list of `{ mode ? null; devicePaths; }` vdev groups, each becoming
+  one real ZFS vdev in the pool. `mode = null` means an independent,
+  unmirrored single disk -- it requires EXACTLY one `devicePaths`
+  entry (list N disks as N separate `mode = null` entries instead of
+  one entry with N paths; ZFS has no "grouped stripe" vdev type, and
+  `null` with more than one path would silently produce N independent
+  vdevs anyway -- this function makes that explicit instead).
+  `mode = "mirror"` (or `"raidz"`/`"raidz1"`) needs at least 2;
+  `"raidz2"` needs at least 3; `"raidz3"` needs at least 4 -- disko
+  itself does not enforce these minimums, so this function throws
+  instead of letting a too-small raidz surface as an opaque `zpool
+  create` failure. Multiple vdevs of DIFFERENT modes in one `vdevs`
+  list are allowed (ZFS permits it), though see the THREAT MODEL
+  paragraph above for why that is not necessarily a good idea.
+
+- **enableEncryption**
+  Whether the pool should be encrypted. Default `true`. See the KEY
+  MIGRATION paragraph above and `keyFilePath`/`keySourceCommand`
+  below.
+
+- **keyFilePath**
+  Default `"/tmp/secrets/zpool.key"` -- the SAME literal default as
+  `declareZfsRootDisk`'s, which is why leaving it unset never
+  migrates (see KEY MIGRATION above): the pool stays on the ephemeral
+  hardware-derived key at that exact path forever. Set it to a real,
+  persistent path (e.g. a sops secret) to migrate onto it once that
+  file exists. This function is entirely secrets-manager-agnostic --
+  it never reads sops or anything else itself, `keyFilePath` is just
+  a path it compares against and, once migrated, hands to `zfs
+  change-key`.
+
+- **keySourceCommand**
+  Overrides where the EPHEMERAL default key comes from (the
+  hardware-identity dispatch `declareZfsRootDisk` also uses:
+  `dmidecode` on x86_64-linux, `/proc/cpuinfo`'s `Serial` on
+  aarch64-linux). Default `null` (use that predefined dispatch). Has
+  no effect on a key already migrated to `keyFilePath` -- see KEY
+  MIGRATION above.
+
+- **poolMountpoint**
+  Where the pool's single `DATA` dataset mounts. Default `"/data"`.
+  `null` gives `DATA` no mountpoint at all (`options.mountpoint =
+  "none";`) -- a pure parent for datasets you add via `extraDatasets`,
+  the same idiom `declareZfsRootDisk`'s own `ROOT` dataset uses.
+
+- **extraDatasets**
+  Identical mechanism to `declareZfsRootDisk`'s own `extraDatasets`:
+  an attribute set of additional zfs datasets, merged in last (so it
+  can also override `DATA` itself). Parent datasets are not created
+  implicitly -- declare them too.
+
+
 
 
 ## `lib.disko.declareZfsRootDisk`

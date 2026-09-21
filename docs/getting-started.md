@@ -1407,7 +1407,8 @@ extending the flat lib. Collisions are handled by who owns the name:
 - a namespace this repo owns (`disko`, ...): the input's lib is
   MERGED into it, and the existing side wins every conflict -- an
   input can only add, never change. With the disko flake as input,
-  `lib.disko` holds `declareZfsRootDisk` AND disko's own helpers.
+  `lib.disko` holds `declareZfsRootDisk`/`declareZfsDataDisk` AND
+  disko's own helpers.
 - any other existing `lib` attribute (an input named `strings`
   would hit nixpkgs' own namespace): skipped with a warning --
   such an input name is almost always an accident; rename it.

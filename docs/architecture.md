@@ -19,7 +19,9 @@ lib/
   imports/          importIfNix / importIfNixOr, readIfPlain /
                     readIfPlainOr (git-crypt-friendly), discoverPatches
   systemd/          detachedRun, interceptingWrapper
-  disko/            declareZfsRootDisk (+ operational README.md)
+  disko/            declareZfsRootDisk, declareZfsDataDisk (+ operational
+                    README.md); internal/hardware-key.nix is the
+                    hardware-identity key scheme shared by both
   nixos/            the builders -- what this repo is about
     build-configurations.nix        buildConfigurations
     build-nixos-configurations.nix  buildNixosConfigurations
