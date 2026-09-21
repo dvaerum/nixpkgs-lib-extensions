@@ -601,6 +601,54 @@ shell its own config already gives it. So `"root"` is a valid users-tree
 entry: it gets its `home.nix`/`configuration.nix`, never account
 changes.
 
+### Making a users-tree entry a system account
+
+A tree user that's really a service account (still needs its own
+`configuration.nix`/`home.nix`, but shouldn't get a normal login)
+becomes one by pinning a `uid` below 1000 and declaring
+`isSystemUser`, `group`, and `home` itself:
+
+```nix
+# users/<name>/configuration.nix
+{
+  users.users.<name> = {
+    uid = 411;
+    isSystemUser = true;
+    group = "<name>";
+    home = "/var/lib/<name>";
+    createHome = true;
+  };
+  users.groups.<name> = { };
+}
+```
+
+Why `uid = 411` and not `uid = null` with just `isSystemUser =
+true;` (the usual NixOS advice, [RFC
+0052](https://github.com/NixOS/rfcs/blob/master/rfcs/0052-dynamic-ids.md)):
+`normalUserModule` decides "system or normal" from the tree user's
+*merged uid at eval time* -- a `null` uid isn't visible yet at that
+point (NixOS only picks one later, during activation), so this
+module would still see "no uid pinned" and turn the account normal
+anyway. It needs an explicit number.
+
+```
+0        400                              999   1000
+├────────┼────────────────────────────────┼──────┤
+│ static  │   NixOS's dynamic system-user  │ normal │
+│ system  │   allocator's range (uid=null  │ users  │
+│ uids    │   + isSystemUser=true), fills  │        │
+│ (taken) │   999 → downward on activation │        │
+└────────┴────────────────────────────────┴──────┘
+```
+
+- **0-399**: fully claimed already by nixpkgs' own static `ids.nix`
+  (400+ services) -- don't pin here.
+- **400-999**: the dynamic allocator's own range. A manually pinned
+  uid here is safe from it (it always checks `/etc/passwd` first and
+  skips anything taken), but it hands out ids from **999 downward**,
+  so a low number (**400-450**) sits as far as possible from where it
+  actually reaches on any real host.
+
 Richer accounts -- build on the default:
 
 ```nix
