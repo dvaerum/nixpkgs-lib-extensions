@@ -108,11 +108,29 @@ pkgs.testers.runNixOSTest {
     # ... and no stamp was written
     machine.succeed("test ! -e ~alice/.local/state/home-manager-bootstrap.stamp")
 
+    # ── Restart=on-failure heals WITHIN the session ──
+    # remove the transient cause without touching the user manager: the
+    # pending in-session retry (RestartSec=30s) succeeds on its own
+    machine.succeed("rm /tmp/hm-fail")
+    machine.wait_until_succeeds(
+        "test -f ~alice/.local/state/home-manager-bootstrap.stamp", timeout=60
+    )
+    machine.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 3 ]')
+
+    # ── failure again, then retry on a later login ──
+    machine.succeed("su -l alice -c 'rm ~/.local/state/home-manager-bootstrap.stamp'")
+    machine.succeed("touch /tmp/hm-fail")
+    machine.succeed("systemctl restart user@$(id -u alice).service")
+    machine.wait_until_succeeds(
+        "su -l alice -c 'env XDG_RUNTIME_DIR=/run/user/$(id -u alice) "
+        "systemctl --user show home-manager-bootstrap.service -p Result' "
+        "| grep -q exit-code"
+    )
     # next login: the transient cause is gone, the same service succeeds
     machine.succeed("rm /tmp/hm-fail")
     machine.succeed("systemctl restart user@$(id -u alice).service")
     machine.wait_until_succeeds("test -f ~alice/.local/state/home-manager-bootstrap.stamp")
     machine.succeed("grep -q '/fake-flake#alice@vmhost' ~alice/.local/state/home-manager-bootstrap.stamp")
-    machine.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 3 ]')
+    machine.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 4 ]')
   '';
 }

@@ -85,6 +85,15 @@ in
   # the server has no registry: no bootstrap
   server-no-bootstrap = !(server.config.systemd.user.services ? home-manager-bootstrap);
 
+  # StartLimit* must land in [Unit] (unitConfig): as serviceConfig keys
+  # systemd merely WARNS in the journal and the restart loop loses its
+  # fast-failure bound -- nothing at eval time would catch the regression
+  bootstrap-start-limit-in-unit-config =
+    let
+      unitConfig = laptop.config.systemd.user.services.home-manager-bootstrap.unitConfig;
+    in
+    unitConfig.StartLimitBurst == 4 && unitConfig.StartLimitIntervalSec == "10min";
+
   # a loginHomes entry whose registry directory ships no home.nix (eve is
   # a config-only user) has nothing to bootstrap: no service
   no-bootstrap-for-config-only-login-user =
@@ -94,7 +103,8 @@ in
         hostname = "evelogin";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         loginHomes = [ "eve" ];
-      }).config.systemd.user.services ? home-manager-bootstrap
+      }).config.systemd.user.services
+        ? home-manager-bootstrap
     );
 
   # loginHomes names matching NONE of the host's users are ignored without

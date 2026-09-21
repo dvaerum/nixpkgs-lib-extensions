@@ -210,6 +210,12 @@ let
       enableEncryption = false;
       defineBootPartitions = "esp";
     } (r: r.disko.devices.disk.main.content.partitions);
+    # ... and an EMPTY attrset used to silently replace the platform
+    # layout with no boot partition at all
+    empty-boot-partitions-throws = buildThrows {
+      enableEncryption = false;
+      defineBootPartitions = { };
+    } (r: r.disko.devices.disk.main.content.partitions);
 
     # ── legacyBoot: ONE argument, valid on both platforms, but NOT one
     # mechanism -- disko's native hybrid-MBR treatment on the FIRMWARE
@@ -371,7 +377,8 @@ let
         (build {
           enableEncryption = false;
           swapSize = 0;
-        }).disko.devices.disk.main.content.partitions ? SWAP
+        }).disko.devices.disk.main.content.partitions
+          ? SWAP
       );
 
     # encryption is on by default and reaches the pool root options
