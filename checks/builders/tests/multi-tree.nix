@@ -36,7 +36,8 @@
       hostname = "multitree-bare-home";
       users = [ "per" ];
       loginFlakeRef = [ (fixturesDir + "/tree-per") ];
-    }).config.home-manager.users ? per;
+    }).config.home-manager.users
+      ? per;
 
   # `{ source; allowNixosConfig = true; }` is the opt-in: configuration.nix
   # IS imported for that source
@@ -51,7 +52,8 @@
           allowNixosConfig = true;
         }
       ];
-    }).config.users.groups ? bo-marker-group;
+    }).config.users.groups
+      ? bo-marker-group;
 
   # a wrapper with allowNixosConfig = false (explicit) behaves exactly
   # like the bare/default form
@@ -67,7 +69,8 @@
             allowNixosConfig = false;
           }
         ];
-      }).config.users.groups ? per-marker-group
+      }).config.users.groups
+        ? per-marker-group
     );
 
   # rootPath's OWN tree is ALWAYS trusted, list form or not -- eve (from
@@ -132,7 +135,8 @@
         hostname = "multitree-singular-bare";
         users = [ "per" ];
         loginFlakeRef = fixturesDir + "/tree-per";
-      }).config.users.groups ? per-marker-group
+      }).config.users.groups
+        ? per-marker-group
     );
   singular-wrapped-can-opt-in =
     (mkProbeSystem {
@@ -143,7 +147,8 @@
         source = fixturesDir + "/tree-bo";
         allowNixosConfig = true;
       };
-    }).config.users.groups ? bo-marker-group;
+    }).config.users.groups
+      ? bo-marker-group;
   # singular still REPLACES rootPath outright (unchanged from before this
   # feature) -- eve, who lives in rootPath/exampleDir, is absent from the
   # tree entirely when loginFlakeRef is singular (unlike the list form

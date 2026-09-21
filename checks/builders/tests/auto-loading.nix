@@ -97,7 +97,8 @@ in
         inherit system;
         hostname = "multithrow";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-      }).config.users.groups ? multi-one
+      }).config.users.groups
+        ? multi-one
     )).success;
   # the complaint itself, not merely "something threw" -- tryEval discards
   # the message, so the assertion above is equally satisfied by an
@@ -250,7 +251,8 @@ in
         (exampleDir + "/hosts/server/configuration.nix")
         ({ lib, ... }: { users.groups.${lib.libOverlayViaFinal} = { }; })
       ];
-    }).config.users.groups ? from-lib-overlay-via-final;
+    }).config.users.groups
+      ? from-lib-overlay-via-final;
 
   # an `extendLib` export (a lib -> lib endomorphism some flakes carry) is
   # NOT a convention: it contributes nothing and is never even forced (the
@@ -271,7 +273,8 @@ in
           users.groups.${if lib ? autoExtMarker then "still-sane" else "broken"} = { };
         })
       ];
-    }).config.users.groups ? still-sane;
+    }).config.users.groups
+      ? still-sane;
 
   # the overlay answers to the `libOverlays` channel of inputContributions:
   # opting it out drops the contribution
@@ -292,7 +295,8 @@ in
         })
       ];
       inputContributions."overlaid".libOverlays = null;
-    }).config.users.groups ? no-marker;
+    }).config.users.groups
+      ? no-marker;
 
   # an input's standalone `lib` export is namespaced by input name into
   # the module-arg lib ...
@@ -304,7 +308,8 @@ in
         (exampleDir + "/hosts/server/configuration.nix")
         ({ lib, ... }: { users.groups.${lib.fake-module-input.probeGroup} = { }; })
       ];
-    }).config.users.groups ? from-lib-probe;
+    }).config.users.groups
+      ? from-lib-probe;
 
   # ... and into pkgs.lib; nixpkgs trees are NOT namespaced (their lib
   # IS the base)
@@ -456,7 +461,8 @@ in
   channel-selection-skips-tombstone =
     (probeHost "seltombstone" { inherit fake-multi-module-input; } {
       "fake-multi-module-input".nixosModules = [ "one" ];
-    }).config.users.groups ? multi-one;
+    }).config.users.groups
+      ? multi-one;
 
   # an explicit selection overrides a built-in skip: home-manager's NixOS
   # module is normally kept out of the auto-collected set (by store-path
@@ -464,7 +470,8 @@ in
   selection-overrides-builtin-skip =
     (probeHost "hmselected" { } {
       "home-manager".nixosModules = [ "default" ];
-    }).options ? home-manager;
+    }).options
+      ? home-manager;
 
   # input-level `null`: the input contributes NOTHING, on every channel --
   # modules, overlays, its lib overlay and its namespaced lib
@@ -568,7 +575,8 @@ in
       hostname = "scprobe";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
       inputContributions."not-nur" = v: { nixosModules = v.modules.nixos or { }; };
-    }).config.users.groups ? from-notnur-module;
+    }).config.users.groups
+      ? from-notnur-module;
   # ... and the function form ALSO overrides the built-in skips, exactly as
   # a named selection does. Without that, remapping a nixpkgs-TREE-shaped
   # distribution flake (nixos-raspberrypi and friends: legacyPackages +
@@ -591,7 +599,8 @@ in
       hostname = "treeremap";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
       inputContributions."distro" = v: { nixosModules = v.modules.nixos; };
-    }).config.users.groups ? from-remapped-tree;
+    }).config.users.groups
+      ? from-remapped-tree;
 
   # ... and double as the per-input opt-out for any channel
   input-special-cases-opt-out =
@@ -601,7 +610,8 @@ in
         hostname = "scoptout";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         inputContributions."fake-module-input" = _: { nixosModules = { }; };
-      }).config.users.groups ? from-input-module
+      }).config.users.groups
+        ? from-input-module
     );
 
   # the homeManager argument bypasses capability detection (here with a

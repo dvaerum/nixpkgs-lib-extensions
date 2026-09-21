@@ -81,7 +81,8 @@ in
     myLib.checksForConfigurations { } == { }
     && (myLib.checksForConfigurations {
       inherit (built) nixosConfigurations;
-    }).${system} ? "nixos-laptop";
+    }).${system}
+      ? "nixos-laptop";
 
   # An empty result is a silent no-op gate, so the function warns. The
   # WARNING TEXT is not assertable in pure eval (lib.warn is a trace, and

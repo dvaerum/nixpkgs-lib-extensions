@@ -37,14 +37,14 @@ let
           inherit lib;
           self = myLib;
         }).extHomeOptionsModule
-        {
-          hostname = "probe";
-          group = null;
-          tags = [ ];
-          users = [ ];
-          inputPkgs = { };
-          channels = { };
-        }
+          {
+            hostname = "probe";
+            group = null;
+            tags = [ ];
+            users = [ ];
+            inputPkgs = { };
+            channels = { };
+          }
       ).options.nixpkgsLibExtensions;
 in
 {
@@ -76,7 +76,8 @@ in
           }
         )
       ];
-    }).config.users.groups ? group-of-vm;
+    }).config.users.groups
+      ? group-of-vm;
 
   # ── both home mechanisms see the same namespace ──
   # SYSTEM-managed homes (home-manager.sharedModules) ...

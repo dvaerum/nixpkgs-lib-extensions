@@ -86,7 +86,8 @@
         inherit inputs system;
         rootPath = invalidFixturesDir;
         traceDiscoveredUsers = false;
-      }) ? "no-nix-files"
+      })
+        ? "no-nix-files"
     );
 
   # ── per-host `users` selection ──
