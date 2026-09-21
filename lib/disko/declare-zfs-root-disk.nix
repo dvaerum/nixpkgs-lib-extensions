@@ -758,6 +758,8 @@
                   # layout ran as if nothing had been passed)
                   if defineBootPartitions != null && !(lib.isAttrs defineBootPartitions) then
                     throw "The argument `defineBootPartitions` must be `null` (use the predefined layout) or an attrset of partition definitions, but is a value of type `${builtins.typeOf defineBootPartitions}`"
+                  else if defineBootPartitions == { } then
+                    throw "The argument `defineBootPartitions` is an empty attrset, which would replace the platform layout with NO boot partition. Pass `null` for the predefined platform layout, or a non-empty set of partition definitions."
                   else if (lib.isAttrs defineBootPartitions) then
                     defineBootPartitions
                   else if (pkgs.stdenv.hostPlatform.system == "x86_64-linux") then

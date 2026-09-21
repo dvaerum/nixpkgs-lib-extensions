@@ -87,6 +87,18 @@ let
     import-if-nix-symlink-to-valid = builtins.isFunction (
       importIfNix ../checks/fixtures/symlink-to-valid.nix
     );
+    # ... a link to a DIRECTORY holding a default.nix imports like that
+    # directory (the fixture links to ../../lib, whose default.nix is a
+    # function -- same target as import-if-nix-directory-with-default).
+    # No dangling-link case: it CANNOT be fixtured -- committed, the
+    # git-tree flake source refuses to resolve it ("Path ... does not
+    # exist in Git repository") and takes the whole flake down; built in
+    # the store, current Nix's pathExists reports the link itself
+    # without following, so classification proceeds and aborts on the
+    # missing target (see the docstring's dangling-link caveat).
+    import-if-nix-symlink-to-directory = builtins.isFunction (
+      importIfNix ../checks/fixtures/symlink-to-dir
+    );
     # the git-crypt case: right name, encrypted (binary) content -> { }
     import-if-nix-git-crypted-content = importIfNix ../checks/invalid-fixtures/git-crypted.nix == { };
     # right name, text content that is not Nix -> { }

@@ -114,7 +114,9 @@ let
   # the writers refuse LOUDLY. The systemd-initrd writer exits nonzero (the
   # unit fails); the script-initrd wrapper contains that exit in a subshell
   # -- this code is part of stage-1 init, a bare exit would kill PID 1 --
-  # and reports on stderr instead. Neither writes a key file.
+  # and reports on stderr instead; the pool-create writer exits nonzero,
+  # ABORTING the disko install (the desired behavior: better no pool than
+  # one keyed to junk). None of them writes a key file.
   junkStub =
     junk:
     pkgs.writeShellScriptBin "dmidecode" ''
@@ -142,6 +144,20 @@ let
     # rc MUST be 0: in the real script initrd this code is part of init
     ( cd "$work" && ${pkgs.busybox}/bin/ash ./run.sh ) 2> "$work/err"
     grep -q "will remain locked" "$work/err"
+    [ ! -e "$work/secrets/zpool.key" ]
+
+    echo "=== junk uuid (${slug}): pool-create writer aborts the install"
+    work="$TMPDIR/junk-pool-${slug}"
+    mkdir -p "$work"
+    sed ${sedArgs} \
+        -e "s|${stubBin}|${junkStub junk}/bin/dmidecode|g" \
+        ${pkgs.writeText "junk-pool-writer-${slug}.sh" writers.pool-create} > "$work/run.sh"
+    rc=0
+    ( cd "$work" && bash ./run.sh ) 2> "$work/err" || rc=$?
+    # nonzero on purpose: aborting the disko install beats keying the
+    # pool to a junk value
+    [ "$rc" -ne 0 ]
+    grep -q "refusing" "$work/err"
     [ ! -e "$work/secrets/zpool.key" ]
   '';
 
