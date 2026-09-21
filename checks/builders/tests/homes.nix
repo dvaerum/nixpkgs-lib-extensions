@@ -71,7 +71,8 @@
       inherit system;
       homeManager = inputs.home-manager;
       traceDiscoveredUsers = false;
-    }) ? "alice";
+    })
+      ? "alice";
 
   # the single-home primitive throws without home-manager, naming the
   # capability it looked for
@@ -278,6 +279,7 @@
         inherit system;
         hostname = "nohm";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
-      }).options ? home-manager
+      }).options
+        ? home-manager
     );
 }

@@ -148,7 +148,8 @@ in
       (homesWith {
         homeAutoUpgradeFlakeRef = liveRef;
         homeModules = [ { services.homeManagerAutoUpgrade.deferToSystemUpgrade = false; } ];
-      }).alice.config.systemd.user.services.hm-auto-upgrade.Service ? ExecCondition
+      }).alice.config.systemd.user.services.hm-auto-upgrade.Service
+        ? ExecCondition
     );
 
   # ── the switch is detached, for the same reason the interactive

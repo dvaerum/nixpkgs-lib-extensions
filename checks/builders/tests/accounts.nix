@@ -151,6 +151,7 @@ in
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         loginHomes = [ "alice" ];
         userModule = null;
-      }).config.users.users ? alice
+      }).config.users.users
+        ? alice
     );
 }

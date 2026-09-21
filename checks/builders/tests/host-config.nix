@@ -46,7 +46,8 @@ in
       hostname = "typedhost";
       group = "vm";
       rootPath = fixturesDir + "/typed-root";
-    }).config.users.groups ? typed-host-marker;
+    }).config.users.groups
+      ? typed-host-marker;
   # ... and without it the type folders are NOT searched (the same host
   # name resolves to nothing under the plain hosts/ of that root)
   untyped-ignores-type-folders =
@@ -55,7 +56,8 @@ in
         inherit inputs system;
         hostname = "typedhost";
         rootPath = fixturesDir + "/typed-root";
-      }).config.users.groups ? typed-host-marker
+      }).config.users.groups
+        ? typed-host-marker
     );
   # `hostFolder` decouples the two jobs `group` bundles: it alone selects
   # the folder segment, while the classification keeps saying whatever
