@@ -8,7 +8,9 @@
     partition, and one partition holding the ZFS pool -- the
     `zroot-<hostname>` pool itself, and the standard ZFS datasets inside
     it (root, /var, /var/log, /nix/store, /home, optional /tmp) plus one
-    HOME dataset per user, with optional encryption keyed to the
+    HOME dataset per NORMAL user (a system account -- one with a fixed
+    uid below 1000, such as `root` -- gets no HOME dataset; see
+    `listOfUsernames` below), with optional encryption keyed to the
     machine's hardware identity. (A ZFS "pool" is the whole allocated
     block of storage; a "dataset" is a mountable sub-filesystem inside
     it -- roughly ZFS's equivalent of a partition, but resizable and
@@ -173,6 +175,15 @@
     : A list of `string` or `attribute` element (may be mixed).
     : The `string` element is: <USERNAME>.
     : The `attribute` element is: { username = "<USERNAME>"; mountpoint = "<MOUNTPOINT>"; }
+    : A name resolving to a system account -- `config.users.users.<name>.uid`
+    : is a fixed value below `1000`, e.g. `root` (always `uid = 0`) or any
+    : other account a `configuration.nix` pins a reserved uid for -- gets
+    : no `HOME/<name>` dataset; same `uid == null || uid >= 1000` test
+    : `normalUserModule` uses. A name with no `users.users` entry at all
+    : resolves to `uid = null`, i.e. still counts as normal -- this
+    : function does not require account creation to have run first. To
+    : force a HOME dataset for a system account anyway, add it directly
+    : via `extraDatasets` instead.
 
     defineBootPartitions
     : Defines boot partitions for systems that are not `x86_64-linux` or `aarch64-linux`,
@@ -474,18 +485,32 @@
               }
             else
               (throw "The element in `listOfUsernames` can either be a `string` or `attrset` ({ username = ...; mountpoint = ...; })");
+          # A system account (a fixed uid below 1000 -- root, or any
+          # reserved uid a `configuration.nix` pins elsewhere in this
+          # same config) gets no HOME dataset: same `uid == null || uid
+          # >= 1000` test `normalUserModule` uses, so the two agree on
+          # what a "normal" account is without this function actually
+          # depending on that one having run. A name with no
+          # `users.users` entry at all -- the common case when this
+          # function is used on its own, per its own Example above --
+          # resolves `uid` to `null`, i.e. still "normal": unchanged,
+          # pre-existing behavior for that usage.
+          uid = config.users.users.${user.name}.uid or null;
         in
-        {
-          name = "HOME/${user.name}";
-          value = {
-            type = "zfs_fs";
-            options =
-              (lib.optionalAttrs (lib.hasAttr "mountpoint" user) { inherit (user) mountpoint; })
-              // encryptionAttributes;
-            # By adding encryption attributes to the user folder filesystem,
-            # it will make it possible to switch to use the password of the user as the passphrase.
-          };
-        }
+        if uid != null && uid < 1000 then
+          null
+        else
+          {
+            name = "HOME/${user.name}";
+            value = {
+              type = "zfs_fs";
+              options =
+                (lib.optionalAttrs (lib.hasAttr "mountpoint" user) { inherit (user) mountpoint; })
+                // encryptionAttributes;
+              # By adding encryption attributes to the user folder filesystem,
+              # it will make it possible to switch to use the password of the user as the passphrase.
+            };
+          }
       );
 
       # A bare `listOfUsernames = "foo"` -- the natural typo, since a lone
@@ -500,8 +525,11 @@
 
       # listToAttrs keeps the LAST entry for a repeated key, so two entries
       # for the same user -- with different mountpoints, say -- would have
-      # silently collapsed into whichever came last.
-      zfsUserFolders = lib.lists.forEach checkedListOfUsernames genZfsUserFolder;
+      # silently collapsed into whichever came last. `genZfsUserFolder`
+      # returns `null` for a system account, filtered out here.
+      zfsUserFolders = lib.filter (e: e != null) (
+        lib.lists.forEach checkedListOfUsernames genZfsUserFolder
+      );
       duplicateUserDatasets =
         let
           names = map (e: e.name) zfsUserFolders;

@@ -33,6 +33,33 @@ let
       };
   build = buildWith true;
 
+  # ... a variant that also lets a test stub `config.users.users.<name>.uid`,
+  # to exercise the system-account exclusion without wiring up a whole
+  # account module
+  buildWithUsers =
+    extraConfig: args:
+    (myLib.declareZfsRootDisk (
+      {
+        devicePath = "/dev/disk/by-id/test-disk";
+        hostname = "testhost";
+        listOfUsernames = [
+          "alice"
+          {
+            username = "bob";
+            mountpoint = "/srv/bob";
+          }
+        ];
+      }
+      // args
+    ))
+      {
+        inherit pkgs lib;
+        config = {
+          boot.initrd.systemd.enable = true;
+        }
+        // extraConfig;
+      };
+
   # legacyBoot's platform-specific behavior needs a SPECIFIC platform to
   # test each side of, regardless of which platform this check itself is
   # running under -- so, unlike `build` above, these pin their OWN `pkgs`
@@ -178,6 +205,35 @@ let
     # per-user HOME datasets, string and { username; mountpoint; } forms
     user-datasets-created = plainDatasets ? "HOME/alice" && plainDatasets ? "HOME/bob";
     user-mountpoint-honored = plainDatasets."HOME/bob".options.mountpoint == "/srv/bob";
+
+    # ── system accounts get no HOME dataset ──
+    # a name with no `users.users` entry at all (alice/bob above, in this
+    # minimal harness) resolves `uid` to `null` -- still "normal", hence
+    # `user-datasets-created` above. A FIXED uid below 1000 -- root's
+    # (always 0, in any real NixOS config) or any other reserved uid a
+    # `configuration.nix` pins -- excludes it instead.
+    system-account-no-home-dataset =
+      let
+        datasets =
+          (buildWithUsers { users.users.alice.uid = 0; } { enableEncryption = false; })
+          .disko.devices.zpool."zroot-testhost".datasets;
+      in
+      !(datasets ? "HOME/alice") && (datasets ? "HOME/bob");
+    # the boundary is exactly 1000: 999 excluded, 1000 included
+    system-account-boundary-below-excluded =
+      let
+        datasets =
+          (buildWithUsers { users.users.alice.uid = 999; } { enableEncryption = false; })
+          .disko.devices.zpool."zroot-testhost".datasets;
+      in
+      !(datasets ? "HOME/alice");
+    system-account-boundary-at-included =
+      let
+        datasets =
+          (buildWithUsers { users.users.alice.uid = 1000; } { enableEncryption = false; })
+          .disko.devices.zpool."zroot-testhost".datasets;
+      in
+      datasets ? "HOME/alice";
 
     # extraDatasets are merged in ...
     extra-dataset-added = withExtra."DATA/media".mountpoint == "/srv/media";
