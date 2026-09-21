@@ -220,7 +220,7 @@ imports = [
       "foo"
       { username = "bar"; mountpoint = "/home/bar2"; }
     ];
-    hostname = "myhost";
+    name = "myhost";
     enableEncryption = false;
   })
 ];
@@ -237,8 +237,20 @@ declareZfsRootDisk :: Attribute -> Module
 - **devicePath**
   The absolute path to the device
 
+- **name**
+  Names the pool: `nameFn name` (default `zroot-<name>`). Typically
+  the hostname, but this function never reads `config.networking.hostName`
+  itself -- pass whatever identifies this host's root pool.
+
+- **nameFn**
+  Formats `name` into the pool name. Default `name: "zroot-${name}"`.
+  Override it to use a different naming convention.
+
 - **hostname**
-  The host's name; the pool will be named: zroot-<HOSTNAME>
+  DEPRECATED alias for `name` -- use `name` (and `nameFn`, if you need
+  a different pool-naming convention) instead. Still accepted, with a
+  warning, for existing callers; throws if both `name` and `hostname`
+  are given.
 
 - **enableEncryption**
   Whether the pool should be encrypted. Default `true`.

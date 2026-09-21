@@ -60,6 +60,24 @@ let
         // extraConfig;
       };
 
+  # `name`/`nameFn` variant, entirely independent of the deprecated
+  # `hostname` argument (unlike `build` above, which still exercises
+  # `hostname` for backward-compat coverage).
+  buildWithName =
+    args:
+    (myLib.declareZfsRootDisk (
+      {
+        devicePath = "/dev/disk/by-id/test-disk";
+        name = "testhost";
+        listOfUsernames = [ "alice" ];
+      }
+      // args
+    ))
+      {
+        inherit pkgs lib;
+        config.boot.initrd.systemd.enable = true;
+      };
+
   # legacyBoot's platform-specific behavior needs a SPECIFIC platform to
   # test each side of, regardless of which platform this check itself is
   # running under -- so, unlike `build` above, these pin their OWN `pkgs`
@@ -123,7 +141,7 @@ let
   encrypted = build { };
   keyWriters = [
     encrypted.disko.devices.zpool."zroot-testhost".preCreateHook
-    encrypted.boot.initrd.systemd.content.services.zfs-key-file-setup.script
+    encrypted.boot.initrd.systemd.content.services."zfs-key-file-setup-zroot-testhost".script
     encrypted.boot.initrd.postDeviceCommands.content
   ];
   # Comment lines dropped first: the snippet's own comment NAMES the banned
@@ -138,6 +156,43 @@ let
 
   assertions = {
     pool-named-after-hostname = plain.disko.devices.zpool ? zroot-testhost;
+
+    # ── name/nameFn: the replacement for the deprecated `hostname` ──
+    pool-named-after-name = (buildWithName { }).disko.devices.zpool ? zroot-testhost;
+    # a custom nameFn replaces the default "zroot-<name>" formatting
+    name-fn-overrides-default-naming =
+      (buildWithName { nameFn = n: "custom-${n}"; }).disko.devices.zpool ? custom-testhost;
+    # giving BOTH name and the deprecated hostname is ambiguous, not a
+    # silent pick-one
+    both-name-and-hostname-throws = buildThrows {
+      name = "a";
+      hostname = "b";
+    } (r: r.disko.devices.zpool);
+    # giving NEITHER is just as unresolvable. `build`/`buildWithName`
+    # both hardcode one of the two into their own base args, so this
+    # goes straight at the function instead of through either helper.
+    neither-name-nor-hostname-throws =
+      !(builtins.tryEval (
+        builtins.deepSeq
+          (
+            (myLib.declareZfsRootDisk {
+              devicePath = "/dev/disk/by-id/test-disk";
+              listOfUsernames = [ "alice" ];
+            })
+              {
+                inherit pkgs lib;
+                config.boot.initrd.systemd.enable = true;
+              }
+          ).disko.devices.zpool
+          true
+      )).success;
+    # the deprecated `hostname` alone still works (backward compat: `build`
+    # above already exercises it throughout this file) and produces the
+    # IDENTICAL pool name `name` would -- proven directly, not just by
+    # both defaulting to the same string independently
+    hostname-and-name-agree =
+      (build { }).disko.devices.zpool ? zroot-testhost
+      && (buildWithName { }).disko.devices.zpool ? zroot-testhost;
 
     # every writer uses the ONE shared snippet ...
     key-writers-use-printf = builtins.all (w: lib.hasInfix "printf '%s' \"$KEY\"" w) keyWritersCode;
@@ -156,7 +211,7 @@ let
     key-code-is-posix =
       let
         loops = [
-          encrypted.boot.initrd.systemd.content.services.zfs-load-encryption-keys.script
+          encrypted.boot.initrd.systemd.content.services."zfs-load-encryption-keys-zroot-testhost".script
           # through mkIf and mkAfter, hence .content.content
           encrypted.boot.initrd.postResumeCommands.content.content
         ];
@@ -165,7 +220,7 @@ let
     # both initrd flavors' load-key loops come from ONE snippet -- see
     # declare-zfs-root-disk.nix's loadKeysScript comment for why that matters
     load-key-loops-identical =
-      encrypted.boot.initrd.systemd.content.services.zfs-load-encryption-keys.script
+      encrypted.boot.initrd.systemd.content.services."zfs-load-encryption-keys-zroot-testhost".script
       == encrypted.boot.initrd.postResumeCommands.content.content;
     # every key writer refuses empty/placeholder dmidecode output (behavior
     # covered in checks/zfs-key-file.nix; this pins that no writer loses

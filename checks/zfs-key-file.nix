@@ -58,7 +58,8 @@ let
   # string lives under `.content`.
   writers = {
     pool-create = module.disko.devices.zpool."zroot-testhost".preCreateHook;
-    systemd-initrd = module.boot.initrd.systemd.content.services.zfs-key-file-setup.script;
+    systemd-initrd =
+      module.boot.initrd.systemd.content.services."zfs-key-file-setup-zroot-testhost".script;
     script-initrd = module.boot.initrd.postDeviceCommands.content;
   };
 
@@ -200,7 +201,8 @@ let
 
   writersAarch64 = {
     pool-create = moduleAarch64.disko.devices.zpool."zroot-testhost".preCreateHook;
-    systemd-initrd = moduleAarch64.boot.initrd.systemd.content.services.zfs-key-file-setup.script;
+    systemd-initrd =
+      moduleAarch64.boot.initrd.systemd.content.services."zfs-key-file-setup-zroot-testhost".script;
     script-initrd = moduleAarch64.boot.initrd.postDeviceCommands.content;
   };
 

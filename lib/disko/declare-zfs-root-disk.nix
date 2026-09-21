@@ -131,7 +131,7 @@
           "foo"
           { username = "bar"; mountpoint = "/home/bar2"; }
         ];
-        hostname = "myhost";
+        name = "myhost";
         enableEncryption = false;
       })
     ];
@@ -148,8 +148,20 @@
     devicePath
     : The absolute path to the device
 
+    name
+    : Names the pool: `nameFn name` (default `zroot-<name>`). Typically
+    : the hostname, but this function never reads `config.networking.hostName`
+    : itself -- pass whatever identifies this host's root pool.
+
+    nameFn
+    : Formats `name` into the pool name. Default `name: "zroot-${name}"`.
+    : Override it to use a different naming convention.
+
     hostname
-    : The host's name; the pool will be named: zroot-<HOSTNAME>
+    : DEPRECATED alias for `name` -- use `name` (and `nameFn`, if you need
+    : a different pool-naming convention) instead. Still accepted, with a
+    : warning, for existing callers; throws if both `name` and `hostname`
+    : are given.
 
     enableEncryption
     : Whether the pool should be encrypted. Default `true`.
@@ -225,7 +237,9 @@
   declareZfsRootDisk =
     {
       devicePath,
-      hostname,
+      name ? null,
+      hostname ? null,
+      nameFn ? (n: "zroot-${n}"),
       enableEncryption ? true,
       keySourceCommand ? null,
       swapSize ? 32,
@@ -248,8 +262,22 @@
       ...
     }:
     let
+      hardwareKey = import ./internal/hardware-key.nix { inherit lib pkgs; };
 
-      zrootName = "zroot-${hostname}";
+      # `hostname` is a deprecated alias for `name`: both naming the same
+      # thing would silently pick one arbitrarily, so it throws instead.
+      # `lib.warn` only fires on the accepted (one-argument) path.
+      resolvedName =
+        if name != null && hostname != null then
+          throw "declareZfsRootDisk: both `name` and the deprecated `hostname` were given -- pass only `name` (see `hostname`'s Arguments entry)."
+        else if name != null then
+          name
+        else if hostname != null then
+          lib.warn "declareZfsRootDisk: the `hostname` argument is deprecated -- use `name` instead (and `nameFn` if you need a different pool-naming convention; the default `nameFn` already reproduces `zroot-${hostname}`)." hostname
+        else
+          throw "declareZfsRootDisk: either `name` or the deprecated `hostname` must be given.";
+
+      zrootName = nameFn resolvedName;
 
       # THE key file path. The ZFS `keylocation` property and every writer
       # interpolate this one binding, so the location ZFS reads from and the
@@ -267,68 +295,12 @@
           throw "The argument `enableEncryption` must be of type `boolean`";
 
       # The encryption key file is written in THREE places -- at pool
-      # creation (preCreateHook) and at boot by either initrd flavor. ONE
-      # definition producing deterministic bytes, so the three cannot drift
-      # (`cat <<<` appends a trailing newline where `echo -n` does not);
-      # checks/zfs-key-file.nix pins that invariant. It expects `KEY` to be
-      # set by the caller.
-      #
-      # `junkPatterns`: extra shell `case` alternatives (besides the
-      # universal, source-independent bare `""`) naming values THIS
-      # particular key source is known to emit on failure -- a UUID-shaped
-      # placeholder only means something for dmidecode's output, a
-      # hex-shaped one only for `/proc/cpuinfo`'s `Serial`, so each source
-      # supplies its own list (see `keySourceFor` below) rather than this
-      # shared writer hardcoding one source's shapes.
-      #
-      # POSIX sh only (no `[[`, no `$'...'`): the script-initrd hooks run
-      # under busybox ash (BusyBox's minimal Almquist-shell clone -- the
-      # only shell present in that stripped-down environment, and it
-      # rejects bash-only syntax), and one snippet serves every context.
-      writeKeyFile = junkPatterns: ''
-        SECRET_FOLDER_PATH="${builtins.dirOf keyFilePath}"
-        KEY_FILE_PATH="${keyFilePath}"
-
-        # REFUSE to derive a key from junk. Empty output or one of the
-        # known placeholder values would "successfully" key the pool to a
-        # value every identical machine reports -- or to nothing at all --
-        # and the mistake only surfaces when unlocking fails later.
-        case "$KEY" in
-          ${lib.concatStringsSep " | " ([ "\"\"" ] ++ junkPatterns)} )
-            echo "zfs key file: the key source returned an empty or placeholder value ('$KEY'); refusing to derive a ZFS encryption key from it" >&2
-            exit 1
-            ;;
-        esac
-
-        # A leftover NON-directory here (a file, or a dangling symlink)
-        # would make the mkdir below fail, so it is removed; an existing
-        # directory is kept and its key file simply overwritten.
-        if ! [ -d "$SECRET_FOLDER_PATH" ]; then
-          rm -rf "$SECRET_FOLDER_PATH"
-        fi
-
-        mkdir -p "$SECRET_FOLDER_PATH"
-        chmod 700 "$SECRET_FOLDER_PATH"
-
-        # printf, never `echo -n` or a here-string: the key must land in the
-        # file verbatim, with no trailing newline.
-        printf '%s' "$KEY" > "$KEY_FILE_PATH"
-      '';
-
-      # dmidecode's own known placeholder shapes (BIOS fields left
-      # unset, or a widely-observed Dell service-tag placeholder GUID).
-      dmidecodeJunkPatterns = [
-        "\"Not Settable\""
-        "\"Not Present\""
-        "00000000-0000-0000-0000-000000000000"
-        "03000200-0400-0500*"
-      ];
-
-      # `/proc/cpuinfo`'s `Serial` field, as set by the Raspberry Pi
-      # VideoCore firmware: all-zeros specifically on a failed "get board
-      # serial" mailbox call, not a missing line (the universal `""` check
-      # covers that case instead).
-      cpuinfoSerialJunkPatterns = [ "0000000000000000" ];
+      # creation (preCreateHook) and at boot by either initrd flavor. The
+      # writer itself, the junk-value validation, and the per-platform key
+      # source dispatch are shared with declareZfsDataDisk (identical
+      # scheme, deliberately unsalted -- see the THREAT MODEL section
+      # above); see lib/disko/internal/hardware-key.nix.
+      writeKeyFile = hardwareKey.writeKeyFile keyFilePath;
 
       # The load-key loop, shared verbatim by BOTH initrd flavors, so they
       # cannot handle a failure differently. POSIX sh only (busybox ash in
@@ -361,53 +333,27 @@
         else
           throw "The argument `swapSize` must be an integer >= 0 (GiB); 0 disables the SWAP partition";
 
-      checkedKeySourceCommand =
-        if keySourceCommand == null || lib.isString keySourceCommand then
-          keySourceCommand
-        else
-          throw "The argument `keySourceCommand` must be `null` (use the predefined per-platform key source) or a string (a POSIX-sh snippet that sets `KEY`), but is a value of type `${builtins.typeOf keySourceCommand}`";
+      checkedKeySourceCommand = hardwareKey.checkedKeySourceCommand "declareZfsRootDisk" keySourceCommand;
 
-      # Chooses where `KEY` comes from: `checkedKeySourceCommand` if given
-      # (ANY platform, caller's own snippet, used verbatim); otherwise the
+      # Chooses where `KEY` comes from: `keySourceCommand` if given (ANY
+      # platform, caller's own snippet, used verbatim); otherwise the
       # predefined per-platform source. `dmidecodeInvocation` -- the ONE
       # thing that still varies by SITE rather than by platform -- is
       # threaded in by each of the three call sites below rather than
-      # hardcoded here: preCreateHook runs in an arbitrary live-installer
-      # environment and needs a `which`-guarded fallback to `nix run`,
-      # systemd-initrd's service relies on `extraBin` staging `dmidecode`
-      # onto PATH, and script-initrd's postDeviceCommands references the
-      # absolute store path directly (no PATH, no `nix`, in that
-      # environment) -- collapsing these into one shared string would
+      # hardcoded in the shared helper: preCreateHook runs in an arbitrary
+      # live-installer environment and needs a `which`-guarded fallback to
+      # `nix run`, systemd-initrd's service relies on `extraBin` staging
+      # `dmidecode` onto PATH, and script-initrd's postDeviceCommands
+      # references the absolute store path directly (no PATH, no `nix`, in
+      # that environment) -- collapsing these into one shared string would
       # either lose preCreateHook's fallback or hand the other two
-      # contexts an invocation that cannot work in them. The
-      # aarch64-linux and custom-override branches have no such per-site
-      # variation: `/proc/cpuinfo` has no availability/PATH concerns in
-      # any of the three contexts, and a caller's snippet is spliced in
-      # verbatim wherever it is used.
+      # contexts an invocation that cannot work in them.
       keySourceFor =
         dmidecodeInvocation:
-        if checkedKeySourceCommand != null then
-          {
-            script = checkedKeySourceCommand;
-            junkPatterns = [ ];
-          }
-        else if pkgs.stdenv.hostPlatform.system == "x86_64-linux" then
-          {
-            script = dmidecodeInvocation;
-            junkPatterns = dmidecodeJunkPatterns;
-          }
-        else if pkgs.stdenv.hostPlatform.system == "aarch64-linux" then
-          {
-            # `Serial` appears exactly once in /proc/cpuinfo -- after the
-            # last per-core block -- regardless of core count, so a single
-            # match is always correct.
-            script = ''
-              KEY="$(awk -F': *' '/^Serial/{print $2}' /proc/cpuinfo | tr -d '\n')"
-            '';
-            junkPatterns = cpuinfoSerialJunkPatterns;
-          }
-        else
-          throw "declareZfsRootDisk: `enableEncryption = true` has no predefined key source for `${pkgs.stdenv.hostPlatform.system}` -- supply your own via `keySourceCommand`.";
+        hardwareKey.keySourceFor {
+          functionName = "declareZfsRootDisk";
+          inherit keySourceCommand dmidecodeInvocation;
+        };
 
       # `legacyBoot` only means anything against the predefined per-platform
       # layout below -- a `defineBootPartitions` override replaces that
@@ -655,7 +601,7 @@
           checkedKeySourceCommand == null && pkgs.stdenv.hostPlatform.system == "x86_64-linux"
         ) { dmidecode = "${pkgs.dmidecode}/bin/dmidecode"; };
 
-        services.zfs-key-file-setup =
+        services."zfs-key-file-setup-${zrootName}" =
           let
             ks = keySourceFor ''
               KEY="$(dmidecode --string system-uuid | tr -d '\n')"
@@ -677,7 +623,7 @@
             '';
           };
 
-        services.zfs-load-encryption-keys = {
+        services."zfs-load-encryption-keys-${zrootName}" = {
           description = "Load ZFS encryption keys for all datasets";
           unitConfig.DefaultDependencies = false;
           wantedBy = [
@@ -685,7 +631,7 @@
             "sysroot.mount"
           ];
           after = [
-            "zfs-key-file-setup.service"
+            "zfs-key-file-setup-${zrootName}.service"
             "zfs-import-${zrootName}.service"
           ];
           before = [
