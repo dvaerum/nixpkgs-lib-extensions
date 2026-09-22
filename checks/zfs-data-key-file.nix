@@ -82,11 +82,53 @@ let
 
   moduleDefault = buildModule { };
   keyWriterScript = moduleDefault.systemd.services."zfs-data-key-zdata-bulk".script;
+  poolCreateScript = moduleDefault.disko.devices.zpool."zdata-bulk".preCreateHook;
 
   sedArgs = ''
     -e "s|/nix/store/[^ ]*/bin/dmidecode|${stubBin}|g" \
         -e "s|(dmidecode |(${stubBin} |g" \
         -e "s|/run/zfs-data-disk-secrets|$work/secrets|g"'';
+
+  # preCreateHook (unlike the key-writer service above, which always has
+  # dmidecode on PATH via NixOS's own `path` option) runs during disko
+  # install, in whatever environment nixos-anywhere or an install ISO
+  # provides -- so it probes with `which` and falls back to `nix run` if
+  # dmidecode is not there. Mirrors checks/zfs-key-file.nix's own
+  # `fallbackCase`/experimental-features regression test for
+  # `declareZfsRootDisk` -- this exact code path had NO coverage at all
+  # before, and it broke on a real `nixos-anywhere` deployment (a bare
+  # `nix run`, no `--extra-experimental-features`, failed outright against
+  # the kexec installer's own nix.conf).
+  sedArgsPoolCreate = ''
+    ${sedArgs} \
+        -e "s|which dmidecode|which ${stubBin}|g"'';
+
+  poolCreateWritesRealKey = ''
+    echo "=== data-disk pool-create: writes the real key on good input (dmidecode on PATH)"
+    work="$TMPDIR/pool-create-ok"
+    mkdir -p "$work"
+    sed ${sedArgsPoolCreate} ${pkgs.writeText "pool-create.sh" poolCreateScript} > "$work/run.sh"
+    ( cd "$work" && bash ./run.sh )
+    printf '%s' '${uuid}' | cmp - "$work/secrets/zpool.key"
+  '';
+
+  poolCreateFallbackCase = ''
+    echo "=== data-disk pool-create: falls back to nix run (dmidecode not on PATH)"
+    work="$TMPDIR/pool-create-fallback"
+    mkdir -p "$work"
+    sed ${sedArgsPoolCreate} \
+        -e "s|which ${stubBin}|false|g" \
+        -e "s|nix --extra-experimental-features 'nix-command flakes' run nixpkgs#dmidecode --|${stubBin}|g" \
+        ${pkgs.writeText "pool-create-fallback.sh" poolCreateScript} > "$work/run.sh"
+    ( cd "$work" && bash ./run.sh )
+    printf '%s' '${uuid}' | cmp - "$work/secrets/zpool.key"
+  '';
+
+  poolCreateFallbackHasExperimentalFeaturesFlag = ''
+    echo "=== data-disk pool-create: nix run fallback carries its own experimental-features flag"
+    grep -q -- "--extra-experimental-features 'nix-command flakes' run" \
+      ${pkgs.writeText "pool-create-raw.sh" poolCreateScript}
+  '';
 
   # ── key-writer: refuses junk, same shared validation as the root disk ──
   junkStub =
@@ -168,24 +210,35 @@ let
     targetExists = false;
   };
 in
-pkgs.runCommand "zfs-data-key-file-test" { } ''
-  ${keyWriterWritesRealKey}
+pkgs.runCommand "zfs-data-key-file-test"
+  {
+    # preCreateHook's happy path probes for dmidecode with `which`, which is
+    # not in the stdenv PATH; provide it rather than skipping the branch
+    # (its absence is covered by poolCreateFallbackCase below).
+    nativeBuildInputs = [ pkgs.which ];
+  }
+  ''
+    ${keyWriterWritesRealKey}
 
-  ${junkCase "empty" ""}
-  ${junkCase "not-settable" "Not Settable"}
+    ${poolCreateWritesRealKey}
+    ${poolCreateFallbackCase}
+    ${poolCreateFallbackHasExperimentalFeaturesFlag}
 
-  ${migrateFires}
-  [ -e "$TMPDIR/migrate-stale-and-target-exists/zfs-change-key.log" ]
-  grep -q -- "-o keylocation=file://$TMPDIR/migrate-stale-and-target-exists${customKeyFilePath}" \
-    "$TMPDIR/migrate-stale-and-target-exists/zfs-change-key.log"
-  grep -q -- "-o keyformat=passphrase" "$TMPDIR/migrate-stale-and-target-exists/zfs-change-key.log"
-  grep -q -- "zdata-bulk" "$TMPDIR/migrate-stale-and-target-exists/zfs-change-key.log"
+    ${junkCase "empty" ""}
+    ${junkCase "not-settable" "Not Settable"}
 
-  ${migrateSkipsAlreadyMigrated}
-  [ ! -e "$TMPDIR/migrate-already-migrated/zfs-change-key.log" ]
+    ${migrateFires}
+    [ -e "$TMPDIR/migrate-stale-and-target-exists/zfs-change-key.log" ]
+    grep -q -- "-o keylocation=file://$TMPDIR/migrate-stale-and-target-exists${customKeyFilePath}" \
+      "$TMPDIR/migrate-stale-and-target-exists/zfs-change-key.log"
+    grep -q -- "-o keyformat=passphrase" "$TMPDIR/migrate-stale-and-target-exists/zfs-change-key.log"
+    grep -q -- "zdata-bulk" "$TMPDIR/migrate-stale-and-target-exists/zfs-change-key.log"
 
-  ${migrateSkipsMissingTarget}
-  [ ! -e "$TMPDIR/migrate-target-missing/zfs-change-key.log" ]
+    ${migrateSkipsAlreadyMigrated}
+    [ ! -e "$TMPDIR/migrate-already-migrated/zfs-change-key.log" ]
 
-  touch $out
-''
+    ${migrateSkipsMissingTarget}
+    [ ! -e "$TMPDIR/migrate-target-missing/zfs-change-key.log" ]
+
+    touch $out
+  ''

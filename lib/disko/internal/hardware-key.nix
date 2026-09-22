@@ -21,6 +21,27 @@ let
   # covers that case instead).
   cpuinfoSerialJunkPatterns = [ "0000000000000000" ];
 
+  # Shared by both callers' `preCreateHook` (the ONE context where
+  # `dmidecodeInvocation` does NOT vary by site -- see that argument's
+  # own doc comment on `keySourceFor` below): a kexec image or install
+  # ISO may not have `dmidecode` on PATH at all, so this falls back to
+  # fetching it via `nix run`. `--extra-experimental-features` is
+  # required, not optional politeness: confirmed on a real
+  # `nixos-anywhere` deployment, whose kexec installer's own `nix.conf`
+  # does NOT already enable `nix-command`/`flakes`, so a bare `nix run`
+  # fails outright ("experimental Nix feature 'nix-command' is
+  # disabled"), silently producing an EMPTY `$KEY` that the writer below
+  # correctly refuses -- aborting the whole install, not a "friendlier"
+  # failure.
+  liveInstallerDmidecodeInvocation = ''
+    if which dmidecode > /dev/null 2> /dev/null; then
+      KEY="$(dmidecode --string system-uuid | tr -d '\n')"
+    else
+      # Needed in case the kexec image does not have dmidecode when using nixos-anywhere or if booting from an ISO
+      KEY="$(nix --extra-experimental-features 'nix-command flakes' run nixpkgs#dmidecode -- --string system-uuid | tr -d '\n')"
+    fi
+  '';
+
   # The encryption key file is written in multiple places (pool
   # creation, and at boot by whichever unlock mechanism the caller
   # uses) -- ONE definition producing deterministic bytes, so those
@@ -128,6 +149,7 @@ in
   inherit
     dmidecodeJunkPatterns
     cpuinfoSerialJunkPatterns
+    liveInstallerDmidecodeInvocation
     writeKeyFile
     checkedKeySourceCommand
     keySourceFor

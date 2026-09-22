@@ -69,7 +69,7 @@ let
     -e "s|/nix/store/[^ ]*/bin/dmidecode|${stubBin}|g" \
         -e "s|(dmidecode |(${stubBin} |g" \
         -e "s|which dmidecode|which ${stubBin}|g" \
-        -e "s|nix run nixpkgs#dmidecode --|${stubBin}|g" \
+        -e "s|nix --extra-experimental-features 'nix-command flakes' run nixpkgs#dmidecode --|${stubBin}|g" \
         -e "s|/tmp/secrets|$work/secrets|g"'';
 
   # The script-initrd writer runs under busybox ash on a real machine, so
@@ -285,6 +285,17 @@ pkgs.runCommand "zfs-key-file-test"
   ''
     ${lib.concatStringsSep "\n" (lib.mapAttrsToList runOne writers)}
     ${fallbackCase}
+
+    # the fallback's `nix run` must carry its own experimental-features
+    # flag: a kexec installer's ambient nix.conf cannot be relied on to
+    # already have nix-command/flakes enabled -- confirmed on a real
+    # `nixos-anywhere` deployment, where a bare `nix run` failed outright
+    # ("experimental Nix feature 'nix-command' is disabled"), silently
+    # producing an empty $KEY that aborted the whole install.
+    echo "=== pool-create: nix run fallback carries its own experimental-features flag"
+    grep -q -- "--extra-experimental-features 'nix-command flakes' run" \
+      ${pkgs.writeText "pool-create-raw.sh" writers.pool-create}
+
 
     # junk dmidecode output never becomes a key
     ${junkCase "empty" ""}

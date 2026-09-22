@@ -505,12 +505,7 @@
           preCreateHook = lib.optionalString enableEncryption (
             let
               ks = keySourceFor ''
-                if which dmidecode > /dev/null 2> /dev/null; then
-                  KEY="$(dmidecode --string system-uuid | tr -d '\n')"
-                else
-                  # Needed in case the kexec image does not have dmidecode when using nixos-anywhere or if booting from an ISO
-                  KEY="$(nix run nixpkgs#dmidecode -- --string system-uuid | tr -d '\n')"
-                fi
+                ${hardwareKey.liveInstallerDmidecodeInvocation}
               '';
             in
             ''
