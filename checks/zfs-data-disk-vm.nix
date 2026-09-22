@@ -107,8 +107,8 @@ pkgs.testers.runNixOSTest {
     # the import unit fails harmlessly (retries, then gives up), and the
     # migrate unit no-ops (its own `zpool list` guard). ──
     machine.wait_for_unit("zfs-data-key-${poolName}.service")
-    machine.succeed("test -f /tmp/secrets/zpool.key")
-    machine.succeed("[ \"$(cat /tmp/secrets/zpool.key)\" = fixed-test-key ]")
+    machine.succeed("test -f /run/zfs-data-disk-secrets/zpool.key")
+    machine.succeed("[ \"$(cat /run/zfs-data-disk-secrets/zpool.key)\" = fixed-test-key ]")
 
     # ── create the pool against a file-backed vdev, keyed with EXACTLY
     # the file the writer already produced -- the disko-equivalent step
@@ -116,7 +116,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("truncate -s 256M /var/lib/pool.img")
     machine.succeed(
         "zpool create -f -O encryption=on -O keyformat=passphrase "
-        "-O keylocation=file:///tmp/secrets/zpool.key -O compression=lz4 "
+        "-O keylocation=file:///run/zfs-data-disk-secrets/zpool.key -O compression=lz4 "
         "-O canmount=off -O mountpoint=none ${poolName} /var/lib/pool.img"
     )
     machine.succeed("zpool export ${poolName}")
@@ -133,7 +133,7 @@ pkgs.testers.runNixOSTest {
     ), "the pool did not auto-unlock via the ephemeral hardware-derived key"
     assert (
         machine.succeed("zfs get -H -o value keylocation ${poolName}").strip()
-        == "file:///tmp/secrets/zpool.key"
+        == "file:///run/zfs-data-disk-secrets/zpool.key"
     ), "keylocation should still be the ephemeral default before any migration"
 
     # ── the migration target now exists (simulating sops having been

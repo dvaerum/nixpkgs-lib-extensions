@@ -78,7 +78,7 @@ let
         config.boot.zfs.package = fakeZfsPkg;
       };
 
-  defaultKeyFilePath = "/tmp/secrets/zpool.key";
+  defaultKeyFilePath = "/run/zfs-data-disk-secrets/zpool.key";
 
   moduleDefault = buildModule { };
   keyWriterScript = moduleDefault.systemd.services."zfs-data-key-zdata-bulk".script;
@@ -86,7 +86,7 @@ let
   sedArgs = ''
     -e "s|/nix/store/[^ ]*/bin/dmidecode|${stubBin}|g" \
         -e "s|(dmidecode |(${stubBin} |g" \
-        -e "s|/tmp/secrets|$work/secrets|g"'';
+        -e "s|/run/zfs-data-disk-secrets|$work/secrets|g"'';
 
   # ── key-writer: refuses junk, same shared validation as the root disk ──
   junkStub =

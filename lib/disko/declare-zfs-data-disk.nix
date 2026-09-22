@@ -34,8 +34,9 @@
 
     KEY MIGRATION: `keyFilePath` names where the encryption key should
     ultimately live (e.g. a sops-managed secret), but pool CREATION always
-    uses the ephemeral default (`/tmp/secrets/zpool.key`, hardware-derived,
-    regenerated every boot) regardless of what `keyFilePath` is set to --
+    uses the ephemeral default (`/run/zfs-data-disk-secrets/zpool.key`,
+    hardware-derived, regenerated every boot) regardless of what
+    `keyFilePath` is set to --
     the pool must be creatable during an unattended install (e.g.
     `nixos-anywhere`), before any secrets machinery necessarily exists on
     the target machine. Once `keyFilePath` names something other than
@@ -107,15 +108,27 @@
     : below.
 
     keyFilePath
-    : Default `"/tmp/secrets/zpool.key"` -- the SAME literal default as
-    : `declareZfsRootDisk`'s, which is why leaving it unset never
-    : migrates (see KEY MIGRATION above): the pool stays on the ephemeral
-    : hardware-derived key at that exact path forever. Set it to a real,
-    : persistent path (e.g. a sops secret) to migrate onto it once that
-    : file exists. This function is entirely secrets-manager-agnostic --
-    : it never reads sops or anything else itself, `keyFilePath` is just
-    : a path it compares against and, once migrated, hands to `zfs
-    : change-key`.
+    : Default `"/run/zfs-data-disk-secrets/zpool.key"` -- deliberately NOT
+    : `declareZfsRootDisk`'s own `/tmp/secrets/zpool.key`: that path is
+    : safe for root only because root's key-write and key-load both
+    : happen inside the initrd's own throwaway `/tmp`, before
+    : `switch_root`. This function's key-write and NixOS's own automatic
+    : key-load happen in the REAL, post-switch_root system, where `/tmp`
+    : may itself be a real ZFS mount (e.g. a host with `useZfsForTmp =
+    : true` on its root disk) that mounts later in boot than this
+    : function's key-writer runs -- confirmed on a real deployment: the
+    : key file was written, then silently shadowed once the real `/tmp`
+    : mounted on top of it, so `zfs-import-<pool>.service`'s own
+    : automatic key-load found nothing there. `/run` is always tmpfs,
+    : mounted essentially at the start of boot, so it carries no such
+    : race regardless of the host's own `/tmp` configuration. Leaving
+    : `keyFilePath` unset never migrates (see KEY MIGRATION above): the
+    : pool stays on the ephemeral hardware-derived key at that exact path
+    : forever. Set it to a real, persistent path (e.g. a sops secret) to
+    : migrate onto it once that file exists. This function is entirely
+    : secrets-manager-agnostic -- it never reads sops or anything else
+    : itself, `keyFilePath` is just a path it compares against and, once
+    : migrated, hands to `zfs change-key`.
 
     keySourceCommand
     : Overrides where the EPHEMERAL default key comes from (the
@@ -143,7 +156,7 @@
       nameFn ? (n: "zdata-${n}"),
       vdevs,
       enableEncryption ? true,
-      keyFilePath ? "/tmp/secrets/zpool.key",
+      keyFilePath ? "/run/zfs-data-disk-secrets/zpool.key",
       keySourceCommand ? null,
       poolMountpoint ? "/data",
       extraDatasets ? { },
@@ -163,8 +176,11 @@
       # deliberately NOT the `keyFilePath` argument: pool CREATION always
       # uses this exact path (see the KEY MIGRATION doc section above),
       # regardless of what `keyFilePath` is currently declared to be.
-      # `keyFilePath` only names the migration TARGET.
-      defaultKeyFilePath = "/tmp/secrets/zpool.key";
+      # `keyFilePath` only names the migration TARGET. Deliberately under
+      # `/run` (tmpfs, always mounted early), not `/tmp` like
+      # `declareZfsRootDisk`'s own initrd-scoped key -- see the
+      # `keyFilePath` doc section above for why `/tmp` is unsafe here.
+      defaultKeyFilePath = "/run/zfs-data-disk-secrets/zpool.key";
 
       encryptionAttributes =
         if (lib.isBool enableEncryption) then

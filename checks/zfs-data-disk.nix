@@ -317,6 +317,23 @@ let
     no-request-encryption-credentials-without-encryption =
       (build { enableEncryption = false; }).boot.zfs.requestEncryptionCredentials == [ ];
 
+    # ── the ephemeral default key file must live under `/run`, not
+    # `/tmp`: unlike `declareZfsRootDisk` (whose key-write and key-load
+    # both happen inside the initrd's own throwaway /tmp), this
+    # function's key-writer and NixOS's own automatic key-load happen in
+    # the real, post-switch_root system, where /tmp can itself be a real
+    # ZFS mount (`useZfsForTmp = true`) that mounts LATER in boot than
+    # the key-writer runs -- confirmed on a real deployment: the key
+    # file was written, then silently shadowed once the real /tmp
+    # mounted on top of it, so the pool's automatic key-load found
+    # nothing there and failed to unlock. /run is always tmpfs, mounted
+    # essentially at the start of boot, so it carries no such race.
+    ephemeral-default-key-under-run-not-tmp =
+      let
+        keylocation = (build { }).disko.devices.zpool."zdata-bulk".rootFsOptions.keylocation;
+      in
+      lib.hasPrefix "file:///run/" keylocation && !(lib.hasInfix "/tmp/" keylocation);
+
     # ── enableEncryption = false: no key units at all ──
     no-key-units-without-encryption = plain.systemd.services == { };
     # ── enableEncryption = true (default), keyFilePath left at the
