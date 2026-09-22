@@ -462,7 +462,9 @@ let
     hostname = null;
     tags = null;
     group = null;
-    users = null;
+    allUsers = null;
+    systemUsers = null;
+    normalUsers = null;
     inputPkgs = null;
     channels = null;
   };

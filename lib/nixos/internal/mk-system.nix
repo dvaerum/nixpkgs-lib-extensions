@@ -33,6 +33,7 @@ let
     wrapModuleWithOverrides
     ;
   inherit (import ./priorities.nix { inherit lib; }) builderDefaultPriority mkBuilderDefault;
+  inherit (import ./user-defaults.nix { inherit lib self; }) accountKindFor;
 in
 {
   mkSystem =
@@ -42,7 +43,6 @@ in
       hostname,
       system,
       modules ? [ ],
-      userModule ? self.normalUserModule,
       loginHomes ? [ ],
       homeModules ? [ ],
       loginFlakeRef ? null,
@@ -76,7 +76,8 @@ in
       # variant, where no networking.hostName exists).
       extOptionValues = {
         inherit group tags;
-        users = hostUsers;
+        allUsers = hostUsers;
+        inherit systemUsers normalUsers;
         inherit (ctx) inputPkgs channels;
       };
 
@@ -109,6 +110,50 @@ in
       # login-managed; everyone else's home is system-managed. Disjoint by
       # construction.
       hostUsers = usersFromRegistry userTree hostname;
+
+      # Each tree user's resolved account kind -- read from
+      # `users/<u>/_defaults.nix` at THIS, builder-time phase, never from
+      # `config.users.users` (see user-defaults.nix's own comment on why:
+      # a real infinite recursion, once account-kind was inferred by
+      # reading the merged uid from inside account-creation modules).
+      # `root` is always a system account regardless of `_defaults.nix`
+      # -- NixOS fixes its uid at 0, a platform invariant, the same
+      # by-name special case `declareZfsRootDisk` uses for the identical
+      # reason (see lib/disko/declare-zfs-root-disk.nix).
+      accountKindForUser =
+        username:
+        if username == "root" then
+          {
+            isSystemUser = true;
+            isNormalUser = false;
+          }
+        else
+          accountKindFor (userTree.${username} or null) {
+            inherit
+              inputs
+              hostname
+              lib
+              username
+              ;
+            extLib = self;
+            rootPath = mySpecialArguments.rootPath;
+          };
+
+      systemUsers = lib.filter (u: (accountKindForUser u).isSystemUser) hostUsers;
+      normalUsers = lib.filter (u: (accountKindForUser u).isNormalUser) hostUsers;
+
+      # Explicit `null` (or any other caller-supplied function) wins, same
+      # as before -- `args ? userModule` (not the destructured pattern
+      # above, which normalUserModule's new binary signature can no
+      # longer serve as a default for directly) distinguishes "not
+      # supplied" from "explicitly disabled". The tree-resolved default
+      # pre-binds each user's own resolved `isNormalUser`, so
+      # `normalUserModule` itself never needs `config.users.users` at all.
+      userModule =
+        if args ? userModule then
+          args.userModule
+        else
+          (u: self.normalUserModule u (accountKindForUser u).isNormalUser);
 
       perUserModules = lib.optionals (userModule != null) (lib.forEach hostUsers userModule);
 

@@ -41,7 +41,9 @@ let
             hostname = "probe";
             group = null;
             tags = [ ];
-            users = [ ];
+            allUsers = [ ];
+            systemUsers = [ ];
+            normalUsers = [ ];
             inputPkgs = { };
             channels = { };
           }
@@ -53,7 +55,7 @@ in
     custom.config.nixpkgsLibExtensions.group == "server"
     && custom.config.nixpkgsLibExtensions.tags == [ "kitchen-sink" ]
     && laptop.config.nixpkgsLibExtensions.group == null
-    && laptop.config.nixpkgsLibExtensions.users == exampleUsers;
+    && laptop.config.nixpkgsLibExtensions.allUsers == exampleUsers;
 
   # the channels option is keyed by variant and instantiates the variant's
   # tree (nixpkgs-unstable is aliased to nixpkgs in the test inputs)
@@ -83,7 +85,7 @@ in
   # SYSTEM-managed homes (home-manager.sharedModules) ...
   ext-options-reach-system-homes =
     laptop.config.home-manager.users.dave.nixpkgsLibExtensions.hostname == "laptop"
-    && laptop.config.home-manager.users.dave.nixpkgsLibExtensions.users == exampleUsers;
+    && laptop.config.home-manager.users.dave.nixpkgsLibExtensions.allUsers == exampleUsers;
   # ... and LOGIN-managed homes (standalone homeManagerConfiguration).
   # `hostname` is declared only in the HOME variant -- a home has no
   # networking.hostName to read.
@@ -94,7 +96,7 @@ in
     # a host-less home sees the users whose OWN directory carries config
     # -- not bob, who exists only via a hosts/<h> override
     &&
-      aliceHome.config.nixpkgsLibExtensions.users == [
+      aliceHome.config.nixpkgsLibExtensions.allUsers == [
         "alice"
         "dave"
         "eve"
@@ -134,8 +136,8 @@ in
     ).success;
   ext-users-read-only =
     !(builtins.tryEval
-      (probeSystem "roprobe2" [ { nixpkgsLibExtensions.users = [ "mallory" ]; } ])
-      .config.nixpkgsLibExtensions.users
+      (probeSystem "roprobe2" [ { nixpkgsLibExtensions.allUsers = [ "mallory" ]; } ])
+      .config.nixpkgsLibExtensions.allUsers
     ).success;
 
   # the guide's `nixpkgsLibExtensions.*` table is the options REFERENCE,

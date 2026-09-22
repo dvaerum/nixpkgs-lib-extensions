@@ -16,6 +16,7 @@ let
     loginFlakeRefSources
     loginContextForUser
     ;
+  inherit (import ./user-defaults.nix { inherit lib self; }) accountKindFor;
 in
 {
   mkHome =
@@ -77,6 +78,31 @@ in
         ;
 
       registryHomeModules = (resolveUser userTree hostname username).homeModules;
+
+      # Same resolution mk-system.nix uses for the `nixpkgsLibExtensions.*`
+      # options -- see its own comment on why this is builder-time only
+      # (never `config.users.users`) and why `root` is special-cased.
+      hostUsers = usersFromRegistry userTree hostname;
+      accountKindForUser =
+        u:
+        if u == "root" then
+          {
+            isSystemUser = true;
+            isNormalUser = false;
+          }
+        else
+          accountKindFor (userTree.${u} or null) {
+            inherit
+              inputs
+              hostname
+              lib
+              ;
+            username = u;
+            extLib = self;
+            rootPath = mySpecialArguments.rootPath;
+          };
+      systemUsers = lib.filter (u: (accountKindForUser u).isSystemUser) hostUsers;
+      normalUsers = lib.filter (u: (accountKindForUser u).isNormalUser) hostUsers;
     in
     (
       if home-manager == null then
@@ -112,7 +138,8 @@ in
               # home gets via home-manager.sharedModules (mk-system.nix)
               (extHomeOptionsModule {
                 inherit hostname group tags;
-                users = usersFromRegistry userTree hostname;
+                allUsers = hostUsers;
+                inherit systemUsers normalUsers;
                 inherit (ctx) inputPkgs channels;
               })
               # home.stateVersion default (current release) -- with a

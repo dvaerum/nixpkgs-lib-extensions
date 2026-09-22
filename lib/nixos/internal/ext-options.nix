@@ -1,15 +1,16 @@
 # PRIVATE, per the calling convention documented in ./shared.nix.
 #
 # The `nixpkgsLibExtensions` options namespace: the builder-derived
-# per-host values (`tags`, `group`, `users`, `inputPkgs`, `channels`),
-# declared as REAL module options rather than specialArgs.
-# specialArgs are import-time constants -- no merging, no priorities, no
-# docs, and a shadow-throw would be needed to guard every name. As
-# options, `tags` MERGES contributions from several modules, the
-# read-only values carry types and descriptions, and the module system
-# itself rejects a module trying to redefine what only the builder can
-# know. Only the true import-time values (`inputs`, `rootPath`, `extLib`,
-# `builderPkgs`) are specialArgs -- see internal/context.nix.
+# per-host values (`tags`, `group`, `allUsers`, `systemUsers`,
+# `normalUsers`, `inputPkgs`, `channels`), declared as REAL module options
+# rather than specialArgs. specialArgs are import-time constants -- no
+# merging, no priorities, no docs, and a shadow-throw would be needed to
+# guard every name. As options, `tags` MERGES contributions from several
+# modules, the read-only values carry types and descriptions, and the
+# module system itself rejects a module trying to redefine what only the
+# builder can know. Only the true import-time values (`inputs`,
+# `rootPath`, `extLib`, `builderPkgs`) are specialArgs -- see
+# internal/context.nix.
 { lib, self, ... }:
 let
   inherit (lib) mkOption types literalMD;
@@ -28,7 +29,9 @@ let
   sharedOptions =
     {
       group,
-      users,
+      allUsers,
+      systemUsers,
+      normalUsers,
       inputPkgs,
       channels,
     }:
@@ -55,14 +58,44 @@ let
           the builder argument instead.
         '';
       };
-      users = mkOption {
+      allUsers = mkOption {
         type = types.listOf types.str;
         readOnly = true;
-        default = users;
+        default = allUsers;
         defaultText = literalMD "derived from the users tree";
         description = ''
-          The host's users, derived from the users tree
-          keys. Read-only -- the users tree is the single source.
+          Every one of the host's users, derived from the users tree
+          keys -- both system and normal accounts. Read-only -- the
+          users tree is the single source.
+        '';
+      };
+      systemUsers = mkOption {
+        type = types.listOf types.str;
+        readOnly = true;
+        default = systemUsers;
+        defaultText = literalMD "derived from each user's `_defaults.nix`";
+        description = ''
+          The subset of `allUsers` resolved as SYSTEM accounts: those
+          whose `users/<name>/_defaults.nix` declares
+          `isSystemUser = true;` (`root` always resolves here too,
+          regardless of `_defaults.nix` -- NixOS fixes its uid at 0).
+          Resolved entirely at builder time, before any module
+          evaluation -- never by reading `config.users.users`, which
+          would risk the exact cross-namespace recursion this scheme
+          exists to avoid (see user-defaults.nix). Read-only.
+        '';
+      };
+      normalUsers = mkOption {
+        type = types.listOf types.str;
+        readOnly = true;
+        default = normalUsers;
+        defaultText = literalMD "derived from each user's `_defaults.nix`";
+        description = ''
+          The subset of `allUsers` resolved as NORMAL accounts: every
+          user NOT in `systemUsers`. Declaring
+          `isNormalUser = true;` in `users/<name>/_defaults.nix` is
+          equivalent to declaring nothing at all -- normal is the
+          default. Read-only.
         '';
       };
       inputPkgs = mkOption {
@@ -149,7 +182,9 @@ in
     {
       group,
       tags,
-      users,
+      allUsers,
+      systemUsers,
+      normalUsers,
       inputPkgs,
       channels,
     }:
@@ -158,7 +193,9 @@ in
       options.nixpkgsLibExtensions = sharedOptions {
         inherit
           group
-          users
+          allUsers
+          systemUsers
+          normalUsers
           inputPkgs
           channels
           ;
@@ -176,7 +213,9 @@ in
       hostname,
       group,
       tags,
-      users,
+      allUsers,
+      systemUsers,
+      normalUsers,
       inputPkgs,
       channels,
     }:
@@ -186,7 +225,9 @@ in
         sharedOptions {
           inherit
             group
-            users
+            allUsers
+            systemUsers
+            normalUsers
             inputPkgs
             channels
             ;

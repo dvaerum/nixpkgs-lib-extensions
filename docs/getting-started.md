@@ -1499,7 +1499,9 @@ so it cannot silently miss one:
 |--------|---------|
 | `nixpkgsLibExtensions.tags` | host tags; modules can ADD tags (list definitions merge) |
 | `nixpkgsLibExtensions.group` | the call argument of the same name (read-only) |
-| `nixpkgsLibExtensions.users` | the host's users, derived from the tree (read-only) |
+| `nixpkgsLibExtensions.allUsers` | every one of the host's users, derived from the tree (read-only) |
+| `nixpkgsLibExtensions.systemUsers` | the subset of `allUsers` resolved as system accounts, via `_defaults.nix`'s `isSystemUser` (read-only) |
+| `nixpkgsLibExtensions.normalUsers` | the subset of `allUsers` NOT in `systemUsers` (read-only) |
 | `nixpkgsLibExtensions.inputPkgs.<name>` | every input's packages, pre-selected for the host's system (read-only) |
 | `nixpkgsLibExtensions.channels.<variant>` | package set per `nixpkgs-*` input (read-only) |
 | `nixpkgsLibExtensions.hostname` | homes only: the host the home is built for -- NixOS modules read `config.networking.hostName` |

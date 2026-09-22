@@ -1,5 +1,9 @@
 # User account creation: the normalUserModule default, its private primary
-# group, and disabling via userModule = null.
+# group, disabling via userModule = null, and the `_defaults.nix`-declared
+# account-kind resolution (isSystemUser/isNormalUser) that replaced the
+# old uid-read (see normal-user-module.nix and user-defaults.nix's own
+# comments on why: reading the merged uid from inside account-creation
+# modules once caused a genuine infinite recursion on a real host).
 {
   lib,
   myLib,
@@ -12,17 +16,20 @@
   ...
 }:
 let
-  # normalUserModule as a unit: apply its inner module function directly.
-  # The config stub supplies the merged uid the module inspects; its
-  # conditional settings come back as mkIf structures (condition/content).
+  # normalUserModule as a unit: apply its inner module function directly,
+  # with the resolved `isNormalUser` handed in like mk-system.nix's own
+  # pre-bound default does. `extraUserConfig` stubs whatever else the
+  # config the module reads (only ever `isSystemUser`, inside its own
+  # ASSERTION -- never a definition, so this stub cannot feed back into
+  # the wiring being tested).
   unitModule =
-    username: uid: isSystemUser:
-    (builtins.head (myLib.normalUserModule username).imports) {
+    username: isNormalUser: extraUserConfig:
+    (builtins.head (myLib.normalUserModule username isNormalUser).imports) {
       inherit lib;
-      config.users.users.${username} = { inherit uid isSystemUser; };
+      config.users.users.${username} = extraUserConfig;
     };
-  aliceModule = unitModule "alice" null false;
-  rootModule = unitModule "root" 0 false;
+  aliceModule = unitModule "alice" true { isSystemUser = false; };
+  svcModule = unitModule "svc" false { isSystemUser = true; };
 in
 {
   # the module itself declares the account, the private group, and sets the
@@ -37,19 +44,23 @@ in
     && aliceModule.users.users.alice.group.content.priority == 900
     && aliceModule.users.users.alice.group.content.content == "alice";
 
-  # a merged uid below 1000 marks a system account: everything the module
-  # would set is condition-gated off (NixOS forbids isNormalUser there)
-  normal-user-module-uid-gated =
-    !rootModule.users.users.root.isNormalUser.condition
-    && !rootModule.users.users.root.group.condition
-    && !rootModule.users.groups.condition;
+  # `isNormalUser = false` (a resolved SYSTEM account): the module sets
+  # ONLY `isSystemUser = true;` -- `isNormalUser`/`group`/the private
+  # group are all still condition-gated off entirely (NixOS forbids
+  # isNormalUser there)
+  normal-user-module-system-gated =
+    svcModule.users.users.svc.isSystemUser.condition
+    && svcModule.users.users.svc.isSystemUser.content
+    && !svcModule.users.users.svc.isNormalUser.condition
+    && !svcModule.users.users.svc.group.condition
+    && !svcModule.users.groups.condition;
 
-  # `isSystemUser` cannot GATE the definitions above -- see
-  # normal-user-module.nix's `normalAccount` comment for why that would be
-  # an infinite recursion. It is caught by an assertion instead, which names
-  # this module and the ways out; NixOS's own message ("exactly one of
-  # isSystemUser and isNormalUser must be set") is true but never says who
-  # set the other one.
+  # a conflicting `configuration.nix` (isSystemUser = true) for a user
+  # this module resolved as NORMAL (no `isSystemUser = true;` in that
+  # user's `_defaults.nix`) is caught by an assertion, which names this
+  # module and the ways out; NixOS's own message ("exactly one of
+  # isSystemUser and isNormalUser must be set") is true but never says
+  # who set the other one.
   system-user-conflict-explained =
     let
       cfg =
@@ -66,10 +77,31 @@ in
     in
     builtins.any (a: lib.hasInfix "userModule" a.message) failed;
 
+  # the reverse conflict: a user resolved as SYSTEM (`isSystemUser = true;`
+  # in `_defaults.nix`) whose `configuration.nix` ALSO redundantly sets
+  # `isNormalUser = true;` -- caught the same way, naming the actual fix.
+  normal-user-conflict-explained =
+    let
+      cfg =
+        (mkProbeSystem {
+          inherit inputs system;
+          hostname = "normaluserconflict";
+          modules = [
+            (exampleDir + "/hosts/server/configuration.nix")
+            { users.users.svc.isNormalUser = true; }
+          ];
+          users = null;
+          rootPath = fixturesDir + "/tree-uid999";
+        }).config;
+      failed = builtins.filter (a: !a.assertion) cfg.assertions;
+    in
+    builtins.any (a: lib.hasInfix "_defaults.nix" a.message) failed;
+
   # ... so "root" is a valid registry user: the account stays the
-  # NixOS-defined system one, and ALL of NixOS's own assertions hold
-  # (forcing them is what catches uid/isNormalUser conflicts -- reading
-  # individual attributes alone would not)
+  # NixOS-defined system one (mk-system.nix always resolves `root` to a
+  # system account, regardless of `_defaults.nix`), and ALL of NixOS's own
+  # assertions hold (forcing them is what catches isNormalUser conflicts
+  # -- reading individual attributes alone would not)
   root-registry-entry-safe =
     let
       cfg =
@@ -86,14 +118,12 @@ in
     && cfg.users.users.root.group == "root"
     && cfg.users.users.root.shell != null
     && builtins.all (a: a.assertion) cfg.assertions;
-  # normalUserModule reads the MERGED uid (config.users.users.<name>.uid)
-  # while defining entries the same merge feeds, so recursion-freedom is a
-  # property to PIN, not to assume: a registry user whose own
-  # configuration.nix pins a uid must still evaluate, on either side of
-  # the 1000 boundary. Below it (999) the module contributes nothing --
-  # no isNormalUser on a system account; at 1000 it must still fire.
+
+  # a registry user declaring `isSystemUser = true;` in `_defaults.nix`
+  # stays a system account -- no isNormalUser, no private group -- and
+  # its OWN configuration.nix's uid/isSystemUser/group all still apply.
   # `builtins.all` over cfg.assertions forces the full account wiring.
-  uid-999-registry-pin-stays-system =
+  defaults-declared-system-user-stays-system =
     let
       cfg =
         (mkProbeSystem {
@@ -108,9 +138,13 @@ in
     && !cfg.users.users.svc.isNormalUser
     && cfg.users.users.svc.isSystemUser
     && cfg.users.users.svc.group == "svc"
+    && cfg.nixpkgsLibExtensions.systemUsers == [ "svc" ]
+    && cfg.nixpkgsLibExtensions.normalUsers == [ ]
     && builtins.all (a: a.assertion) cfg.assertions;
 
-  uid-1000-registry-pin-gets-normal =
+  # a registry user with NO `_defaults.nix` at all defaults to normal --
+  # the common case, unchanged from before this mechanism existed.
+  no-defaults-file-gets-normal =
     let
       cfg =
         (mkProbeSystem {
@@ -121,10 +155,11 @@ in
           rootPath = fixturesDir + "/tree-uid1000";
         }).config;
     in
-    cfg.users.users.meg.uid == 1000
-    && cfg.users.users.meg.isNormalUser
+    cfg.users.users.meg.isNormalUser
     && cfg.users.users.meg.group == "meg"
     && cfg.users.groups ? meg
+    && cfg.nixpkgsLibExtensions.normalUsers == [ "meg" ]
+    && cfg.nixpkgsLibExtensions.systemUsers == [ ]
     && builtins.all (a: a.assertion) cfg.assertions;
 
   # the default userModule (normalUserModule) creates an account for

@@ -12,14 +12,27 @@
 # happens (this file has no dependency on hosts-args.nix, to avoid a
 # import cycle -- it only reads, validates shape, and validates the
 # allowlist).
+#
+# `isSystemUser`/`isNormalUser` (below) are a SEPARATE consumer of this
+# same file, read directly by mk-system.nix rather than through
+# hosts-args.nix's `userOverridesFor` (see there): unlike the home-shaping
+# arguments above, this pair decides the user's NixOS ACCOUNT kind, which
+# `normalUserModule` used to infer by reading the merged
+# `config.users.users.<name>.uid` -- a cross-namespace read from inside
+# account-creation modules that once caused a genuine infinite recursion
+# on a real host (see normal-user-module.nix's own doc comment). Declaring
+# it here instead keeps the decision entirely at builder time, before any
+# module evaluation starts, the same way the rest of the users tree scan
+# already does -- so it can never reintroduce that cycle.
 { lib, self, ... }:
 let
-  # What a user's `_defaults.nix` may set: arguments that shape ONE
-  # person's own home. `system` (bare) is exactly what this file exists
-  # to let a user set -- see build-home-configurations.nix's own doc
-  # comment for why. Deliberately excludes: `rootPath`/`loginFlakeRef`/
-  # `inputs` (circular -- they LOCATE this very file); `users`/
-  # `loginHomes`/`group`/`hostFolder`/`userModule`/`modules`/
+  # What a user's `_defaults.nix` may set: home-shaping arguments (see the
+  # file header above for why `system` is here), plus the account-kind
+  # pair `isSystemUser`/`isNormalUser`. `system` (bare) is exactly what
+  # this file exists to let a user set -- see build-home-configurations.nix's
+  # own doc comment for why. Deliberately excludes: `rootPath`/
+  # `loginFlakeRef`/`inputs` (circular -- they LOCATE this very file);
+  # `users`/`loginHomes`/`group`/`hostFolder`/`userModule`/`modules`/
   # `systemAutoUpgrade`/`systemAutoUpgradeFlakeRef`/`systemGarbageCollect`/
   # `wrapHomeManagerSwitch`/`loginReactivateEveryLogin`/
   # `traceDiscoveredUsers` (host concerns, not a user's to set); and
@@ -37,6 +50,8 @@ let
     "nixpkgsConfig"
     "allowedUnfreePackages"
     "permittedInsecurePackages"
+    "isSystemUser"
+    "isNormalUser"
   ];
 
   # The `hosts/<h>/_defaults.nix` form additionally accepts `extra`, the
@@ -127,6 +142,51 @@ let
       validateUserDefaults allowed isHostLayer path (
         checkedShape path (readUserDefaultsRaw path context)
       );
+
+  # Resolves the account-kind pair from a user's (already validated)
+  # `_defaults.nix` overrides. Both explicit and contradictory is a
+  # BUILD-TIME throw -- clearer than NixOS's own runtime "exactly one of
+  # `isSystemUser` and `isNormalUser` must be set" assertion, and
+  # catchable before any module evaluation starts at all. Declaring only
+  # one implies the other; declaring neither (the common case) defaults
+  # to a normal account, matching `normalUserModule`'s own historical
+  # default for a user with no uid pinned.
+  accountKindMessage =
+    path:
+    "${toString path}: sets both \`isSystemUser = true\` and \`isNormalUser = true\` -- exactly one may be true (or neither, which defaults to a normal account).";
+
+  resolveAccountKind =
+    path: overrides:
+    let
+      declaredSystem = overrides.isSystemUser or false;
+      declaredNormal = overrides.isNormalUser or false;
+    in
+    if declaredSystem && declaredNormal then
+      throw (accountKindMessage path)
+    else if declaredSystem then
+      {
+        isSystemUser = true;
+        isNormalUser = false;
+      }
+    else
+      {
+        isSystemUser = false;
+        isNormalUser = true;
+      };
+
+  # The full per-user account-kind read: the BASE `_defaults.nix` only --
+  # deliberately not the `hosts/<h>` override layer `userOverridesFor`
+  # (hosts-args.nix) applies for home-shaping arguments. An account's
+  # fundamental kind is the same on every host it appears on, so this
+  # does not replicate that file's full host-override-layering machinery
+  # (which also cannot be imported here without a cycle -- see the file
+  # header above). `context` is only forced if the file exists and is a
+  # function (readUserDefaultsRaw).
+  accountKindFor =
+    dir: context:
+    resolveAccountKind (userDefaultsPath dir) (
+      readUserDefaults allowedUserDefaultsArgs false dir context
+    );
 in
 {
   inherit
@@ -138,5 +198,8 @@ in
     userDefaultsProblems
     validateUserDefaults
     readUserDefaults
+    accountKindMessage
+    resolveAccountKind
+    accountKindFor
     ;
 }

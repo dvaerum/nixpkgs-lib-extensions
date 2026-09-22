@@ -302,7 +302,7 @@ in
   # split out because verifying it is import-from-derivation over the whole
   # nixpkgs tree and blocked every cheap assertion here)
 
-  # `users` is option-backed and `username` is layered AFTER specialArgs
+  # `allUsers` is option-backed and `username` is layered AFTER specialArgs
   # (so a specialArg of that name would be silently discarded): both are
   # reserved and throw like the builder-owned names
   reserved-layered-names-shadow-throws =
@@ -319,7 +319,7 @@ in
             })._module.specialArgs
         )).success;
     in
-    shadows "users" [ "injected" ] && shadows "username" "root";
+    shadows "allUsers" [ "injected" ] && shadows "username" "root";
 
   # a host entry that is not an attrset used to die with a bare
   # "expected a set but found a path" naming neither the function nor the

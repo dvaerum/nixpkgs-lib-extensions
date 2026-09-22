@@ -2156,22 +2156,27 @@ builders can be called with one common argument attrset.
 
 ## `lib.nixos.normalUserModule`
 
-A function from a username to a NixOS module declaring that user as a
-normal account whose primary group is a private group named after the
-user (the Debian/Fedora "user private group" scheme, instead of NixOS's
-shared `users` group) -- so by default a user is only a member of their
-own group.
+A function from a username and its resolved account kind to a NixOS
+module declaring that user as either a normal account -- private
+primary group named after the user (the Debian/Fedora "user private
+group" scheme, instead of NixOS's shared `users` group), so by default
+a user is only a member of their own group -- or a system account
+(`isSystemUser = true;`, nothing else: uid, group, and home are the
+account's own `configuration.nix` to declare, exactly like `root`).
 
-This is the default `userModule` of `mkNixosSystem`, so
-every user derived from the users tree gets a login
-account automatically. Pass your own function when accounts need more,
-or `userModule = null` to disable account creation.
+This is the default `userModule` of `mkNixosSystem`, which resolves
+`isNormalUser` itself (from the tree user's `_defaults.nix`, see
+"Making a users-tree entry a system account" below) and pre-binds it
+before calling this function -- see mk-system.nix's own
+`perUserModules`. So every user derived from the users tree gets an
+account automatically. Pass your own function when accounts need
+more, or `userModule = null` to disable account creation.
 
 ### Example
 
 ```nix
 # extLib = inputs.nixpkgs-lib-extensions.lib
-extLib.normalUserModule "alice"
+extLib.normalUserModule "alice" true
 =>
 # a module equivalent to:
 {
@@ -2181,16 +2186,26 @@ extLib.normalUserModule "alice"
   };
   users.groups.alice = { };
 }
-# System accounts are left untouched: when the user's merged uid is
-# below 1000 (root, or a configuration.nix pinning a reserved uid)
-# the module contributes nothing -- NixOS forbids isNormalUser on
-# such accounts, and they define their own group and shell. So
-# "root" is a valid users-tree entry: it only gets its home.nix /
-# configuration.nix, never account changes.
 
-# a custom userModule can build on it:
+extLib.normalUserModule "svc" false
+=>
+# a module equivalent to:
+{
+  users.users.svc.isSystemUser = true;
+}
+# -- uid, group, home, and shell are still svc's OWN
+# configuration.nix to declare (see "Making a users-tree entry a
+# system account" below); mk-system.nix always resolves `root` to a
+# system account regardless of `_defaults.nix`, so `root` is a valid
+# users-tree entry too -- it only ever gets its home.nix /
+# configuration.nix, never THIS module's isSystemUser (NixOS's own
+# core module already fully owns root's account).
+
+# a custom userModule can build on it -- mkNixosSystem passes the
+# pre-bound, unary form (see above), so a wrapper written against
+# `userModule` itself never sees the second argument:
 userModule = username: {
-  imports = [ (extLib.normalUserModule username) ];
+  imports = [ (extLib.normalUserModule username true) ];
   users.users.${username}.extraGroups = [ "networkmanager" ];
 };
 ```
@@ -2199,16 +2214,24 @@ userModule = username: {
 
 A tree user that's really a service account (still needs its own
 `configuration.nix`/`home.nix`, but shouldn't get a normal login)
-becomes a system account by pinning `uid` below 1000 and
-declaring `isSystemUser`, its `group`, and `home` itself -- this
-module then leaves it alone, same as `root` above:
+becomes a system account by declaring `isSystemUser = true;` in
+`users/<name>/_defaults.nix`:
+
+```nix
+# users/<name>/_defaults.nix
+{ isSystemUser = true; }
+```
+
+This module then sets `isSystemUser = true;` itself -- `_defaults.nix`
+alone is enough, `configuration.nix` does NOT need to repeat it -- but
+still leaves `uid`/`group`/`home`/`shell` entirely to `configuration.nix`,
+same as any system account:
 
 ```nix
 # users/<name>/configuration.nix
 {
   users.users.<name> = {
     uid = 411;
-    isSystemUser = true;
     group = "<name>";
     home = "/var/lib/<name>";
     createHome = true;
@@ -2227,21 +2250,32 @@ range never collides with it -- the allocator always checks
 picking low (400-450) keeps it as far as possible from the end
 the allocator actually reaches on any real host.
 
-`uid = null` (the allocator-assigned default) is not an option
-*here*: this module decides "system or normal" by reading the
-tree user's merged uid at eval time, so an account meant to skip
-it needs a uid this module can actually see.
+A `configuration.nix` that ALSO sets `isSystemUser`/`isNormalUser`
+directly (redundant, but not forbidden) MUST agree with what
+`_defaults.nix` resolved -- the assertions below catch either
+mismatch (each direction: a resolved-normal user whose
+`configuration.nix` sets `isSystemUser = true;`, or a resolved-system
+user whose `configuration.nix` sets `isNormalUser = true;`) with a
+message naming the actual fix, rather than NixOS's own generic
+"exactly one of `isSystemUser` and `isNormalUser` must be set".
 
 ### Type
 
 ```
-normalUserModule :: String -> Module
+normalUserModule :: String -> Bool -> Module
 ```
 
 ### Arguments
 
 - **username**
   The name of the user account (and its private group) to create.
+
+- **isNormalUser**
+  Whether `username` resolves to a normal account (`true`) or a
+  system account (`false`) -- see "Making a users-tree entry a
+  system account" above. `mkNixosSystem` resolves this itself from
+  the tree user's `_defaults.nix` before calling this function; a
+  direct caller decides it however it needs to.
 
 
 

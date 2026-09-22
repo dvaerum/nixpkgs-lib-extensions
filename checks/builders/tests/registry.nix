@@ -18,7 +18,7 @@
 {
   # exampleUsers is the ctx-shared canonical list (ext-options.nix
   # compares option values against the same one)
-  users-derived-from-tree = laptop.config.nixpkgsLibExtensions.users == exampleUsers;
+  users-derived-from-tree = laptop.config.nixpkgsLibExtensions.allUsers == exampleUsers;
 
   # companion configuration.nix files from user directories reach the system
   companion-config-applied = laptop.config.users.groups ? media;
@@ -92,7 +92,7 @@
 
   # ── per-host `users` selection ──
   # the server selects none of the tree's users
-  server-no-users = server.config.nixpkgsLibExtensions.users == [ ];
+  server-no-users = server.config.nixpkgsLibExtensions.allUsers == [ ];
   # ... and a named subset takes exactly those
   users-selection-takes-subset =
     (myLib.mkNixosSystem {
@@ -100,7 +100,7 @@
       hostname = "subsethost";
       modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
       users = [ "alice" ];
-    }).config.nixpkgsLibExtensions.users == [ "alice" ];
+    }).config.nixpkgsLibExtensions.allUsers == [ "alice" ];
   # ... and a name that is not in the tree is a typo, not silence
   users-selection-typo-throws =
     !(builtins.tryEval (
@@ -109,6 +109,6 @@
         hostname = "typohost";
         modules = [ (exampleDir + "/hosts/server/configuration.nix") ];
         users = [ "alicce" ];
-      }).config.nixpkgsLibExtensions.users
+      }).config.nixpkgsLibExtensions.allUsers
     )).success;
 }
