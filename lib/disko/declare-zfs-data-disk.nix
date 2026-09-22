@@ -433,8 +433,19 @@
         disk = diskAttrs;
         zpool.${poolName} = {
           type = "zpool";
+          # `type = "topology"` is REQUIRED, not just documentation: disko's
+          # own subType dispatch mechanism (a separate, freeform-typed
+          # mini-`evalModules` used only to pick which real submodule
+          # applies) reads it from the RAW input directly, before the real
+          # `topology` submodule -- whose OWN `type` option happens to
+          # default to the same string -- ever gets a chance to apply that
+          # default. Omitting it throws "the option `type' was accessed
+          # but has no value defined", not a friendlier type error --
+          # verified directly against disko (this repo has no disko input
+          # of its own; see lib/disko/README.md).
           mode = {
             topology = {
+              type = "topology";
               vdev = topologyVdevs;
             };
           };

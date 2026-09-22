@@ -116,6 +116,15 @@ let
     # ── single vdev, mirror ──
     single-vdev-two-disks =
       (plainDevices.disk ? "zdata-bulk-vdev0-disk0") && (plainDevices.disk ? "zdata-bulk-vdev0-disk1");
+    # `type = "topology"` is REQUIRED by disko's own subType dispatch --
+    # a separate, freeform-typed mini-`evalModules` reads it from the
+    # RAW input before the real `topology` submodule (whose OWN `type`
+    # option happens to default to the same string) ever applies that
+    # default. Omitting it throws "the option `type' was accessed but
+    # has no value defined" against REAL disko -- confirmed directly,
+    # not something this repo's own disko-independent tests would
+    # otherwise catch (see lib/disko/README.md).
+    topology-type-is-set = plainZpool.mode.topology.type == "topology";
     single-vdev-mode-is-mirror = (lib.head plainZpool.mode.topology.vdev).mode == "mirror";
     single-vdev-members-match-disk-attrs =
       (lib.head plainZpool.mode.topology.vdev).members == [
