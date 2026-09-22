@@ -28,6 +28,9 @@ let
     resolveUsers
     filterUsers
     loginFlakeRefSources
+    loginContextForUser
+    homeModulesFromLoginContext
+    wrapModuleWithOverrides
     ;
   inherit (import ./priorities.nix { inherit lib; }) builderDefaultPriority mkBuilderDefault;
 in
@@ -109,14 +112,71 @@ in
 
       perUserModules = lib.optionals (userModule != null) (lib.forEach hostUsers userModule);
 
+      # `null` unless `u` was discovered from a `loginFlakeRef` source
+      # that declared its own builder context -- applies identically to
+      # a user's home.nix (below) and their configuration.nix
+      # (userNixosConfigs): both are just modules a foreign, trusted
+      # source may need its OWN `rootPath`/`specialArgs` to resolve
+      # (e.g. one user's configuration.nix importing a sibling's via
+      # `rootPath + /users/<other>/configuration.nix`, exactly like
+      # home.nix's `imports.nix` split). `pkgs`/`nixpkgs`/`overlays`
+      # still always stay the HOST's own -- see the home.nix comment
+      # below for why -- a NixOS system has even less of a per-file
+      # boundary to hang a different package set on than home-manager's
+      # per-user submodules do.
+      loginContextOverridesFor =
+        u:
+        let
+          sourceLoginContext = loginContextForUser (discoveredTree.userLoginContext or { }) u;
+        in
+        if sourceLoginContext == null then
+          null
+        else
+          let
+            # Same default `mkContext` itself applies (context.nix) --
+            # a source declaring only `inputs` (with its own `self`)
+            # needs no explicit `rootPath`.
+            sourceRootPath =
+              sourceLoginContext.rootPath or (sourceLoginContext.inputs.self
+                or (throw "nixpkgs-lib-extensions: mkNixosSystem: host `${hostname}`: user `${u}`'s loginContext has no `rootPath` and its `inputs` has no `self` either -- nothing to resolve the source's own hosts/<h> convention or rootPath specialArg against.")
+              );
+          in
+          {
+            rootPath = sourceRootPath;
+            inherit (sourceLoginContext) inputs;
+          }
+          // (sourceLoginContext.specialArgs or { });
+
       # Every matched user directory may ship a configuration.nix
       # (e.g. creating the user's account and groups); all of them are
       # applied to the system automatically -- for login-managed users too
       # -- EXCEPT an untrusted user's (see loginFlakeRefSources): that
       # file gets full, unrestricted NixOS module authority, so a source
       # this host does not fully trust does not get it by default.
+      # Deliberately NOT auto-collecting the source's own NixOS modules
+      # here (unlike home.nix's autoHomeModules, below): a NixOS system
+      # is far more likely to already carry the SAME logical input as
+      # the source, independently and without a `follows` tying them to
+      # one resolved copy (system-level components are commonly shared
+      # across sibling repos under common authorship, exactly nixos-
+      # developer-system's and home-manager-config's relationship) --
+      # unlike a home-manager module, which the consumer's own system
+      # essentially never already has. Tried once (a real celler.
+      # nixosModules.cellerd, pulled in independently by both), which
+      # then throws "already declared" the instant a consumer's own
+      # top-level input and a loginContext source's happen to overlap
+      # unfollowed -- a real regression, on its first real exercise,
+      # for a capability the original bug report never asked for.
       userNixosConfigs = lib.concatMap (
-        u: if lib.elem u untrustedUsers then [ ] else (resolveUser userTree hostname u).nixosModules
+        u:
+        if lib.elem u untrustedUsers then
+          [ ]
+        else
+          let
+            overrides = loginContextOverridesFor u;
+            nixosModules = (resolveUser userTree hostname u).nixosModules;
+          in
+          if overrides == null then nixosModules else map (wrapModuleWithOverrides overrides) nixosModules
       ) hostUsers;
 
       # SYSTEM-MANAGED HOMES: the home.nix of every user NOT in
@@ -167,12 +227,56 @@ in
                   # would make that same file fail to evaluate here.
                   (self.homeManagerAutoUpgradeModule { systemManaged = true; })
                 ];
-              users = lib.genAttrs systemUsersWithHome (u: {
-                # `username` as a module arg (extraSpecialArgs cannot
-                # vary per user)
-                _module.args.username = u;
-                imports = (resolveUser userTree hostname u).homeModules;
-              });
+              users = lib.genAttrs systemUsersWithHome (
+                u:
+                let
+                  # A system-managed home shares the SYSTEM's own
+                  # pkgs/nixpkgs/overlays by construction (useGlobalPkgs
+                  # above) -- a source's own core-shaping arguments cannot
+                  # apply here, so only `rootPath`/`specialArgs` and the
+                  # source's own auto-collected home modules are used. A
+                  # home that genuinely needs the source's own nixpkgs
+                  # must be login-managed instead (added to `loginHomes`).
+                  #
+                  # `rootPath`/`inputs`/`specialArgs` cannot vary per user
+                  # through home-manager's `extraSpecialArgs` (ONE shared
+                  # value for the whole `home-manager.users` set) or
+                  # through `_module.args` (nixpkgs' own module-arg
+                  # resolution, lib/modules.nix's `applyModuleArgs`,
+                  # prefers a name already in specialArgs over the SAME
+                  # name in `_module.args` -- and `rootPath` always is,
+                  # since `builderOwned` sets it unconditionally; worse,
+                  # `_module.args` only resolves AFTER module collection,
+                  # so it cannot supply a value a home.nix uses inside its
+                  # OWN `imports` list, which is exactly how `rootPath` is
+                  # meant to be used). Instead, the source's own home.nix
+                  # -- and everything it transitively `imports` by path,
+                  # e.g. home-manager-config's own home.nix -> imports.nix
+                  # split -- is resolved directly via
+                  # `wrapModuleWithOverrides`, splicing the override in at
+                  # the Nix-expression level, bypassing specialArgs
+                  # entirely (see its own doc comment in registry.nix).
+                  # `userNixosConfigs` above needs the exact same
+                  # override, hence the shared `loginContextOverridesFor`.
+                  overrides = loginContextOverridesFor u;
+                  sourceLoginContext = loginContextForUser (discoveredTree.userLoginContext or { }) u;
+                in
+                {
+                  # `username` as a module arg (extraSpecialArgs cannot
+                  # vary per user); safe via `_module.args` because it is
+                  # only ever used in ordinary config bodies, never inside
+                  # an `imports` list (see the comment above).
+                  _module.args.username = u;
+                  imports =
+                    (
+                      if overrides == null then
+                        (resolveUser userTree hostname u).homeModules
+                      else
+                        map (wrapModuleWithOverrides overrides) (resolveUser userTree hostname u).homeModules
+                    )
+                    ++ (if overrides == null then [ ] else homeModulesFromLoginContext inputs sourceLoginContext);
+                }
+              );
             };
           }
         );

@@ -408,6 +408,7 @@ let
       nixpkgs
       home-manager
       myLib
+      sharedInternal
       inputs
       example
       laptop

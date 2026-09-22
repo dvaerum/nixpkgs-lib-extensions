@@ -5,6 +5,11 @@
 # calling convention).
 { lib, self, ... }:
 let
+  inherit (import ./inputs.nix { inherit lib self; })
+    collectFromInputs
+    detectHomeManager
+    isNixpkgsTree
+    ;
 
   # Registry values must be directories: a path literal or an absolute string
   # pointing at an existing directory.
@@ -288,13 +293,28 @@ let
       {
         source = value.source;
         trusted = value.allowNixosConfig or false;
+        isRootPath = false;
       }
     else
       {
         source = value;
         trusted = false;
+        isRootPath = false;
       };
 
+  # `isRootPath = true` marks the ONE entry that is the consumer's own
+  # identity, never a foreign source -- see `scanOne`'s use of it: a
+  # flake's own `rootPath` (default `inputs.self`) may ALSO happen to
+  # export `nixpkgsLibExtensionsLoginContext` (for OTHER consumers'
+  # benefit, e.g. home-manager-config exporting it for a THIRD flake to
+  # use), and probing it here would rebuild that flake's OWN users with
+  # a fresh, minimal core -- losing whatever `overlays`/
+  # `allowedUnfreePackages`/`nixpkgsConfig` the ACTUAL build call passed
+  # directly (a loginContext only ever carries `inputs`/`specialArgs`,
+  # never those), since a login-context-sourced ctx is built from
+  # scratch rather than sharing the one this build already has. Caught
+  # deploying home-manager-config's own switch once it started exporting
+  # this for OTHERS to consume.
   loginFlakeRefSources =
     loginFlakeRef: rootPath:
     if loginFlakeRef == null then
@@ -302,6 +322,7 @@ let
         {
           source = rootPath;
           trusted = true;
+          isRootPath = true;
         }
       ]
     else if lib.isList loginFlakeRef then
@@ -309,6 +330,7 @@ let
         {
           source = rootPath;
           trusted = true;
+          isRootPath = true;
         }
       ]
       ++ map normalizeSource loginFlakeRef
@@ -333,8 +355,43 @@ let
       traceDiscoveredUsers,
     }:
     let
+      # A source flake may export its OWN builder context -- the same
+      # vocabulary `mkContext` accepts (`inputs`, `specialArgs`, ...) --
+      # as a top-level flake output, `nixpkgsLibExtensionsLoginContext`.
+      # Deliberately NOT nested under `nixpkgsLibExtensions.*` -- that
+      # name is already the NixOS/home-manager OPTION namespace
+      # (ext-options.nix), read out of a built `config`; this is a flake
+      # OUTPUT, read before any core exists, and docs-integrity's
+      # `ext-options-documented-in-guide` check treats every
+      # `nixpkgsLibExtensions.<name>` mention in the guide as a claim
+      # about a declared OPTION -- reusing the prefix here would make a
+      # doc mention of this feature look like an undeclared option.
+      # Detected by shape, the same "check what it exports, not what
+      # it's called" convention `isNixpkgsTree`/`detectHomeManager`
+      # already use (inputs.nix). A source with no such export (a plain
+      # path, the common case, or a flake that simply doesn't declare
+      # one) yields `null` here, which is what keeps every EXISTING
+      # `loginFlakeRef` consumer unaffected. `lib.isAttrs source` first:
+      # a bare path/string source cannot carry attributes at all, and
+      # `?` on one throws rather than returning false. tryEval on top:
+      # an attrset shaped unexpectedly (some OTHER flake's arbitrary
+      # export of this name) must not break a caller not even using
+      # this feature -- same reasoning as `usersDirProbe` below.
+      loginContextOf =
+        source:
+        let
+          probe = builtins.tryEval (
+            if lib.isAttrs source then source.nixpkgsLibExtensionsLoginContext or null else null
+          );
+        in
+        if probe.success then probe.value else null;
+
       scanOne =
-        { source, trusted }:
+        {
+          source,
+          trusted,
+          isRootPath ? false,
+        }:
         # A flake input (attrset) or a path both name a real tree. A bare
         # STRING flake ref ("/etc/nixos", "git+https://...") names
         # something only resolvable at activation time, so it yields no
@@ -344,6 +401,7 @@ let
             discovered = { };
             inherit trusted;
             usersDir = null;
+            loginContext = null;
           }
         else
           let
@@ -359,6 +417,9 @@ let
           {
             inherit discovered trusted;
             usersDir = if usersDirProbe.success then usersDirProbe.value else null;
+            # `isRootPath`: never probed for a loginContext -- see
+            # `loginFlakeRefSources`' own comment on that flag.
+            loginContext = if isRootPath then null else loginContextOf source;
           };
 
       scanned = map scanOne sources;
@@ -376,8 +437,14 @@ let
       let
         tree = lib.foldl' (acc: s: acc // s.discovered) { } scanned;
         untrustedUsers = lib.concatMap (s: if s.trusted then [ ] else lib.attrNames s.discovered) scanned;
+        # Per-source metadata that would otherwise be lost in the `tree`
+        # flatten above -- same "survives the fold as a parallel map"
+        # pattern `untrustedUsers` already establishes on this line.
+        userLoginContext = lib.foldl' (
+          acc: s: acc // (lib.genAttrs (lib.attrNames s.discovered) (_: s.loginContext))
+        ) { } scanned;
         result = {
-          inherit tree untrustedUsers;
+          inherit tree untrustedUsers userLoginContext;
         };
         traceMsgs =
           if !traceDiscoveredUsers then
@@ -391,6 +458,142 @@ let
             ) (lib.filter (s: s.discovered != { } && s.usersDir != null) scanned);
       in
       lib.foldl' (acc: msg: lib.trace msg acc) result traceMsgs;
+
+  # The loginContext (or `null`) a given user was discovered under --
+  # `userLoginContext` from `resolveUsers`' result, looked up by username.
+  # `null` means "no source declared one", the overwhelmingly common case
+  # today, which is what keeps every existing `loginFlakeRef` consumer
+  # unaffected: mk-home.nix/mk-system.nix build that user exactly as
+  # before whenever this is `null`.
+  loginContextForUser = userLoginContext: username: userLoginContext.${username} or null;
+
+  # Resolves the `inputs`/`rootPath` a `users/<u>/_defaults.nix`
+  # function-form file's context should see -- the discovering source's
+  # OWN, when `username` was found via a `loginFlakeRef` source that
+  # declared `nixpkgsLibExtensionsLoginContext`; otherwise the caller's
+  # own fallback, unchanged. Same bug class as home.nix/configuration.nix
+  # (mk-system.nix's `loginContextOverridesFor`): a `_defaults.nix` that
+  # uses `rootPath` (e.g. `homeModules = [ (rootPath + /shared/x.nix) ];`)
+  # needs the SOURCE's own tree, not the consumer's -- found by
+  # cross-checking every OTHER place a discovered user's own file
+  # resolves `rootPath`/`inputs`, after the home.nix/configuration.nix
+  # instances of this were fixed.
+  contextInputsAndRootPathFor =
+    fnName: userLoginContext: username: fallbackInputs: fallbackRootPath:
+    let
+      sourceLoginContext = loginContextForUser userLoginContext username;
+    in
+    if sourceLoginContext == null then
+      {
+        inputs = fallbackInputs;
+        rootPath = fallbackRootPath;
+      }
+    else
+      {
+        inherit (sourceLoginContext) inputs;
+        # `or fallbackRootPath` here would be the SAME silent-substitution
+        # bug this whole helper exists to prevent -- a source's loginContext
+        # missing both `rootPath` and `inputs.self` must throw, matching
+        # `loginContextOverridesFor`'s (mk-system.nix) sibling check,
+        # not quietly hand `_defaults.nix` the CONSUMER's rootPath.
+        rootPath =
+          sourceLoginContext.rootPath or (sourceLoginContext.inputs.self
+            or (throw "nixpkgs-lib-extensions: ${fnName}: user `${username}`'s loginContext has no `rootPath` and its `inputs` has no `self` either -- nothing to resolve users/${username}/_defaults.nix's own `rootPath` context argument against.")
+          );
+      };
+
+  # A loginContext's own auto-collected home-manager modules -- computed
+  # WITHOUT building a `pkgs` (no `system`/`nixpkgs` needed): a
+  # system-managed home cannot use a source's own package set anyway
+  # (see mk-system.nix's `useGlobalPkgs`), so only the module-collection
+  # half of `collectFromInputs` is needed here, over the loginContext's
+  # OWN `inputs`.
+  #
+  # `consumerInputs` EXCLUDES, by name, any input the loginContext's own
+  # `inputs` shares with it -- this is what stops the exact collision
+  # that got the NixOS-module equivalent (auto-collecting a trusted
+  # source's own configuration.nix-side modules) reverted outright: a
+  # real source (home-manager-config, `celler`) independently carrying
+  # the SAME-NAMED input as the consumer, unfollowed, so BOTH copies got
+  # auto-collected and threw "option already declared" the instant they
+  # merged into one evalModules call. Untested until a second real
+  # bug report surfaced the identical shape here too (mk-system.nix's
+  # per-user home-manager submodule DOES merge sharedModules/imports
+  # from both the consumer's own auto-collection and this one, unlike
+  # mk-home.nix's standalone path, which fully swaps rather than
+  # merging and so was never at risk). A same-NAME input is excluded
+  # outright rather than compared by content: this is exactly the
+  # signal an author forgetting a `follows` produces, and it costs
+  # nothing to skip when the consumer's own copy of that name (if it
+  # contributes anything) already covers it -- unlike nix-it-in/
+  # plasma-manager, whose names the reported bug's own consumer never
+  # had at all, so this exclusion never touches the case it was added
+  # for.
+  homeModulesFromLoginContext =
+    consumerInputs: loginContext:
+    (collectFromInputs {
+      inputs = removeAttrs loginContext.inputs (lib.attrNames consumerInputs);
+      inputContributions = loginContext.inputContributions or { };
+      baseLib = lib;
+    }).collected.homeModules;
+
+  # Splices `overrides` (a loginContext's `rootPath`/`inputs`/
+  # `specialArgs`) into a module VALUE and every module it transitively
+  # `imports` by PATH -- needed because a real home.nix is rarely one
+  # file: home-manager-config's own users/<u>/home.nix imports a sibling
+  # `imports.nix`, which is where `rootPath` is actually used, one level
+  # below the file mk-system.nix calls directly. Overriding only the
+  # outer call's args (a plain `(import path) (moduleArgs // overrides)`)
+  # never reaches that nested file: NixOS's own module collection
+  # resolves ITS args the standard way (specialArgs/`_module.args`),
+  # which is exactly the shared, unoverridable channel this feature
+  # exists to route around. So each PATH/function `imports` entry a
+  # module returns is wrapped the same way, recursively -- an entry that
+  # is already a plain attrset (no args to resolve) is left alone except
+  # for recursing into ITS OWN `imports`, in case one of those is a path.
+  #
+  # Calling the target function directly (bypassing nixpkgs'
+  # `applyModuleArgs`) must still replicate ITS per-name resolution
+  # (lib/modules.nix: `args.${name} or config._module.args.${name}`) --
+  # `pkgs` for a home-manager module is delivered ONLY via
+  # `_module.args` (home-manager's own nixpkgs.nix module sets it there,
+  # never via specialArgs), so a naive `moduleArgs // overrides` (every
+  # OTHER name already present in `moduleArgs`) broke every module
+  # destructuring `{ pkgs, ... }:` with "called without required
+  # argument 'pkgs'" -- caught against the REAL home-manager-config
+  # repo (common/user/tmux/default.nix), which no synthetic fixture in
+  # this suite happened to need `pkgs` to expose.
+  resolveArgsFor =
+    overrides: f: moduleArgs:
+    (lib.mapAttrs (name: _: moduleArgs.${name} or moduleArgs.config._module.args.${name}) (
+      lib.functionArgs f
+    ))
+    // moduleArgs
+    // overrides;
+
+  wrapModuleWithOverrides =
+    overrides: value:
+    # A module reference from a REAL flake input is a STRING, not a Nix
+    # Path: `entry + "/home.nix"` (entryFiles above) coerces via `+` on
+    # an attrset (the input itself), which yields a string-with-context,
+    # never a Path value -- `lib.isPath` alone missed this entirely, the
+    # gap a synthetic path-literal-only fixture could not have caught
+    # (see checks/builders/tests/login-context.nix's nested-imports
+    # cycle, added after this was found against the REAL
+    # home-manager-config repo). `import` accepts a string path exactly
+    # like a Path value, so both resolve the same way. `import`ing a
+    # path does not always yield a FUNCTION either -- a module file can
+    # just be a plain attrset (`{ imports = [ ... ]; }`, no `{ ... }:`
+    # wrapper) -- so that result is recursed into like any other value,
+    # never called.
+    if lib.isPath value || lib.isString value then
+      wrapModuleWithOverrides overrides (import value)
+    else if lib.isFunction value then
+      moduleArgs: wrapModuleWithOverrides overrides (value (resolveArgsFor overrides value moduleArgs))
+    else if lib.isAttrs value && value ? imports then
+      value // { imports = map (wrapModuleWithOverrides overrides) value.imports; }
+    else
+      value;
 
 in
 {
@@ -406,5 +609,9 @@ in
     loginFlakeRefSources
     discoverHostsForUser
     entryDirsFor
+    loginContextForUser
+    contextInputsAndRootPathFor
+    homeModulesFromLoginContext
+    wrapModuleWithOverrides
     ;
 }

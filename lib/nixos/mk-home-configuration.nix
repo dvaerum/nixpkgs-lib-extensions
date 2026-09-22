@@ -93,7 +93,12 @@ in
     : own `loginFlakeRef` entry, though its trust dimension is moot
     : here: this builder only ever reads one user's `home.nix`, never a
     : `configuration.nix`). Which of those files make up this home is
-    : described above and under `hostname`.
+    : described above and under `hostname`. A source's own
+    : `nixpkgsLibExtensionsLoginContext` (see `mkNixosSystem`'s
+    : `loginFlakeRef` entry) gets the FULL swap here -- its own
+    : `pkgs`/`lib`/`home-manager` too, not just `rootPath`/`specialArgs`/
+    : modules -- since every home built here is already its own
+    : independent `homeManagerConfiguration` call.
 
     homeModules
     : home-manager modules added to the home configuration, on top of those

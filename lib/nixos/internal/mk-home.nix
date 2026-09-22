@@ -14,6 +14,7 @@ let
     usersFromRegistry
     resolveUsers
     loginFlakeRefSources
+    loginContextForUser
     ;
 in
 {
@@ -30,7 +31,43 @@ in
       ...
     }@args:
     let
-      ctx = mkContext core args;
+      # The users tree: scanned from `loginFlakeRef` when the homes live
+      # in another flake (loginFlakeRefSources handles its null/list/
+      # replace forms the same way mk-system.nix does), else `rootPath`
+      # (this flake). `registryResult` may also be handed in
+      # already-resolved by a plan, which is how a fleet shares one scan
+      # across every host and home. A home.nix never gets
+      # configuration.nix's NixOS module authority, so the trust
+      # dimension (untrustedUsers) is meaningless here.
+      registryResult =
+        if args ? usersTree then
+          args.usersTree
+        else
+          resolveUsers {
+            sources = loginFlakeRefSources (args.loginFlakeRef or null) (
+              args.rootPath or (inputs.self or null)
+            );
+            label = if hostname == null then "${username}" else "${username}@${hostname}";
+            traceDiscoveredUsers = args.traceDiscoveredUsers or true;
+          };
+      userTree = registryResult.tree;
+
+      # `null` unless `username` was discovered from a source that
+      # declared its OWN builder context (`nixpkgsLibExtensionsLoginContext`,
+      # registry.nix) -- the fix for a `loginFlakeRef` source's home.nix
+      # otherwise being built with the CONSUMING flake's own `rootPath`/
+      # `specialArgs`/auto-collected modules instead of its own (see
+      # mk-nixos-system.nix's `loginFlakeRef` entry).
+      sourceLoginContext = loginContextForUser (registryResult.userLoginContext or { }) username;
+
+      # `system`/`hostname` are always forced from the ACTUAL call, never
+      # from the source: a home builds for the machine the CONSUMER is
+      # deploying, regardless of which flake its home.nix came from.
+      ctx =
+        if sourceLoginContext == null then
+          mkContext core args
+        else
+          mkContext null (sourceLoginContext // { inherit system hostname; });
       inherit (ctx)
         lib
         pkgs
@@ -39,27 +76,6 @@ in
         autoHomeModules
         ;
 
-      # The users tree: scanned from `loginFlakeRef` when the homes live
-      # in another flake (loginFlakeRefSources handles its null/list/
-      # replace forms the same way mk-system.nix does), else `rootPath`
-      # (this flake). `usersTree` may also be handed in already-resolved
-      # by a plan, which is how a fleet shares one scan across every host
-      # and home. A home.nix never gets configuration.nix's NixOS module
-      # authority, so the trust dimension (untrustedUsers) is meaningless
-      # here -- only `.tree` is used.
-      userTree =
-        (
-          if args ? usersTree then
-            args.usersTree
-          else
-            resolveUsers {
-              sources = loginFlakeRefSources (args.loginFlakeRef or null) (
-                args.rootPath or (inputs.self or null)
-              );
-              label = if hostname == null then "${username}" else "${username}@${hostname}";
-              traceDiscoveredUsers = args.traceDiscoveredUsers or true;
-            }
-        ).tree;
       registryHomeModules = (resolveUser userTree hostname username).homeModules;
     in
     (
