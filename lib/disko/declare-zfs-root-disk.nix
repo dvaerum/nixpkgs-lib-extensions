@@ -8,13 +8,12 @@
     partition, and one partition holding the ZFS pool -- the
     `zroot-<hostname>` pool itself, and the standard ZFS datasets inside
     it (root, /var, /var/log, /nix/store, /home, optional /tmp) plus one
-    HOME dataset per NORMAL user (a system account -- one with a fixed
-    uid below 1000, such as `root` -- gets no HOME dataset; see
-    `listOfUsernames` below), with optional encryption keyed to the
-    machine's hardware identity. (A ZFS "pool" is the whole allocated
-    block of storage; a "dataset" is a mountable sub-filesystem inside
-    it -- roughly ZFS's equivalent of a partition, but resizable and
-    nestable.)
+    HOME dataset per user in `listOfUsernames` EXCEPT `root` (which
+    never gets one -- see `listOfUsernames` below), with optional
+    encryption keyed to the machine's hardware identity. (A ZFS "pool"
+    is the whole allocated block of storage; a "dataset" is a
+    mountable sub-filesystem inside it -- roughly ZFS's equivalent of
+    a partition, but resizable and nestable.)
 
     Prerequisites: the disko NixOS module must be imported (it provides
     the `disko.devices` options -- automatic when disko is a flake input
@@ -187,15 +186,14 @@
     : A list of `string` or `attribute` element (may be mixed).
     : The `string` element is: <USERNAME>.
     : The `attribute` element is: { username = "<USERNAME>"; mountpoint = "<MOUNTPOINT>"; }
-    : A name resolving to a system account -- `config.users.users.<name>.uid`
-    : is a fixed value below `1000`, e.g. `root` (always `uid = 0`) or any
-    : other account a `configuration.nix` pins a reserved uid for -- gets
-    : no `HOME/<name>` dataset; same `uid == null || uid >= 1000` test
-    : `normalUserModule` uses. A name with no `users.users` entry at all
-    : resolves to `uid = null`, i.e. still counts as normal -- this
-    : function does not require account creation to have run first. To
-    : force a HOME dataset for a system account anyway, add it directly
-    : via `extraDatasets` instead.
+    : `root` never gets a `HOME/root` dataset even if listed -- matched
+    : by NAME, not by reading its uid from `config.users.users` (that
+    : cross-namespace read, from inside a `disko.devices` option
+    : definition, once caused a genuine infinite recursion on a real
+    : host). To exclude any OTHER system/service account, simply leave
+    : it out of this list -- there is no uid-based auto-detection
+    : beyond `root`. To force a `HOME/root` dataset anyway, add it
+    : directly via `extraDatasets` instead.
 
     defineBootPartitions
     : Defines boot partitions for systems that are not `x86_64-linux` or `aarch64-linux`,
@@ -431,19 +429,21 @@
               }
             else
               (throw "The element in `listOfUsernames` can either be a `string` or `attrset` ({ username = ...; mountpoint = ...; })");
-          # A system account (a fixed uid below 1000 -- root, or any
-          # reserved uid a `configuration.nix` pins elsewhere in this
-          # same config) gets no HOME dataset: same `uid == null || uid
-          # >= 1000` test `normalUserModule` uses, so the two agree on
-          # what a "normal" account is without this function actually
-          # depending on that one having run. A name with no
-          # `users.users` entry at all -- the common case when this
-          # function is used on its own, per its own Example above --
-          # resolves `uid` to `null`, i.e. still "normal": unchanged,
-          # pre-existing behavior for that usage.
-          uid = config.users.users.${user.name}.uid or null;
+          # `root` never gets a HOME dataset: NixOS always gives it
+          # uid 0 (a platform invariant, not something read from THIS
+          # host's config), so it is matched by NAME here rather than
+          # by reading `config.users.users.root.uid` -- doing that
+          # from inside a `disko.devices` option definition once
+          # caused a genuine infinite recursion on a real host (not
+          # the isolated eval-only test harness): `disko.devices`
+          # reading `config.users.users` creates a cross-namespace
+          # edge that, on that host, closed into a cycle through
+          # NixOS's own networkd/resolved/iscsi-initiator modules.
+          # A caller who wants some OTHER system account excluded
+          # too simply leaves it out of `listOfUsernames` -- this
+          # function does not auto-detect reserved uids beyond root.
         in
-        if uid != null && uid < 1000 then
+        if user.name == "root" then
           null
         else
           {
