@@ -52,6 +52,22 @@ pkgs.testers.runNixOSTest {
     networking.hostId = "deadbeef";
     virtualisation.memorySize = 2048;
 
+    imports = [
+      # Mimics `declareZfsRootDisk`'s own plain `boot.zfs.
+      # requestEncryptionCredentials = [ ];` -- a SEPARATE module
+      # contribution (not something spliced from `dataModule` by hand),
+      # so the module system actually has to CONCATENATE two plain-list
+      # definitions of this single, host-wide option. Skipping this and
+      # relying on NixOS's own unrelated `true` default is exactly what
+      # let the real regression this test guards against ship in the
+      # first place: `declareZfsDataDisk`'s pool imported fine, but its
+      # key was never requested, because nothing had asked for it by
+      # name and this option's default no longer applied once another
+      # module (like declareZfsRootDisk, on any real host that also has
+      # a root disk) defined it as a plain, competing list.
+      { boot.zfs.requestEncryptionCredentials = [ ]; }
+    ];
+
     # Only the parts that do not depend on disko -- see the top-of-file
     # comment. `boot.zfs.forceImportAll` arrives already `lib.mkDefault`
     # wrapped from the function itself; splicing it in here as a plain
@@ -59,7 +75,11 @@ pkgs.testers.runNixOSTest {
     # VALUE, not which module wrote it.
     inherit (dataModule) systemd;
     boot.zfs = {
-      inherit (dataModule.boot.zfs) extraPools forceImportAll;
+      inherit (dataModule.boot.zfs)
+        extraPools
+        forceImportAll
+        requestEncryptionCredentials
+        ;
       # This VM test uses a FILE-backed vdev (no disko, no real disk --
       # see the top-of-file comment), so NixOS's own default search
       # directory for `zpool import -d` (/dev/disk/by-id) never finds

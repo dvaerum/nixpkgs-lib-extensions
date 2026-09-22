@@ -304,36 +304,47 @@ let
     # calls automatically through the module system) ──
     extra-pools-contains-this-pool = plain.boot.zfs.extraPools == [ "zdata-bulk" ];
     force-import-all-defaulted-true = plain.boot.zfs.forceImportAll.content == true;
+    # `requestEncryptionCredentials` is a SINGLE, host-wide option --
+    # `declareZfsRootDisk` sets it to a plain `[ ]` to opt root's own
+    # dataset out of a redundant boot-time prompt, which (a plain list
+    # beating the option's own `true` default) silently disables
+    # automatic key-loading for EVERY pool unless something ELSE asks
+    # for its own pool explicitly. Confirmed on a real deployment (see
+    # the commit this landed in): `zdata-bulk` imported but never
+    # unlocked until this was added.
+    request-encryption-credentials-contains-this-pool =
+      (build { }).boot.zfs.requestEncryptionCredentials == [ "zdata-bulk" ];
+    no-request-encryption-credentials-without-encryption =
+      (build { enableEncryption = false; }).boot.zfs.requestEncryptionCredentials == [ ];
 
     # ── enableEncryption = false: no key units at all ──
     no-key-units-without-encryption = plain.systemd.services == { };
-    # ── enableEncryption = true (default): both key units present, named
-    # by the resolved POOL name, ordered around zfs-import-<pool>.service ──
-    key-units-present-with-encryption =
-      let
-        m = build { };
-        services = m.systemd.services;
-      in
-      services ? "zfs-data-key-zdata-bulk" && services ? "zfs-data-key-migrate-zdata-bulk";
+    # ── enableEncryption = true (default), keyFilePath left at the
+    # default: only the key-writer exists -- the migrate unit is
+    # skipped ENTIRELY (not just given an empty script): a `[Service]`
+    # with no `ExecStart=` at all is not just an inert no-op, it is a
+    # unit systemd itself rejects as "bad unit file setting" -- found
+    # on the same real deployment above. ──
+    key-writer-present-with-encryption = (build { }).systemd.services ? "zfs-data-key-zdata-bulk";
+    no-migrate-unit-at-default-key-file-path =
+      !((build { }).systemd.services ? "zfs-data-key-migrate-zdata-bulk");
     key-writer-ordered-before-import =
       let
         m = build { };
       in
       lib.elem "zfs-import-zdata-bulk.service" m.systemd.services."zfs-data-key-zdata-bulk".before;
+    # a custom keyFilePath DOES produce the migrate unit, ordered after
+    # import, with a real (non-empty) script
+    migrate-unit-present-with-custom-key-file-path =
+      let
+        m = build { keyFilePath = "/run/secrets/zdata-bulk.key"; };
+      in
+      m.systemd.services ? "zfs-data-key-migrate-zdata-bulk";
     migrate-ordered-after-import =
       let
-        m = build { };
+        m = build { keyFilePath = "/run/secrets/zdata-bulk.key"; };
       in
       lib.elem "zfs-import-zdata-bulk.service" m.systemd.services."zfs-data-key-migrate-zdata-bulk".after;
-    # a keyFilePath left at the default never migrates: the migrate
-    # unit's script is empty (built out entirely, not just a runtime
-    # no-op) when keyFilePath == the ephemeral default
-    migrate-script-empty-at-default-key-file-path =
-      let
-        m = build { };
-      in
-      m.systemd.services."zfs-data-key-migrate-zdata-bulk".script == "";
-    # a custom keyFilePath DOES produce a real migrate script
     migrate-script-nonempty-with-custom-key-file-path =
       let
         m = build { keyFilePath = "/run/secrets/zdata-bulk.key"; };

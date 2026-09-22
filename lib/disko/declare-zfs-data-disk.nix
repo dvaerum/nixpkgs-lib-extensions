@@ -337,6 +337,23 @@
       boot.zfs.extraPools = [ poolName ];
       boot.zfs.forceImportAll = lib.mkDefault true;
 
+      # `requestEncryptionCredentials` is a SINGLE, host-wide option (not
+      # scoped per-pool), and `declareZfsRootDisk` deliberately sets it
+      # to a plain `[ ]` -- opting the ROOT pool's own already-initrd-
+      # unlocked dataset out of a redundant boot-time prompt. Since a
+      # plain-list definition WINS over the option's own `true` default
+      # (see declareZfsRootDisk's own comment on this exact mechanism),
+      # that `[ ]` silently disables NixOS's automatic key-load for
+      # EVERY pool on the host, not just root -- confirmed on a real
+      # deployment: `zdata-bulk` imported successfully but its key was
+      # never loaded, because nothing had asked for it explicitly. This
+      # pool asks for itself, the same way: a plain list concatenates
+      # with root's `[ ]` (and anything else) for free, no `lib.mkDefault`
+      # (which would lose to root's plain assignment and be silently
+      # discarded, per the exact footgun `declareZfsRootDisk`'s own
+      # `lib/disko/README.md` section documents).
+      boot.zfs.requestEncryptionCredentials = lib.optional enableEncryption poolName;
+
       # Only NixOS's own automatic key-load (requestEncryptionCredentials,
       # default true -- see this function's doc comment) needs a real key
       # FILE to exist before `zfs-import-${poolName}.service` runs; the
@@ -390,7 +407,16 @@
                 ${writeKeyFile keyWriterSource.junkPatterns}
               '';
             };
-
+          }
+          # `keyFilePath == defaultKeyFilePath` (the un-migrated, default
+          # case -- IT-03400's own, for instance) never needs this unit
+          # AT ALL: leaving it defined with an empty `script` still
+          # produces a [Service] section with no `ExecStart=`, which
+          # systemd rejects outright as a "bad unit file setting" --
+          # confirmed on a real deployment, not just a theoretical
+          # concern. Omitting the whole unit, not just its script body,
+          # is what actually keeps the common case inert.
+          // lib.optionalAttrs (keyFilePath != defaultKeyFilePath) {
             "zfs-data-key-migrate-${poolName}" = {
               description = "Migrate ${poolName}'s encryption key from the ephemeral default to the declared keyFilePath, once one exists";
               # After, not before, zfs-import-<pool>.service -- same
@@ -402,12 +428,7 @@
                 Type = "oneshot";
                 RemainAfterExit = true;
               };
-              # `keyFilePath == defaultKeyFilePath` (the un-migrated,
-              # default case) never reaches any of this -- the whole body
-              # is skipped at BUILD time, not just made a runtime no-op, so
-              # the common "no migration ever wanted" case adds nothing to
-              # the generated unit at all.
-              script = lib.optionalString (keyFilePath != defaultKeyFilePath) ''
+              script = ''
                 if ! ${zfsPackageBin "zpool"} list "${poolName}" > /dev/null 2>&1; then
                   # the pool did not actually import -- nothing to migrate
                   exit 0
