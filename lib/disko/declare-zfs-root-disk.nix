@@ -132,6 +132,7 @@
         ];
         name = "myhost";
         enableEncryption = false;
+        usingDiskoZfs = false;
       })
     ];
     ```
@@ -231,6 +232,15 @@
     : Merged last, so it can also override a generated dataset.
     : Example: { "DATA" = { type = "zfs_fs"; options.mountpoint = "none"; };
     :            "DATA/media" = { type = "zfs_fs"; mountpoint = "/srv/media"; options.mountpoint = "legacy"; }; }
+
+    usingDiskoZfs
+    : Required -- `true` or `false`, whether your flake also imports
+    : numtide/disko-zfs's NixOS module. No default: this function cannot
+    : safely detect it (see the throw this triggers if left unset for
+    : why), so you state it explicitly. When `true` and
+    : `disko.zfs.enable = true`, adds the four properties disko-zfs must
+    : never try to reconcile (`keylocation`, `encryption`, `keyformat`,
+    : `nixos:*`) to `disko.zfs.settings.ignoredProperties`.
   */
   declareZfsRootDisk =
     {
@@ -246,6 +256,7 @@
       defineBootPartitions ? null,
       legacyBoot ? false,
       extraDatasets ? { },
+      usingDiskoZfs ? null,
     }:
     # Returns a module function (valid in `imports`) so the actual initrd
     # (initial ramdisk -- the small environment that runs before the real
@@ -261,6 +272,20 @@
     }:
     let
       hardwareKey = import ./internal/hardware-key.nix { inherit lib pkgs; };
+
+      # No safe way to auto-detect whether the consumer's flake also
+      # imports numtide/disko-zfs's NixOS module -- confirmed by direct
+      # testing: checking `options` for it either throws "the option
+      # `disko.zfs` does not exist" (regardless of the check's own result)
+      # or recurses infinitely (forcing `options` this early in the
+      # fixpoint loops back through this very function's own call site).
+      # So the caller states it explicitly instead of this function
+      # guessing.
+      checkedUsingDiskoZfs =
+        if usingDiskoZfs == null then
+          throw "declareZfsRootDisk: `usingDiskoZfs` must be `true` or `false` -- set `true` if your flake also imports numtide/disko-zfs's NixOS module, `false` otherwise. There is no way for this function to detect that on its own (see the comment above this throw)."
+        else
+          usingDiskoZfs;
 
       # `hostname` is a deprecated alias for `name`: both naming the same
       # thing would silently pick one arbitrarily, so it throws instead.
@@ -559,7 +584,7 @@
       # configuration.nix called the function.
       _file = ./declare-zfs-root-disk.nix;
 
-      imports = [ ./internal/disko-zfs-ignored-properties.nix ];
+      imports = lib.optional checkedUsingDiskoZfs ./internal/disko-zfs-ignored-properties.nix;
 
       boot = {
         supportedFilesystems = [ "zfs" ];

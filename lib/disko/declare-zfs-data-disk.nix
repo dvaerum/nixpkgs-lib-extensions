@@ -68,6 +68,7 @@
           }
         ];
         enableEncryption = true;
+        usingDiskoZfs = false;
       })
     ];
     ```
@@ -149,6 +150,10 @@
     : an attribute set of additional zfs datasets, merged in last (so it
     : can also override `DATA` itself). Parent datasets are not created
     : implicitly -- declare them too.
+
+    usingDiskoZfs
+    : Identical to `declareZfsRootDisk`'s own `usingDiskoZfs` -- required,
+    : no default, see its doc entry.
   */
   declareZfsDataDisk =
     {
@@ -160,6 +165,7 @@
       keySourceCommand ? null,
       poolMountpoint ? "/data",
       extraDatasets ? { },
+      usingDiskoZfs ? null,
     }:
     {
       config,
@@ -169,6 +175,14 @@
     }:
     let
       hardwareKey = import ./internal/hardware-key.nix { inherit lib pkgs; };
+
+      # See declareZfsRootDisk's identical check for why this can't be
+      # auto-detected.
+      checkedUsingDiskoZfs =
+        if usingDiskoZfs == null then
+          throw "declareZfsDataDisk: `usingDiskoZfs` must be `true` or `false` -- set `true` if your flake also imports numtide/disko-zfs's NixOS module, `false` otherwise. There is no way for this function to detect that on its own."
+        else
+          usingDiskoZfs;
 
       poolName = nameFn name;
 
@@ -350,7 +364,7 @@
     {
       _file = ./declare-zfs-data-disk.nix;
 
-      imports = [ ./internal/disko-zfs-ignored-properties.nix ];
+      imports = lib.optional checkedUsingDiskoZfs ./internal/disko-zfs-ignored-properties.nix;
 
       boot.zfs.extraPools = [ poolName ];
       boot.zfs.forceImportAll = lib.mkDefault true;

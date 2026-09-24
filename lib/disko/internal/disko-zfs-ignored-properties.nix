@@ -22,19 +22,20 @@
 #     dataset declaration here. Left un-ignored, disko-zfs strips it via
 #     `zfs inherit` on every switch, fighting NixOS's own tracking.
 #
-# Guarded on `options.disko.zfs` actually existing: this module is imported
-# unconditionally by both callers, but disko-zfs's own module may not be
-# imported by every consumer, and `disko.zfs.settings.ignoredProperties`
-# isn't a real option unless it is. `options ? disko && options.disko ? zfs`
-# checks the option TREE (not `config`), so it never forces evaluation of
-# anything -- true precisely when the consumer's own flake also imports
-# disko-zfs's NixOS module.
+# Only imported when the caller passed `usingDiskoZfs = true` (see
+# declareZfsRootDisk/declareZfsDataDisk) -- that is the caller's own
+# promise that disko-zfs's NixOS module is present, so `disko.zfs` is a
+# real, declared option here. Reading `config.disko.zfs.enable` (not
+# `options`) to gate on it is safe: `options` is entangled in the same
+# fixpoint this code contributes to (checking it caused a genuine
+# infinite recursion, confirmed on a real host), but `config` behind a
+# lazy `mkIf` is not.
 {
-  options,
+  config,
   lib,
   ...
 }:
-lib.mkIf (options ? disko && options.disko ? zfs) {
+lib.mkIf (config.disko.zfs.enable or false) {
   disko.zfs.settings.ignoredProperties = [
     "keylocation"
     "encryption"
