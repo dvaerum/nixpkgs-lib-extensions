@@ -492,7 +492,13 @@
           };
           rootFsOptions = {
             compression = "lz4";
-            acltype = "posixacl";
+            # "posixacl" is a valid alias for this ZFS property, but `zfs get`
+            # always reports the canonical name ("posix") back regardless --
+            # declaring the alias instead of the canonical form made
+            # disko-zfs's plain string diff never converge (confirmed live:
+            # `zfs set acltype=posixacl` succeeds, then the very next
+            # dry-activate proposes the identical command again, forever).
+            acltype = "posix";
             xattr = "sa";
             atime = "off";
             mountpoint = "none";
