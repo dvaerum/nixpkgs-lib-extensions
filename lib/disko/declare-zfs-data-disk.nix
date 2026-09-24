@@ -350,6 +350,8 @@
     {
       _file = ./declare-zfs-data-disk.nix;
 
+      imports = [ ./internal/disko-zfs-ignored-properties.nix ];
+
       boot.zfs.extraPools = [ poolName ];
       boot.zfs.forceImportAll = lib.mkDefault true;
 

@@ -559,6 +559,8 @@
       # configuration.nix called the function.
       _file = ./declare-zfs-root-disk.nix;
 
+      imports = [ ./internal/disko-zfs-ignored-properties.nix ];
+
       boot = {
         supportedFilesystems = [ "zfs" ];
 
