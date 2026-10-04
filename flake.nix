@@ -81,10 +81,17 @@
             # checks/invalid-fixtures deliberately holds files that are NOT
             # valid Nix -- they feed the importIfNix* validity probes, and one
             # of them is a binary git-crypt blob -- so nixfmt must never see
-            # them. Paths given as arguments are ignored on purpose: the scope
-            # is always the whole tree minus those fixtures.
+            # them. lib/strings/internal/mustache is vendored third-party
+            # code (see its ACKNOWLEDGEMENT.md) -- excluded so re-vendoring a
+            # future upstream fix is a straight content diff, not one
+            # tangled with nixfmt's own style churn. Paths given as
+            # arguments are ignored on purpose: the scope is always the
+            # whole tree minus those exclusions.
             nix_files() {
-              find . -type f -name '*.nix' -not -path '*/invalid-fixtures/*' -print0
+              find . -type f -name '*.nix' \
+                -not -path '*/invalid-fixtures/*' \
+                -not -path '*/lib/strings/internal/mustache/*' \
+                -print0
             }
 
             if [ "''${1:-}" = "--check" ]; then

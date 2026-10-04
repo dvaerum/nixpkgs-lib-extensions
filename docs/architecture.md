@@ -15,7 +15,12 @@ lib/
                     publishes nothing until it is named there (checked
                     against the on-disk tree by the exports test).
   attrsets/         recursiveMerge
-  strings/          stringToTitle
+  strings/          stringToTitle, renderMustache (mustache.nix --
+                    vendored third-party Mustache template engine,
+                    nix-mustache; internal/mustache/ is the vendored
+                    implementation, kept byte-identical to upstream
+                    (excluded from nixfmt) -- see its own
+                    ACKNOWLEDGEMENT.md for provenance and license)
   imports/          importIfNix / importIfNixOr, readIfPlain /
                     readIfPlainOr (git-crypt-friendly), discoverPatches
   systemd/          detachedRun, interceptingWrapper

@@ -33,7 +33,10 @@ lib.fix (
 
     namespacePaths = {
       attrsets = [ ./attrsets/default.nix ];
-      strings = [ ./strings/default.nix ];
+      strings = [
+        ./strings/default.nix
+        ./strings/mustache.nix
+      ];
       disko = [
         ./disko/declare-zfs-root-disk.nix
         ./disko/declare-zfs-data-disk.nix

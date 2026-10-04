@@ -151,6 +151,91 @@ let
         other = 1;
       };
 
+    # renderMustache: vendored nix-mustache (lib/strings/mustache), the
+    # documented outcomes from its own doc comment's Example
+    mustache-basic-variable =
+      myLib.renderMustache {
+        template = "Hello, {{name}}!";
+        view = {
+          name = "nix";
+        };
+      } == "Hello, nix!";
+
+    mustache-section-list =
+      myLib.renderMustache {
+        template = "{{#items}}- {{.}}\n{{/items}}";
+        view = {
+          items = [
+            "a"
+            "b"
+            "c"
+          ];
+        };
+      } == "- a\n- b\n- c\n";
+
+    # a falsy value (missing key, false, []) hides a normal section ...
+    mustache-section-falsy-hidden =
+      myLib.renderMustache {
+        template = "hello, {{#name}}friend{{/name}}";
+        view = { };
+      } == "hello, ";
+    # ... and shows an INVERTED one instead
+    mustache-inverted-section-shown =
+      myLib.renderMustache {
+        template = "hello, {{^name}}no friend{{/name}}";
+        view = { };
+      } == "hello, no friend";
+
+    mustache-comment-stripped =
+      myLib.renderMustache {
+        template = "hello, {{! comment}} friend";
+        view = { };
+      } == "hello,  friend";
+
+    mustache-dot-path =
+      myLib.renderMustache {
+        template = "dot syntax is {{obj.goes.deep}}";
+        view.obj.goes.deep = "deep";
+      } == "dot syntax is deep";
+
+    # config.escape: unset (default) does nothing; set, applies to every
+    # ESCAPED `{{tag}}` -- `{{&tag}}`/`{{{tag}}}` always bypass it
+    mustache-escape-default-is-identity =
+      myLib.renderMustache {
+        template = "{{html}}";
+        view.html = "<tag>";
+      } == "<tag>";
+    mustache-escape-custom-applied =
+      myLib.renderMustache {
+        template = "with escape: {{html}}, without: {{&html}}";
+        view.html = "<tag>";
+        config.escape = lib.strings.escapeXML;
+      } == "with escape: &lt;tag&gt;, without: <tag>";
+
+    mustache-custom-delimiters =
+      myLib.renderMustache {
+        template = "{{=<% %>=}}(<%text%>)";
+        view.text = "Hey!";
+      } == "(Hey!)";
+
+    # a view value may be a function (a lambda section) -- the rendered
+    # section's raw text is handed to it
+    mustache-lambda =
+      myLib.renderMustache {
+        template = "is {{#call}}{{name}} ok{{/call}}?";
+        view = {
+          call = text: "[" + text + "]";
+          name = "Alex";
+        };
+      } == "is [Alex ok]?";
+
+    # `template` may be a PATH -- read with readFile -- not just a string
+    mustache-template-from-file =
+      myLib.renderMustache {
+        template = ./fixtures/mustache-template.mustache;
+        view.name = "nix";
+      } == "Hello from a file, nix!\n";
+
     recursive-merge-lists-dedup =
       myLib.recursiveMerge [
         {
