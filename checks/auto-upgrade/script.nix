@@ -157,6 +157,42 @@ pkgs.runCommand "home-manager-auto-upgrade-script-test" { } ''
   echo "$captured" | grep -q -- "-i $key"
   rm -f "$key"
 
+  # ── a reachable ambient agent is used by default ──
+  # A real socket, not a bare path: the script's own guard checks `-S`
+  # before trusting SSH_AUTH_SOCK, so a fake file would prove nothing.
+  fakesock="$TMPDIR/agent.sock"
+  ${pkgs.socat}/bin/socat UNIX-LISTEN:"$fakesock",fork - >/dev/null 2>&1 &
+  sockpid=$!
+  for _ in $(seq 1 50); do [ -S "$fakesock" ] && break; sleep 0.1; done
+  [ -S "$fakesock" ]
+  export SSH_AUTH_SOCK="$fakesock"
+  rc=0
+  captured=$("$up" --flake-ref "git+ssh://git@example.org/cfg" --username alice \
+    --state-file "$state" --pre-command ${pkgs.writeShellScript "show-agent" ''echo "SSH=$GIT_SSH_COMMAND"''} 2>&1) || rc=$?
+  [ "$rc" -eq 0 ]
+  ! echo "$captured" | grep -q "IdentityAgent=none"
+
+  # ── --no-ssh-agent makes the SAME ambient agent count for nothing ──
+  rc=0
+  msg=$("$up" --flake-ref "git+ssh://git@example.org/cfg" --username alice \
+    --state-file "$state" --no-ssh-agent 2>&1) || rc=$?
+  [ "$rc" -ne 0 ]
+  echo "$msg" | grep -q "needs SSH credentials"
+  echo "$msg" | grep -q "agent use is disabled"
+  grep -q "status=fail" "$state"
+
+  # ... and it is refused even when a key IS configured, so ssh itself
+  # never falls back to an inherited agent as a side effect
+  echo fake-key > "$key"; chmod 600 "$key"
+  captured=$("$up" --flake-ref "git+ssh://git@example.org/cfg" --username alice \
+    --state-file "$state" --no-ssh-agent \
+    --pre-command ${pkgs.writeShellScript "show-no-agent" ''echo "SSH=$GIT_SSH_COMMAND"''} 2>&1)
+  echo "$captured" | grep -q "IdentityAgent=none"
+  rm -f "$key"
+
+  kill "$sockpid" 2>/dev/null || true
+  unset SSH_AUTH_SOCK
+
   # ── notification transitions ──
   # failure always notifies
   : > "$NOTIFY_RECORD"

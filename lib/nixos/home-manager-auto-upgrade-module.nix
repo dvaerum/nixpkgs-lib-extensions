@@ -149,6 +149,7 @@
               "--ssh-auth-sock"
               (toString cfg.sshAuthSock)
             ]
+            ++ lib.optional (!cfg.allowSshAgent) "--no-ssh-agent"
             ++ lib.concatMap (o: [
               "--ssh-option"
               o
@@ -297,6 +298,22 @@
                 '';
               };
 
+              allowSshAgent = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  Whether an SSH agent may be used at all for an
+                  SSH-flavoured {option}`flakeRef` -- whether reached via
+                  {option}`sshAuthSock` or simply inherited from the
+                  service's own environment. Set to `false` to require a
+                  key file ({option}`sshKeyPath`) outright, e.g. on a host
+                  where an ambient `SSH_AUTH_SOCK` should never be
+                  trusted for this unattended job even when one happens
+                  to be reachable. Default `true`, matching `ssh`'s own
+                  default behaviour.
+                '';
+              };
+
               sshExtraOptions = mkOption {
                 type = types.listOf types.str;
                 default = [ ];
@@ -426,6 +443,13 @@
 
             config = lib.mkMerge [
               {
+                assertions = [
+                  {
+                    assertion = cfg.allowSshAgent || cfg.sshAuthSock == null;
+                    message = "services.homeManagerAutoUpgrade.sshAuthSock is set together with allowSshAgent = false, which is contradictory: an explicit agent socket can never be used when agent use is disabled. Unset one or the other.";
+                  }
+                ];
+
                 warnings =
                   lib.optional (cfg.enable && systemManaged) ''
                     nixpkgs-lib-extensions: services.homeManagerAutoUpgrade is enabled for `${config.home.username}`, whose home is SYSTEM-managed on this host (built into the NixOS system). No timer is created: that home switches with `nixos-rebuild`, and a second `home-manager switch` on a timer would fight it over one profile. Move the user to `loginHomes` for a standalone home, or set `services.homeManagerAutoUpgrade.enable = false;` to silence this.

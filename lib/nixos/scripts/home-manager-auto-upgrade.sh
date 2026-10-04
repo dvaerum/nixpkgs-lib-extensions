@@ -11,6 +11,7 @@
 #   --keep-generations <n>    profile generations to retain (0 = never prune)
 #   --ssh-key <path>          private key for an SSH-flavoured ref
 #   --ssh-auth-sock <path>    agent socket, when not already in the env
+#   --no-ssh-agent            never use an agent, even one inherited ambiently
 #   --ssh-option <opt>        extra `ssh -o` option (repeatable)
 #   --git-credentials <path>  git-credentials-format file for HTTPS
 #   --pre-command <path>      shell fragment SOURCED before the switch
@@ -39,6 +40,7 @@ state_file=""
 keep_generations=0
 ssh_key=""
 ssh_auth_sock=""
+allow_ssh_agent=1
 ssh_options=()
 git_credentials=""
 pre_command=""
@@ -53,6 +55,7 @@ while [ $# -gt 0 ]; do
     --keep-generations) [ $# -ge 2 ] || require_value --keep-generations; keep_generations="$2"; shift 2 ;;
     --ssh-key) [ $# -ge 2 ] || require_value --ssh-key; ssh_key="$2"; shift 2 ;;
     --ssh-auth-sock) [ $# -ge 2 ] || require_value --ssh-auth-sock; ssh_auth_sock="$2"; shift 2 ;;
+    --no-ssh-agent) allow_ssh_agent=0; shift ;;
     --ssh-option) [ $# -ge 2 ] || require_value --ssh-option; ssh_options+=("$2"); shift 2 ;;
     --git-credentials) [ $# -ge 2 ] || require_value --git-credentials; git_credentials="$2"; shift 2 ;;
     --pre-command) [ $# -ge 2 ] || require_value --pre-command; pre_command="$2"; shift 2 ;;
@@ -192,6 +195,14 @@ if [ -n "${ssh_auth_sock}" ]; then
 fi
 
 ssh_cmd="ssh -o BatchMode=yes"
+# Disabling wins over an explicit sock: both set at once is a
+# contradiction the nix module already refuses, but a bare script
+# invocation should still make the stronger, safer directive win rather
+# than silently preferring whichever was processed last.
+if [ "${allow_ssh_agent}" != "1" ]; then
+  unset SSH_AUTH_SOCK
+  ssh_cmd="${ssh_cmd} -o IdentityAgent=none"
+fi
 if [ -n "${ssh_key}" ]; then
   if [ ! -r "${ssh_key}" ]; then
     echo "hm-auto-upgrade: ssh key ${ssh_key} is not readable" >&2
@@ -218,9 +229,13 @@ case "${flake_ref}" in
       echo "hm-auto-upgrade: ${flake_ref} needs SSH credentials, but none are available:" >&2
       echo "  - no key configured (services.homeManagerAutoUpgrade.sshKeyPath)" >&2
       echo "  - no key at ${config_dir}/ssh-key" >&2
-      echo "  - no reachable agent (SSH_AUTH_SOCK unset or its socket missing;" >&2
-      echo "    a systemd user service does NOT inherit a login shell's agent --" >&2
-      echo "    see services.homeManagerAutoUpgrade.sshAuthSock)" >&2
+      if [ "${allow_ssh_agent}" = "1" ]; then
+        echo "  - no reachable agent (SSH_AUTH_SOCK unset or its socket missing;" >&2
+        echo "    a systemd user service does NOT inherit a login shell's agent --" >&2
+        echo "    see services.homeManagerAutoUpgrade.sshAuthSock)" >&2
+      else
+        echo "  - agent use is disabled (services.homeManagerAutoUpgrade.allowSshAgent = false)" >&2
+      fi
       write_state fail 1 ""
       notify "Home Manager auto-upgrade failed" "No SSH credentials available for ${flake_ref}"
       exit 1

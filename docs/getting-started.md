@@ -939,6 +939,13 @@ manager's environment. `sshAuthSock` points the unit at a known path.
 When an SSH-flavoured reference has none of these, the run fails
 immediately and names all three fixes, rather than hanging.
 
+Set `allowSshAgent = false` to rule an agent out entirely -- a key
+file becomes the only accepted credential, and the run fails (rather
+than silently succeeding via an agent you didn't expect to be
+reachable) if one of those ambient sockets happens to exist anyway.
+It cannot be combined with `sshAuthSock` (a pointless contradiction:
+an explicit socket that may never be used).
+
 A credential file readable by group or others is **refused**, naming
 the path and the `chmod` -- the same stance `ssh` takes on private
 keys.
