@@ -165,6 +165,9 @@ in
                 _file = ../mk-home-configuration.nix;
                 home.username = lib.mkDefault username;
                 home.homeDirectory = lib.mkDefault "/home/${username}";
+                # the `home-manager` command, so the user can re-switch
+                # without `nix run`; a home.nix can opt out
+                programs.home-manager.enable = lib.mkDefault true;
                 # `username` stays a per-home module argument, like the
                 # system-managed mechanism wires it (extraSpecialArgs cannot
                 # vary per user there; _module.args can)

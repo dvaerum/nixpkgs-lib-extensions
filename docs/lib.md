@@ -1637,7 +1637,9 @@ mkHomeConfiguration :: Attribute -> HomeManagerConfiguration
   auto-collected from `inputs`. Default `[ ]`.
 
 The home configuration gets overridable (`mkDefault`) values for
-`home.username` (the user) and `home.homeDirectory` (`/home/<user>`).
+`home.username` (the user) and `home.homeDirectory` (`/home/<user>`),
+and `programs.home-manager.enable = true` (the `home-manager` command
+on the user's PATH; set it `false` in `home.nix` to opt out).
 `home.stateVersion` gets a similar convenience default, but at a
 WEAKER priority than `mkDefault` -- so a consumer's own `mkDefault`
 pin in `home.nix` wins outright instead of colliding with the

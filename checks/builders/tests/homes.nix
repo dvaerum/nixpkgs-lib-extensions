@@ -90,6 +90,20 @@
 
   home-eval-username = aliceHome.config.home.username == "alice";
   home-eval-home-directory = aliceHome.config.home.homeDirectory == "/home/alice";
+  # a standalone home gets the `home-manager` command so the user can
+  # re-switch without `nix run`
+  home-eval-home-manager-enabled = aliceHome.config.programs.home-manager.enable;
+  # ...as an overridable default: a home.nix can opt out
+  home-eval-home-manager-opt-out =
+    let
+      probe = myLib.mkHomeConfiguration {
+        inherit inputs system;
+        hostname = "laptop";
+        username = "alice";
+        homeModules = [ { programs.home-manager.enable = false; } ];
+      };
+    in
+    !probe.config.programs.home-manager.enable;
   # alice's home.nix PINS stateVersion (as the template should): the pin
   # wins over the builder's default, and no stateVersion warning appears
   home-eval-state-version-pinned =
