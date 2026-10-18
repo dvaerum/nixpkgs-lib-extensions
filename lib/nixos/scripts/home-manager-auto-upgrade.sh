@@ -140,7 +140,7 @@ export GIT_TERMINAL_PROMPT=0
 # hand-created file left at 0644.
 require_private() {
   local path="$1" kind="$2" mode
-  mode="$(stat -c '%a' "${path}")"
+  mode="$(stat -L -c '%a' "${path}")"
   case "${mode}" in
     600 | 400) ;;
     *)
