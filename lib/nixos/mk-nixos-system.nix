@@ -294,18 +294,15 @@ in
     : one entry point, which Nix gives no way to deduplicate.
     : Default `true`.
 
-    loginReactivateEveryLogin
-    : Bootstrap re-activates on every login instead of only the first.
-    : Irrelevant without `loginHomes` users. Default `false`.
-
-    loginReactivateOnTargetChange
-    : Bootstrap re-activates whenever the resolved `loginFlakeRef`/
-    : attribute differs from the last recorded activation (NOT
-    : specifically a deliberate migration -- a routine `nixos-rebuild
-    : switch` looks the same to this check as one, since `inputs.self`
-    : gets a new store path either way). Irrelevant without `loginHomes`
-    : users. Default `false`: a rebuild never reverts a home the user
-    : switched to by hand since bootstrapping.
+    loginReactivate
+    : When the bootstrap re-activates on a login AFTER the first: one
+    : of `"never"` (default -- presence of the stamp alone is enough to
+    : skip), `"on-target-change"` (whenever the resolved `loginFlakeRef`/
+    : attribute differs from the last recorded activation -- NOT
+    : specifically a deliberate migration, since a routine
+    : `nixos-rebuild switch` looks the same to this check, `inputs.self`
+    : getting a new store path either way), or `"every-login"`
+    : (unconditional). Irrelevant without `loginHomes` users.
 
     systemAutoUpgrade
     : Whether the host gets `systemAutoUpgradeModule` -- nixpkgs'

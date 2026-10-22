@@ -46,8 +46,7 @@ in
       loginHomes ? [ ],
       homeModules ? [ ],
       loginFlakeRef ? null,
-      loginReactivateEveryLogin ? false,
-      loginReactivateOnTargetChange ? false,
+      loginReactivate ? "never",
       systemAutoUpgrade ? true,
       systemAutoUpgradeFlakeRef ? null,
       systemGarbageCollect ? false,
@@ -365,8 +364,7 @@ in
           system
           loginHomes
           loginFlakeRef
-          loginReactivateEveryLogin
-          loginReactivateOnTargetChange
+          loginReactivate
           ;
         users = userTree;
         # the context's pick (honoring the homeManager override), so the

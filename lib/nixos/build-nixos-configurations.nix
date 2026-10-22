@@ -110,8 +110,7 @@ in
     :   homes here, and login-managed homes too when this same hosts
     :   attrset goes through `buildConfigurations`)
     : - `loginFlakeRef`
-    : - `loginReactivateEveryLogin`
-    : - `loginReactivateOnTargetChange`
+    : - `loginReactivate`
     : - `homeAutoUpgrade` (keep standalone homes current on a timer; see
     :   `homeManagerAutoUpgradeModule`. Ignored by this builder, which
     :   produces no STANDALONE homes; applies through

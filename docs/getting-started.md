@@ -714,12 +714,13 @@ that content was this module's original behavior, and it meant a
 routine rebuild (including this library's own unattended
 `systemAutoUpgradeModule`) looked identical to "re-provision this
 user," silently reverting anything the user had switched to by hand
-since. Two escape hatches, opt-in: `loginReactivateEveryLogin = true;`
-re-applies on every single login regardless of the stamp;
-`loginReactivateOnTargetChange = true;` restores the old
-content-comparing behavior -- honestly, that means "whenever the
-resolved flake-ref/attribute string differs from last time," not
-specifically a deliberate migration. Point `loginFlakeRef` at a mutable
+since. One option, `loginReactivate`, opts into either older behavior:
+`loginReactivate = "every-login";` re-applies on every single login
+regardless of the stamp; `loginReactivate = "on-target-change";`
+restores the old content-comparing behavior -- honestly, that means
+"whenever the resolved flake-ref/attribute string differs from last
+time," not specifically a deliberate migration. Point `loginFlakeRef`
+at a mutable
 checkout (e.g. `"/etc/nixos"`) if users should build from a live tree.
 
 A login-managed user can also re-run `switch` manually between
@@ -798,8 +799,8 @@ A complete flake:
               inherit inputs system users;
               hostname = "laptop";
               loginHomes = [ "alice" ];
-              # loginReactivateEveryLogin =
-              #   true;
+              # loginReactivate =
+              #   "every-login";
               # loginFlakeRef = "/etc/nixos";
             })
           ];

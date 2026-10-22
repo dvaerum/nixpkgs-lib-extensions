@@ -7,13 +7,13 @@
 # path regardless of whether home.nix changed, so content-comparing the
 # stamp made an ordinary rebuild revert anything the user had switched to
 # by hand since -- see home-manager-bootstrap-module.nix's
-# loginReactivateOnTargetChange doc comment), and --reactivate-every-login
+# loginReactivate doc comment), and loginReactivate = "every-login"
 # overrides that -- without any in-VM nix evaluation (see switch-vm.nix for
-# that). The opt-in content-comparing behavior itself
-# (loginReactivateOnTargetChange) is exercised at the ExecStart-flag level
-# by checks/builders/tests/bootstrap.nix and at the script-logic level by
-# checks/bootstrap/script.nix -- both with the exact same code this test
-# would otherwise re-prove in a second, slower VM boot.
+# that). The opt-in content-comparing mode itself ("on-target-change") is
+# exercised at the ExecStart-flag level by checks/builders/tests/bootstrap.nix
+# and at the script-logic level by checks/bootstrap/script.nix -- both with
+# the exact same code this test would otherwise re-prove in a second, slower
+# VM boot.
 { pkgs, myLib }:
 let
   system = pkgs.stdenv.hostPlatform.system;
@@ -64,7 +64,7 @@ pkgs.testers.runNixOSTest {
   # show: that the systemd USER service actually fires when a session
   # starts, and that the stamp survives into the next user-manager
   # instance. The FLAG behaviors it used to boot a second VM for --
-  # --reactivate-every-login overriding the stamp, user filtering, the
+  # loginReactivate = "every-login" overriding the stamp, user filtering, the
   # failure path -- are all covered deterministically and in seconds by
   # checks/bootstrap/script.nix, which drives the very same wrapper with a
   # recording stub. A second full boot bought no unique coverage.

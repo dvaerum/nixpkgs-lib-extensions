@@ -93,24 +93,29 @@ in
     : this level.
     : Default `inputs.self`.
 
-    loginReactivateEveryLogin
-    : Re-activate on EVERY login, ignoring the stamp entirely. Default
-    : `false`. Wins over `loginReactivateOnTargetChange` if both are set.
-
-    loginReactivateOnTargetChange
-    : Re-activate whenever the resolved `loginFlakeRef`/attribute differs
-    : from the last recorded activation, even on an otherwise ordinary
-    : login -- the behavior this module used to have unconditionally.
-    : Honest caveat: it reacts to any change in that resolved STRING, not
-    : specifically a deliberate migration to a different source -- the
-    : default `loginFlakeRef` (`inputs.self`) gets a brand-new store path
-    : on every `nixos-rebuild switch` regardless of whether home.nix
-    : changed at all, so this also re-triggers on routine, unrelated
-    : rebuilds (including this library's own `systemAutoUpgradeModule`
-    : running unattended). Default `false`: "first login" means once
-    : ever for a given user, full stop, which is what stops a system
-    : rebuild from silently reverting a home the user had since switched
-    : to by hand.
+    loginReactivate
+    : When to re-activate on a login AFTER the first. One of:
+    :
+    : `"never"` (default) -- presence of the stamp alone is enough to
+    : skip; "first login" means once ever for a given user, full stop.
+    : This is what stops a system rebuild from silently reverting a home
+    : the user had since switched to by hand: the default `loginFlakeRef`
+    : (`inputs.self`) gets a brand-new store path on every
+    : `nixos-rebuild switch` regardless of whether home.nix changed at
+    : all (including from this library's own `systemAutoUpgradeModule`
+    : running unattended), so comparing stamp content made an ordinary
+    : rebuild indistinguishable from "re-provision this user."
+    :
+    : `"on-target-change"` -- re-activate whenever the resolved
+    : `loginFlakeRef`/attribute differs from the last recorded
+    : activation -- the behavior this module used to have
+    : unconditionally. Honest caveat: it reacts to any change in that
+    : resolved STRING, not specifically a deliberate migration to a
+    : different source, so it also re-triggers on routine, unrelated
+    : rebuilds for anyone who opts into it.
+    :
+    : `"every-login"` -- re-activate on every single login, ignoring the
+    : stamp entirely.
 
     homeManager
     : Explicit home-manager input, bypassing capability detection.
@@ -124,11 +129,24 @@ in
       users ? { },
       loginHomes ? [ ],
       loginFlakeRef ? null,
-      loginReactivateEveryLogin ? false,
-      loginReactivateOnTargetChange ? false,
+      loginReactivate ? "never",
       homeManager ? null,
     }:
     let
+      # Fail at EVAL time, not at the next affected user's login: a typo
+      # here would otherwise surface only as a systemd unit error on
+      # whichever machine logs in next.
+      _checkedLoginReactivate =
+        if
+          lib.elem loginReactivate [
+            "never"
+            "on-target-change"
+            "every-login"
+          ]
+        then
+          loginReactivate
+        else
+          throw "homeManagerBootstrapModule: host `${hostname}`: loginReactivate must be one of \"never\", \"on-target-change\", \"every-login\" -- got `${toString loginReactivate}`.";
       home-manager = if homeManager != null then homeManager else shared.detectHomeManager inputs;
       homeManagerPkg =
         if home-manager == null then null else home-manager.packages.${system}.home-manager;
@@ -258,9 +276,9 @@ in
                     (toString effectiveFlakeRef)
                     "--hostname"
                     hostname
+                    "--reactivate"
+                    _checkedLoginReactivate
                   ]
-                  ++ lib.optional loginReactivateEveryLogin "--reactivate-every-login"
-                  ++ lib.optional loginReactivateOnTargetChange "--reactivate-on-target-change"
                   ++ [ "--user-attrs" ]
                   ++ map (u: "${u}=${attrFor u}") usersHome
                 );

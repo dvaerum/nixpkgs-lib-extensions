@@ -62,7 +62,7 @@ pkgs.runCommand "home-manager-bootstrap-script-test" { } ''
   grep -q "switch --flake /f#alice@h" "$RECORD"
   [ "$(wc -l < "$RECORD")" -eq 1 ]
   # ... and the stamp still records the activation PARAMETERS (useful for
-  # --reactivate-on-target-change below), even though the DEFAULT check
+  # --reactivate on-target-change below), even though the DEFAULT check
   # does not compare them -- see the next block
   stamp="$HOME/.local/state/home-manager-bootstrap.stamp"
   [ "$(cat "$stamp")" = "/f#alice@h" ]
@@ -92,7 +92,7 @@ pkgs.runCommand "home-manager-bootstrap-script-test" { } ''
   "$bootstrap" --flake-ref /f --hostname h --user-attrs alice=alice@h bob=bob@h
   [ "$(wc -l < "$RECORD")" -eq 1 ]
 
-  # ── --reactivate-on-target-change opts back into the OLD
+  # ── --reactivate on-target-change opts back into the OLD
   # content-comparing behavior, for whoever genuinely wants "resync to
   # whatever the latest build declares" as a standing policy. Honest
   # about what it actually does: it reacts to ANY change in the resolved
@@ -100,18 +100,28 @@ pkgs.runCommand "home-manager-bootstrap-script-test" { } ''
   # routine rebuild looks identical to a real migration to this check,
   # exactly as it did when this was the only behavior.
   printf '%s' "/old-ref#alice@h" > "$stamp"
-  "$bootstrap" --flake-ref /f --hostname h --reactivate-on-target-change --user-attrs alice=alice@h bob=bob@h
+  "$bootstrap" --flake-ref /f --hostname h --reactivate on-target-change --user-attrs alice=alice@h bob=bob@h
   [ "$(wc -l < "$RECORD")" -eq 2 ]
   [ "$(cat "$stamp")" = "/f#alice@h" ]
 
   # ... and once the stamp matches again, it goes back to skipping
-  "$bootstrap" --flake-ref /f --hostname h --reactivate-on-target-change --user-attrs alice=alice@h bob=bob@h
+  "$bootstrap" --flake-ref /f --hostname h --reactivate on-target-change --user-attrs alice=alice@h bob=bob@h
   [ "$(wc -l < "$RECORD")" -eq 2 ]
 
-  # --reactivate-every-login ignores the stamp entirely -> called again,
-  # regardless of either flag above
-  "$bootstrap" --flake-ref /f --hostname h --reactivate-every-login --user-attrs alice=alice@h bob=bob@h
+  # --reactivate every-login ignores the stamp entirely -> called again,
+  # regardless of the mode used above
+  "$bootstrap" --flake-ref /f --hostname h --reactivate every-login --user-attrs alice=alice@h bob=bob@h
   [ "$(wc -l < "$RECORD")" -eq 3 ]
+
+  # an unknown --reactivate value -> usage error, not a silent fall-through
+  rc=0; msg=$("$bootstrap" --flake-ref /f --hostname h --reactivate bogus --user-attrs alice=alice@h 2>&1) || rc=$?
+  [ "$rc" -eq 64 ]
+  echo "$msg" | grep -q "must be one of"
+  # ... and a missing VALUE after --reactivate is the same usage error as
+  # --flake-ref/--hostname's, not a nounset crash on "$2"
+  rc=0; msg=$("$bootstrap" --flake-ref /f --hostname h --reactivate 2>&1) || rc=$?
+  [ "$rc" -eq 64 ]
+  echo "$msg" | grep -q "usage:"
 
   touch $out
 ''

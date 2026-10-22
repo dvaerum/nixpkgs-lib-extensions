@@ -131,20 +131,24 @@ in
     (applyBootstrap { loginFlakeRef = "/custom"; })
     .systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
   );
-  bootstrap-reactivate-flag = lib.hasInfix ''"--reactivate-every-login"'' (
-    (applyBootstrap { loginReactivateEveryLogin = true; })
+  # default: "never" -- presence-only skip, see checks/bootstrap/script.nix
+  # for the stamp behavior itself
+  bootstrap-reactivate-default = lib.hasInfix ''"--reactivate" "never"'' (
+    (applyBootstrap { }).systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
+  );
+  bootstrap-reactivate-every-login-flag = lib.hasInfix ''"--reactivate" "every-login"'' (
+    (applyBootstrap { loginReactivate = "every-login"; })
     .systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
   );
-  # default: neither flag present -- presence-only skip, see
-  # checks/bootstrap/script.nix for the stamp behavior itself
-  bootstrap-reactivate-on-target-change-absent-by-default =
-    !(lib.hasInfix ''"--reactivate-on-target-change"'' (
-      (applyBootstrap { }).systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
-    ));
-  bootstrap-reactivate-on-target-change-flag = lib.hasInfix ''"--reactivate-on-target-change"'' (
-    (applyBootstrap { loginReactivateOnTargetChange = true; })
+  bootstrap-reactivate-on-target-change-flag = lib.hasInfix ''"--reactivate" "on-target-change"'' (
+    (applyBootstrap { loginReactivate = "on-target-change"; })
     .systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
   );
+  bootstrap-reactivate-rejects-invalid-value =
+    !(builtins.tryEval (
+      (applyBootstrap { loginReactivate = "bogus"; })
+      .systemd.user.services.home-manager-bootstrap.serviceConfig.ExecStart
+    )).success;
   bootstrap-gates-without-home-manager =
     applyBootstrap {
       inputs = {
