@@ -2,8 +2,18 @@
 # `home-manager` records its invocations, so this verifies the systemd USER
 # service wiring in a real booted system -- the service fires when the
 # user's session starts, the stamp prevents a re-run on the next
-# user-manager instance, and --reactivate-every-login overrides that --
-# without any in-VM nix evaluation (see switch-vm.nix for that).
+# user-manager instance EVEN when its content is stale (the regression this
+# guards: a routine `nixos-rebuild switch` gives `inputs.self` a new store
+# path regardless of whether home.nix changed, so content-comparing the
+# stamp made an ordinary rebuild revert anything the user had switched to
+# by hand since -- see home-manager-bootstrap-module.nix's
+# loginReactivateOnTargetChange doc comment), and --reactivate-every-login
+# overrides that -- without any in-VM nix evaluation (see switch-vm.nix for
+# that). The opt-in content-comparing behavior itself
+# (loginReactivateOnTargetChange) is exercised at the ExecStart-flag level
+# by checks/builders/tests/bootstrap.nix and at the script-logic level by
+# checks/bootstrap/script.nix -- both with the exact same code this test
+# would otherwise re-prove in a second, slower VM boot.
 { pkgs, myLib }:
 let
   system = pkgs.stdenv.hostPlatform.system;
@@ -77,20 +87,36 @@ pkgs.testers.runNixOSTest {
     # ... and the stamp keeps it from switching again
     machine.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 1 ]')
 
-    # ── self-healing stamp: STALE content re-runs on the next login ──
-    # (the parameters changed since the stamp was written -- a mechanism
-    # migration or another flake ref; a two-switch migration scenario
-    # needs switch-vm-scale machinery, so the stamp-content behavior is
-    # what gets runtime-tested here, on top of checks/bootstrap/script.nix)
+    # ── presence-only by DEFAULT: STALE stamp content is NOT acted on ──
+    # The regression this guards: `inputs.self` gets a brand-new store
+    # path on every `nixos-rebuild switch` regardless of whether home.nix
+    # changed, so a content-comparing stamp made an ordinary rebuild (or
+    # this library's own unattended systemAutoUpgradeModule) silently
+    # revert anything the user had switched to by hand since bootstrap.
+    # A real reboot-equivalent (fresh user-manager instance) is the one
+    # thing only a booted machine can prove here.
     machine.succeed(
         "su -l alice -c 'echo /old-flake#alice@oldhost > "
         "~/.local/state/home-manager-bootstrap.stamp'"
     )
     machine.succeed("systemctl restart user@$(id -u alice).service")
-    machine.wait_until_succeeds('[ "$(wc -l < /tmp/hm-record)" -eq 2 ]')
-    # ... and the stamp now records the CURRENT parameters
+    machine.wait_until_succeeds(
+        "su -l alice -c 'env XDG_RUNTIME_DIR=/run/user/$(id -u alice) "
+        "systemctl --user is-active home-manager-bootstrap.service'"
+    )
+    # still just the one switch from first login -- the stale stamp did
+    # not trigger a second one
+    machine.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 1 ]')
+    # ... and the stamp is untouched: this run never got far enough to
+    # rewrite it
     machine.succeed(
-        "grep -q '/fake-flake#alice@vmhost' ~alice/.local/state/home-manager-bootstrap.stamp"
+        "grep -q '/old-flake#alice@oldhost' ~alice/.local/state/home-manager-bootstrap.stamp"
+    )
+    # restore a stamp matching the current parameters before the next
+    # scenario, which counts switches from a clean baseline
+    machine.succeed(
+        "su -l alice -c 'echo /fake-flake#alice@vmhost > "
+        "~/.local/state/home-manager-bootstrap.stamp'"
     )
 
     # ── failure, then retry on a later login ──
@@ -115,7 +141,7 @@ pkgs.testers.runNixOSTest {
     machine.wait_until_succeeds(
         "test -f ~alice/.local/state/home-manager-bootstrap.stamp", timeout=60
     )
-    machine.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 3 ]')
+    machine.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 2 ]')
 
     # ── failure again, then retry on a later login ──
     machine.succeed("su -l alice -c 'rm ~/.local/state/home-manager-bootstrap.stamp'")
@@ -131,6 +157,6 @@ pkgs.testers.runNixOSTest {
     machine.succeed("systemctl restart user@$(id -u alice).service")
     machine.wait_until_succeeds("test -f ~alice/.local/state/home-manager-bootstrap.stamp")
     machine.succeed("grep -q '/fake-flake#alice@vmhost' ~alice/.local/state/home-manager-bootstrap.stamp")
-    machine.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 4 ]')
+    machine.succeed('[ "$(wc -l < /tmp/hm-record)" -eq 3 ]')
   '';
 }

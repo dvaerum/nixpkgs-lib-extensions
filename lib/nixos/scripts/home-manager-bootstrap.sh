@@ -8,6 +8,11 @@
 #   --flake-ref <ref>          flake reference to build from
 #   --hostname <name>          this host's name
 #   --reactivate-every-login   re-activate on every login (default: first login only)
+#   --reactivate-on-target-change  re-activate whenever the resolved
+#                             flake-ref/attr differs from the last
+#                             recorded activation, even on an otherwise
+#                             ordinary login (default: off -- presence of
+#                             the stamp alone is enough to skip)
 #   --user-attrs <user>=<attr>...  users to bootstrap and the flake
 #                             attribute each activates (must come LAST)
 #
@@ -28,6 +33,7 @@ require_value() {
 flake_ref=""
 hostname=""
 reactivate=0
+reactivate_on_target_change=0
 user_attrs=()
 
 while [ $# -gt 0 ]; do
@@ -44,6 +50,10 @@ while [ $# -gt 0 ]; do
       ;;
     --reactivate-every-login)
       reactivate=1
+      shift
+      ;;
+    --reactivate-on-target-change)
+      reactivate_on_target_change=1
       shift
       ;;
     --user-attrs)
@@ -81,16 +91,25 @@ if [ -z "${attr}" ]; then
   exit 0
 fi
 
-# The stamp records WHAT was activated, not merely THAT something was:
-# a stamp whose content differs from the current parameters -- the flake
-# ref or hostname changed, the user moved between home mechanisms, or
-# the stamp predates content-carrying stamps -- counts as absent, so the
-# bootstrap re-runs instead of skipping on stale state.
+# "First login" means ONCE EVER for this user -- presence of the stamp
+# is enough to skip, regardless of what it contains. Deliberately NOT a
+# content comparison by default: `inputs.self` (the usual default
+# flakeRef) gets a brand-new store path on every `nixos-rebuild switch`,
+# even for a change with nothing to do with home.nix, so comparing stamp
+# content made an ordinary rebuild indistinguishable from "this user
+# needs re-provisioning" -- silently reverting anything switched to by
+# hand since. The stamp still RECORDS the activation parameters
+# (flake-ref#attr) regardless, both for operator visibility and for
+# --reactivate-on-target-change below, which opts back into comparing
+# them for whoever wants that as a standing policy -- note it reacts to
+# ANY change in the resolved string, not specifically a deliberate
+# migration; a routine rebuild looks the same to it as a real one would.
 stamp="${XDG_STATE_HOME:-${HOME}/.local/state}/home-manager-bootstrap.stamp"
 stamp_params="${flake_ref}#${attr}"
-if [ "${reactivate}" != "1" ] && [ -e "${stamp}" ] \
-  && [ "$(cat "${stamp}")" = "${stamp_params}" ]; then
-  exit 0
+if [ "${reactivate}" != "1" ] && [ -e "${stamp}" ]; then
+  if [ "${reactivate_on_target_change}" != "1" ] || [ "$(cat "${stamp}")" = "${stamp_params}" ]; then
+    exit 0
+  fi
 fi
 
 home-manager switch --flake "${flake_ref}#${attr}"

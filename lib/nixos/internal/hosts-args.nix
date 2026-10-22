@@ -209,6 +209,7 @@ let
     "homeModules"
     "loginFlakeRef"
     "loginReactivateEveryLogin"
+    "loginReactivateOnTargetChange"
     "homeAutoUpgrade"
     "homeAutoUpgradeFlakeRef"
     "systemAutoUpgrade"

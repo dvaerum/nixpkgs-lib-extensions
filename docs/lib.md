@@ -1168,6 +1168,7 @@ buildNixosConfigurations ::
     attrset goes through `buildConfigurations`)
   - `loginFlakeRef`
   - `loginReactivateEveryLogin`
+  - `loginReactivateOnTargetChange`
   - `homeAutoUpgrade` (keep standalone homes current on a timer; see
     `homeManagerAutoUpgradeModule`. Ignored by this builder, which
     produces no STANDALONE homes; applies through
@@ -1527,7 +1528,23 @@ homeManagerBootstrapModule :: Attribute -> Module
   Default `inputs.self`.
 
 - **loginReactivateEveryLogin**
-  Re-activate on every login instead of only the first. Default `false`.
+  Re-activate on EVERY login, ignoring the stamp entirely. Default
+  `false`. Wins over `loginReactivateOnTargetChange` if both are set.
+
+- **loginReactivateOnTargetChange**
+  Re-activate whenever the resolved `loginFlakeRef`/attribute differs
+  from the last recorded activation, even on an otherwise ordinary
+  login -- the behavior this module used to have unconditionally.
+  Honest caveat: it reacts to any change in that resolved STRING, not
+  specifically a deliberate migration to a different source -- the
+  default `loginFlakeRef` (`inputs.self`) gets a brand-new store path
+  on every `nixos-rebuild switch` regardless of whether home.nix
+  changed at all, so this also re-triggers on routine, unrelated
+  rebuilds (including this library's own `systemAutoUpgradeModule`
+  running unattended). Default `false`: "first login" means once
+  ever for a given user, full stop, which is what stops a system
+  rebuild from silently reverting a home the user had since switched
+  to by hand.
 
 - **homeManager**
   Explicit home-manager input, bypassing capability detection.
@@ -1949,6 +1966,15 @@ mkNixosSystem :: Attribute -> NixosSystem
 - **loginReactivateEveryLogin**
   Bootstrap re-activates on every login instead of only the first.
   Irrelevant without `loginHomes` users. Default `false`.
+
+- **loginReactivateOnTargetChange**
+  Bootstrap re-activates whenever the resolved `loginFlakeRef`/
+  attribute differs from the last recorded activation (NOT
+  specifically a deliberate migration -- a routine `nixos-rebuild
+  switch` looks the same to this check as one, since `inputs.self`
+  gets a new store path either way). Irrelevant without `loginHomes`
+  users. Default `false`: a rebuild never reverts a home the user
+  switched to by hand since bootstrapping.
 
 - **systemAutoUpgrade**
   Whether the host gets `systemAutoUpgradeModule` -- nixpkgs'

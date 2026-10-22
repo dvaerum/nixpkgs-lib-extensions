@@ -298,6 +298,15 @@ in
     : Bootstrap re-activates on every login instead of only the first.
     : Irrelevant without `loginHomes` users. Default `false`.
 
+    loginReactivateOnTargetChange
+    : Bootstrap re-activates whenever the resolved `loginFlakeRef`/
+    : attribute differs from the last recorded activation (NOT
+    : specifically a deliberate migration -- a routine `nixos-rebuild
+    : switch` looks the same to this check as one, since `inputs.self`
+    : gets a new store path either way). Irrelevant without `loginHomes`
+    : users. Default `false`: a rebuild never reverts a home the user
+    : switched to by hand since bootstrapping.
+
     systemAutoUpgrade
     : Whether the host gets `systemAutoUpgradeModule` -- nixpkgs'
     : `system.autoUpgrade` as the build/stage engine, plus this library's

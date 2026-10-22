@@ -111,6 +111,7 @@ in
     :   attrset goes through `buildConfigurations`)
     : - `loginFlakeRef`
     : - `loginReactivateEveryLogin`
+    : - `loginReactivateOnTargetChange`
     : - `homeAutoUpgrade` (keep standalone homes current on a timer; see
     :   `homeManagerAutoUpgradeModule`. Ignored by this builder, which
     :   produces no STANDALONE homes; applies through

@@ -35,6 +35,7 @@ let
   # `users`/`loginHomes`/`group`/`hostFolder`/`userModule`/`modules`/
   # `systemAutoUpgrade`/`systemAutoUpgradeFlakeRef`/`systemGarbageCollect`/
   # `wrapHomeManagerSwitch`/`loginReactivateEveryLogin`/
+  # `loginReactivateOnTargetChange`/
   # `traceDiscoveredUsers` (host concerns, not a user's to set); and
   # `patches`/`nixpkgs`/`homeManager`/`inputContributions` (fleet
   # decisions -- `patches` is also IFD-heavy, which this file's own read

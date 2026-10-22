@@ -703,13 +703,24 @@ home-manager switch --flake <loginFlakeRef>#<user>
 (or `#<user>@<host>` where the flake exports one -- resolved at build
 time, see below)
 
-in the background (login is never blocked). A stamp file in
-`$XDG_STATE_HOME` (default `~/.local/state`) prevents re-runs; pass
-`loginReactivateEveryLogin = true;` to re-apply on every new session
-instead. `loginFlakeRef` defaults to your flake (`inputs.self`) --
-the pinned copy from the last `nixos-rebuild`; point it at a mutable
-checkout (e.g. `"/etc/nixos"`) if users should build from a live
-tree.
+in the background (login is never blocked). "First login" means ONCE
+EVER for that user: a stamp file in `$XDG_STATE_HOME` (default
+`~/.local/state`) prevents re-runs on every later login too, by its
+mere presence -- its content is not compared by default, so it does
+not matter that `loginFlakeRef` defaults to your flake (`inputs.self`,
+the pinned copy from the last `nixos-rebuild`), which gets a brand-new
+store path on every rebuild whether or not home.nix changed. Comparing
+that content was this module's original behavior, and it meant a
+routine rebuild (including this library's own unattended
+`systemAutoUpgradeModule`) looked identical to "re-provision this
+user," silently reverting anything the user had switched to by hand
+since. Two escape hatches, opt-in: `loginReactivateEveryLogin = true;`
+re-applies on every single login regardless of the stamp;
+`loginReactivateOnTargetChange = true;` restores the old
+content-comparing behavior -- honestly, that means "whenever the
+resolved flake-ref/attribute string differs from last time," not
+specifically a deliberate migration. Point `loginFlakeRef` at a mutable
+checkout (e.g. `"/etc/nixos"`) if users should build from a live tree.
 
 A login-managed user can also re-run `switch` manually between
 logins: the host gets a detach-safe `home-manager` on
