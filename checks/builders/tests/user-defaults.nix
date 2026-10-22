@@ -28,8 +28,18 @@ let
 
   tree = fixturesDir + "/tree-userdefaults";
 
+  # Pinned to x86_64-linux regardless of the harness's own ambient
+  # `system` (the fleet pass this whole check suite is being evaluated
+  # under): bob's _defaults.nix fixture hardcodes `system =
+  # "aarch64-linux"` so `ud-core-override-really-differs` below can prove
+  # his override genuinely diverges from alice's un-overridden default.
+  # That collapses into a false negative the moment the AMBIENT system
+  # also happens to be aarch64-linux -- exactly what CI's own
+  # aarch64-linux cross-eval pass is. Nothing else in this file depends
+  # on `standalone` tracking the true ambient system.
   standalone = myLib.buildHomeConfigurations {
-    inherit inputs system;
+    inherit inputs;
+    system = "x86_64-linux";
     rootPath = tree;
     traceDiscoveredUsers = false;
   };
