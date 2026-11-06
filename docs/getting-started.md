@@ -1017,8 +1017,13 @@ configured **warns** rather than silently doing nothing;
 This **wraps** `system.autoUpgrade` rather than replacing it. Upstream
 stays the engine -- it fetches with `--refresh`, evaluates, builds and
 stages -- pinned to `operation = "boot"` and `allowReboot = false` so it
-never activates and never reboots. A `nixos-upgrade-policy` unit then
-decides what happens, on every run:
+never activates and never reboots. Also pinned: `upgrade = false`.
+Upstream's own default there is `true`, and its generated script
+appends a bare `--upgrade` (a `nix-channel --update` on root's
+subscription) whenever `channel` is unset -- which it always is here,
+since this module only ever sets `flake`. Its own doc comment names a
+flake honouring its lockfile as exactly when to turn that off. A
+`nixos-upgrade-policy` unit then decides what happens, on every run:
 
 | booted vs staged | what happens |
 |---|---|

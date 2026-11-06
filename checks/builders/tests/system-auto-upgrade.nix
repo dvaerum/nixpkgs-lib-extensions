@@ -45,6 +45,16 @@ in
     in
     u.enable && u.flake == liveRef && u.operation == "boot" && u.allowReboot == false;
 
+  # nixpkgs' own `system.autoUpgrade.upgrade` defaults to `true`, and its
+  # generated script appends a bare `--upgrade` to the nixos-rebuild
+  # invocation whenever `channel` is unset (exactly our case: we only
+  # ever set `flake`) -- its own doc comment names flake-based upgrades
+  # as precisely when to turn this off. Left unset, every host using
+  # this module silently runs `nixos-rebuild boot --refresh --flake
+  # <ref> --upgrade`, updating root's nix-channel subscription on every
+  # unattended run -- confirmed live on a real deployed host.
+  system-auto-upgrade-engine-does-not-touch-channels = withRef.system.autoUpgrade.upgrade == false;
+
   # `boot` is the whole point: with `switch` upstream would activate a
   # new kernel's userspace behind our back, and the reboot decision
   # would have nothing left to decide

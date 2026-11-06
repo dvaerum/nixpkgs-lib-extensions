@@ -586,11 +586,20 @@
                 # Upstream as the ENGINE only: fetch, evaluate, build,
                 # stage. `boot` (never `switch`) is what leaves the
                 # activation decision to the policy unit below.
+                #
+                # `upgrade = false`: nixpkgs' own default is `true`, and
+                # its generated script appends a bare `--upgrade` to the
+                # nixos-rebuild invocation whenever `channel` is unset
+                # (which it always is here -- this module only ever sets
+                # `flake`), updating root's nix-channel subscription on
+                # every unattended run. Its own doc comment names
+                # flake-based upgrades as exactly when to disable this.
                 system.autoUpgrade = {
                   enable = mkBuilderDefault true;
                   flake = mkBuilderDefault cfg.flakeRef;
                   operation = mkBuilderDefault "boot";
                   allowReboot = mkBuilderDefault false;
+                  upgrade = mkBuilderDefault false;
                   dates = mkBuilderDefault cfg.schedule;
                   persistent = mkBuilderDefault cfg.persistent;
                   randomizedDelaySec = mkBuilderDefault "${toString cfg.randomizedDelaySec}s";
