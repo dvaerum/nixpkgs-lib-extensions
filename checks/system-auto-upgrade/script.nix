@@ -124,6 +124,30 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
     --booted-system $TMPDIR/gen2 --current-system $TMPDIR/current --profile $TMPDIR/gen2
   [ ! -s "$RECORD" ]
 
+  # ── --no-activate: stage only, never `switch` the running system ──
+  # same shape as the "activate" case above, but nothing may be switched
+  # and nothing rebooted: the staged generation just waits for the next boot
+  reset
+  ln -sfn $TMPDIR/gen1 $TMPDIR/current
+  SESSIONS="" "$policy" "''${base[@]}" --no-activate \
+    --booted-system $TMPDIR/gen2 --current-system $TMPDIR/current --profile $TMPDIR/gen2
+  [ ! -s "$RECORD" ]
+  # a kernel-modules-only change that the triggers ignore is "no reboot
+  # needed" -- exactly the branch that normally activates -- so it must
+  # stay staged too
+  reset
+  SESSIONS="" "$policy" "''${base[@]}" --no-activate --reboot-triggers kernel,initrd \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen3
+  ! grep -q "switch-to-configuration" "$RECORD"
+  # ... while an update that DOES need a reboot is still reported as pending
+  reset
+  rm -rf "$rt"
+  SESSIONS="" "$policy" "''${base[@]}" --no-activate \
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
+  ! grep -q "switch-to-configuration" "$RECORD"
+  [ -e "$rt/pending" ]
+  rm -rf "$rt"
+
   # ── rebootTriggers actually selects what is compared ──
   # gen3 differs from gen1 ONLY in kernel-modules
   reset

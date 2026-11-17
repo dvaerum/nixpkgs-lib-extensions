@@ -159,6 +159,7 @@
               "${resultFragment}"
             ]
             ++ lib.optional cfg.desktop.enable "--desktop-notify"
+            ++ lib.optional (!cfg.activate) "--no-activate"
             ++ lib.optional cfg.dryRun "--dry-run";
 
             # GIT_TERMINAL_PROMPT governs git's OWN prompting and not a
@@ -549,6 +550,20 @@
                   `$STATE_FILE` in the environment. This is where a push
                   notification or a monitoring ping goes; the library
                   deliberately bakes in neither.
+                '';
+              };
+
+              activate = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  Switch the running system to the staged generation as
+                  soon as it needs no reboot. `false` makes the module
+                  stage only: the new generation becomes the next boot
+                  entry (the engine's `nixos-rebuild boot`) and nothing
+                  ever runs `switch-to-configuration switch`, so the
+                  update takes effect on the next reboot. Reboot
+                  reminders and the pending-reboot status keep working.
                 '';
               };
 

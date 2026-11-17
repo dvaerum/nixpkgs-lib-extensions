@@ -1037,6 +1037,13 @@ point, which with `--refresh` can activate a *newer* commit than the one
 just staged and boot-defaulted; the profile's own script cannot drift,
 and needs no network.
 
+To stage only, set `services.systemAutoUpgrade.activate = false;`. The
+first row's "not yet activated" case then does nothing either: the
+staged generation is already the next boot entry (the engine's
+`nixos-rebuild boot`), so it takes effect on the next reboot and the
+running system is never switched. The "differs" row, reminders and the
+pending-reboot status are unaffected.
+
 Whether a reboot is needed is **derived** every run, by comparing
 `/run/booted-system` against the staged profile -- never remembered, so
 it cannot go stale. `/run/nixos-upgrade-policy/` holds only bookkeeping

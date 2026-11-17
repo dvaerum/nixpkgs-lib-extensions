@@ -30,6 +30,7 @@ pre_command=
 on_result=
 desktop_notify=0
 dry_run=0
+activate=1
 now=
 
 usage() {
@@ -62,6 +63,8 @@ usage: nixos-upgrade-policy [options]
   --pre-command PATH       sourced-ish hook run before anything else
   --on-result PATH         hook run once per NEW upgrade result
   --desktop-notify         allow notify-send on a user's session bus
+  --no-activate            stage only: never switch the running system to the
+                           staged generation; it takes effect on the next boot
   --dry-run                log destructive actions instead of doing them
   --now EPOCH              fake clock, for tests
 EOF
@@ -107,6 +110,7 @@ while [ "$#" -gt 0 ]; do
     --on-result) on_result="$2"; shift 2 ;;
     --now) now="$2"; shift 2 ;;
     --desktop-notify) desktop_notify=1; shift ;;
+    --no-activate) activate=0; shift ;;
     --dry-run) dry_run=1; shift ;;
     -h | --help) usage; exit 0 ;;
     *)
@@ -211,8 +215,12 @@ fi
 if [ "$reboot_pending" -eq 0 ]; then
   rm -f "$pending_file"
   if [ "$(link_of "$current_system")" != "$(link_of "$profile")" ]; then
-    log "no reboot needed; activating the staged generation"
-    act "$profile/bin/switch-to-configuration" switch
+    if [ "$activate" -eq 1 ]; then
+      log "no reboot needed; activating the staged generation"
+      act "$profile/bin/switch-to-configuration" switch
+    else
+      log "no reboot needed; leaving the staged generation for the next boot (--no-activate)"
+    fi
   else
     log "up to date; nothing to do"
   fi

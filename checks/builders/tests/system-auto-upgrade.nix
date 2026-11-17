@@ -182,6 +182,14 @@ in
     modules = [ { services.systemAutoUpgrade.dryRun = true; } ];
   });
 
+  # activating is the DEFAULT, and "default" has to mean the flag is
+  # ABSENT; a stray --no-activate would silently stop every fleet updating
+  system-auto-upgrade-activates-by-default = !(lib.hasInfix "--no-activate" (execOf withRef));
+
+  system-auto-upgrade-stage-only-wired = lib.hasInfix "--no-activate" (execWith {
+    modules = [ { services.systemAutoUpgrade.activate = false; } ];
+  });
+
   system-auto-upgrade-desktop-notify-default = lib.hasInfix "--desktop-notify" (execOf withRef);
 
   # ── credentials reach the ENGINE unit as environment, not as files ──
