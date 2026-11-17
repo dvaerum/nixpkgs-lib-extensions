@@ -171,6 +171,20 @@ pending_file="$runtime_dir/pending"
 reboot_pending=0
 if [ -n "$differing" ]; then reboot_pending=1; fi
 
+# ── announce a staged-but-not-booted generation ──────────────────────
+# With --no-activate a generation that needs no reboot is never switched
+# to, so nothing else would say an update is waiting for the next boot.
+# Pure information (nothing acts on it, unlike `pending`), and in /run so
+# it disappears at exactly the moment it stops being true: the reboot.
+staged_file="$runtime_dir/staged"
+if [ "$activate" -eq 0 ] && [ "$(link_of "$booted_system")" != "$(link_of "$profile")" ]; then
+  staged_since=$(read_field since "$staged_file")
+  [ -n "$staged_since" ] || staged_since=$now
+  printf 'since=%s\ngeneration=%s\n' "$staged_since" "$(link_of "$profile")" >"$staged_file"
+else
+  rm -f "$staged_file"
+fi
+
 # ── record a NEW upgrade result, once ────────────────────────────────
 # This unit runs on every poll as well as after the engine, so the
 # engine's own exit timestamp is what says "this is a result you have not

@@ -132,6 +132,9 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   SESSIONS="" "$policy" "''${base[@]}" --no-activate \
     --booted-system $TMPDIR/gen2 --current-system $TMPDIR/current --profile $TMPDIR/gen2
   [ ! -s "$RECORD" ]
+  # booted == staged here, so nothing is waiting for the next boot
+  [ ! -e "$rt/staged" ]
+  rm -rf "$rt"
   # a kernel-modules-only change that the triggers ignore is "no reboot
   # needed" -- exactly the branch that normally activates -- so it must
   # stay staged too
@@ -139,6 +142,12 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   SESSIONS="" "$policy" "''${base[@]}" --no-activate --reboot-triggers kernel,initrd \
     --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen3
   ! grep -q "switch-to-configuration" "$RECORD"
+  # a config-only update is announced as staged for the next boot, in a
+  # marker that is information only: no reboot is pending and nothing reboots
+  grep -q "^generation=$TMPDIR/gen3$" "$rt/staged"
+  grep -q "^since=" "$rt/staged"
+  [ ! -e "$rt/pending" ]
+  ! grep -q "reboot\|shutdown" "$RECORD"
   # ... while an update that DOES need a reboot is still reported as pending
   reset
   rm -rf "$rt"
@@ -146,6 +155,22 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
     --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen2
   ! grep -q "switch-to-configuration" "$RECORD"
   [ -e "$rt/pending" ]
+  rm -rf "$rt"
+
+  # the marker is keyed to "staged but not booted": it goes away once the
+  # staged generation is the booted one, and the DEFAULT mode (which
+  # activates) never writes it
+  reset
+  mkdir -p "$rt"; printf 'since=1\ngeneration=old\n' > "$rt/staged"
+  SESSIONS="" "$policy" "''${base[@]}" --no-activate \
+    --booted-system $TMPDIR/gen2 --current-system $TMPDIR/gen2 --profile $TMPDIR/gen2
+  [ ! -e "$rt/staged" ]
+  reset
+  rm -rf "$rt"
+  ln -sfn $TMPDIR/gen1 $TMPDIR/current
+  SESSIONS="" "$policy" "''${base[@]}" \
+    --booted-system $TMPDIR/gen2 --current-system $TMPDIR/current --profile $TMPDIR/gen2
+  [ ! -e "$rt/staged" ]
   rm -rf "$rt"
 
   # ── rebootTriggers actually selects what is compared ──
@@ -538,6 +563,19 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   # clean: --only-news says nothing at all
   echo "result=success" > $TMPDIR/clean-state
   echo "time=now" >> $TMPDIR/clean-state
+  # a staged update is news, and says it waits for the next boot
+  printf 'since=0\ngeneration=g\n' > "$TMPDIR/staged-x"
+  res=$("$status" --only-news --pending-file "$TMPDIR/absent" --staged-file "$TMPDIR/staged-x" \
+    --state-file "$TMPDIR/clean-state" --now 7200)
+  echo "$res" | grep -q "update staged"
+  echo "$res" | grep -q "next boot"
+  echo "$res" | grep -q "2h"
+  # ... but a pending reboot already says it all: no second line
+  printf 'since=0\nlast-notified=0\nchanged=kernel\n' > "$TMPDIR/pending-y"
+  res=$("$status" --pending-file "$TMPDIR/pending-y" --staged-file "$TMPDIR/staged-x" \
+    --state-file "$TMPDIR/clean-state" --now 7200)
+  echo "$res" | grep -q "reboot required"
+  ! echo "$res" | grep -q "update staged"
   [ -z "$("$status" --only-news --pending-file "$TMPDIR/absent" --state-file "$TMPDIR/clean-state")" ]
   "$status" --pending-file "$TMPDIR/absent" --state-file "$TMPDIR/clean-state" | grep -q "no reboot pending"
   # never run is not a failure

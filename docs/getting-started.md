@@ -1044,6 +1044,13 @@ staged generation is already the next boot entry (the engine's
 running system is never switched. The "differs" row, reminders and the
 pending-reboot status are unaffected.
 
+So that a staged update is not silent, the policy also writes
+`/run/nixos-upgrade-policy/staged` (`since=`, `generation=`) whenever the
+staged generation is not the booted one. It is information only --
+nothing reboots because of it, unlike `pending` -- and `nixos-upgrade-status`
+reports it as "update staged; it takes effect at the next boot". It lives
+in `/run`, so it disappears at the reboot that makes it untrue.
+
 Whether a reboot is needed is **derived** every run, by comparing
 `/run/booted-system` against the staged profile -- never remembered, so
 it cannot go stale. `/run/nixos-upgrade-policy/` holds only bookkeeping

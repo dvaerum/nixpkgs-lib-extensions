@@ -7,6 +7,7 @@
 # about what is going on.
 
 pending_file=/run/nixos-upgrade-policy/pending
+staged_file=/run/nixos-upgrade-policy/staged
 state_file=/var/lib/nixos-upgrade-policy/last-run
 allow_file="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/nixos-allow-reboot"
 only_news=0
@@ -15,11 +16,13 @@ now=
 usage() {
   cat >&2 <<'EOF'
 usage: nixos-upgrade-status [--only-news] [--pending-file PATH]
-                            [--state-file PATH] [--allow-file PATH]
+                            [--staged-file PATH] [--state-file PATH]
+                            [--allow-file PATH]
                             [--now EPOCH]
 
-  --only-news    print nothing unless a reboot is pending or the last
-                 upgrade failed (what the shell-start line uses)
+  --only-news    print nothing unless a reboot is pending, an update is
+                 staged for the next boot, or the last upgrade failed
+                 (what the shell-start line uses)
   --allow-file   this user's reboot permission, as written by
                  nixos-allow-reboot
 EOF
@@ -27,7 +30,7 @@ EOF
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --pending-file | --state-file | --allow-file | --now)
+    --pending-file | --staged-file | --state-file | --allow-file | --now)
       if [ "$#" -lt 2 ]; then
         echo "nixos-upgrade-status: $1 needs a value" >&2
         usage
@@ -37,6 +40,7 @@ while [ "$#" -gt 0 ]; do
   esac
   case "$1" in
     --pending-file) pending_file="$2"; shift 2 ;;
+    --staged-file) staged_file="$2"; shift 2 ;;
     --state-file) state_file="$2"; shift 2 ;;
     --allow-file) allow_file="$2"; shift 2 ;;
     --now) now="$2"; shift 2 ;;
@@ -61,6 +65,7 @@ read_field() {
 }
 
 pending_since=$(read_field since "$pending_file")
+staged_since=$(read_field since "$staged_file")
 changed=$(read_field changed "$pending_file")
 result=$(read_field result "$state_file")
 when=$(read_field time "$state_file")
@@ -68,7 +73,7 @@ when=$(read_field time "$state_file")
 failed=0
 if [ -n "$result" ] && [ "$result" != "success" ]; then failed=1; fi
 
-if [ -z "$pending_since" ] && [ "$failed" -eq 0 ]; then
+if [ -z "$pending_since" ] && [ -z "$staged_since" ] && [ "$failed" -eq 0 ]; then
   if [ "$only_news" -eq 0 ]; then
     if [ -n "$when" ]; then
       echo "NixOS auto-upgrade: last run succeeded at $when; no reboot pending."
@@ -101,6 +106,13 @@ if [ -n "$pending_since" ]; then
       fi
       ;;
   esac
+fi
+
+# A pending reboot already covers a staged update, so only say this when
+# nothing stronger has been said.
+if [ -z "$pending_since" ] && [ -n "$staged_since" ]; then
+  hours=$(( (now - staged_since) / 3600 ))
+  echo "NixOS auto-upgrade: update staged; it takes effect at the next boot (staged ${hours}h ago)."
 fi
 
 # A recorded failure is the actionable case, so it is also the exit code
