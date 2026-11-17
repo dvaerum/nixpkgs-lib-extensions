@@ -213,6 +213,13 @@
           system-auto-upgrade-script = import ./checks/system-auto-upgrade/script.nix {
             pkgs = nixpkgs.legacyPackages.${system};
           };
+          # the real module + real nixos-upgrade.service updating a booted
+          # guest: `activate = false` stages without switching, and the
+          # default still reaches the activation step
+          system-auto-upgrade-stage-only-vm = import ./checks/system-auto-upgrade/stage-only-vm.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            inherit nixpkgs myLib;
+          };
           # the generation-retention policy's own behaviour (the floor,
           # the never-delete-current rule, the fail-closed refusal) --
           # this one deletes things that cannot be recovered, so the
