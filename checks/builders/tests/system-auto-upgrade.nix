@@ -288,6 +288,37 @@ in
     in
     lib.any (a: lib.hasInfix "owns the reboot decision" a.message) failing;
 
+  # ── switch-to-configuration is only needed when the module activates ──
+  # `activate = true` (the default) runs it, so a host that does not build it
+  # is a misconfiguration; `activate = false` never does, so the same host
+  # is fine and must not be refused
+  system-auto-upgrade-asserts-switch-when-activating =
+    let
+      failing = lib.filter (a: !a.assertion) (
+        (hostWith {
+          systemAutoUpgradeFlakeRef = liveRef;
+          modules = [ { system.switch.enable = false; } ];
+        }).config.assertions
+      );
+    in
+    lib.any (a: lib.hasInfix "system.switch.enable = false" a.message) failing;
+
+  system-auto-upgrade-stage-only-needs-no-switch =
+    let
+      failing = lib.filter (a: !a.assertion) (
+        (hostWith {
+          systemAutoUpgradeFlakeRef = liveRef;
+          modules = [
+            {
+              system.switch.enable = false;
+              services.systemAutoUpgrade.activate = false;
+            }
+          ];
+        }).config.assertions
+      );
+    in
+    !(lib.any (a: lib.hasInfix "system.switch.enable = false" a.message) failing);
+
   # ── it reaches through the combined builder too ──
   system-auto-upgrade-through-build-configurations =
     let

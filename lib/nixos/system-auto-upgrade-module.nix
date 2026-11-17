@@ -589,8 +589,9 @@
               (lib.mkIf wanted {
                 assertions = [
                   {
-                    assertion = config.system.switch.enable;
-                    message = "services.systemAutoUpgrade activates a staged generation with switch-to-configuration, which system.switch.enable = false does not build. Enable one or the other.";
+                    # only the activating mode runs it; stage-only never does
+                    assertion = !cfg.activate || config.system.switch.enable;
+                    message = "services.systemAutoUpgrade activates a staged generation with switch-to-configuration, which system.switch.enable = false does not build. Enable one or the other, or set services.systemAutoUpgrade.activate = false.";
                   }
                   {
                     assertion = !config.system.autoUpgrade.allowReboot;
