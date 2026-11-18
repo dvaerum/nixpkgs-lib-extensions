@@ -135,9 +135,9 @@ let
         pollIntervalSec = null;
       };
 
-      # test VMs build without switch-to-configuration; the activating mode
-      # needs it on the host (stage-only does not -- the assertion allows it)
-      system.switch.enable = lib.mkIf (policy.activate or true) (lib.mkForce true);
+      # nixos tests build guests without switch-to-configuration; the module
+      # asserts it in every mode (the engine's `nixos-rebuild boot` runs it)
+      system.switch.enable = lib.mkForce true;
 
       nix.settings.experimental-features = [
         "nix-command"

@@ -288,10 +288,11 @@ in
     in
     lib.any (a: lib.hasInfix "owns the reboot decision" a.message) failing;
 
-  # ── switch-to-configuration is only needed when the module activates ──
-  # `activate = true` (the default) runs it, so a host that does not build it
-  # is a misconfiguration; `activate = false` never does, so the same host
-  # is fine and must not be refused
+  # ── switch-to-configuration is needed in EVERY mode ──
+  # the default mode runs it to activate; the engine (`nixos-rebuild boot`)
+  # runs it to write the boot entry, so stage-only needs it too. A host
+  # without it is a misconfiguration, refused at eval rather than left to
+  # move the profile and then fail
   system-auto-upgrade-asserts-switch-when-activating =
     let
       failing = lib.filter (a: !a.assertion) (
@@ -303,7 +304,7 @@ in
     in
     lib.any (a: lib.hasInfix "system.switch.enable = false" a.message) failing;
 
-  system-auto-upgrade-stage-only-needs-no-switch =
+  system-auto-upgrade-asserts-switch-when-staging-only =
     let
       failing = lib.filter (a: !a.assertion) (
         (hostWith {
@@ -314,6 +315,18 @@ in
               services.systemAutoUpgrade.activate = false;
             }
           ];
+        }).config.assertions
+      );
+    in
+    lib.any (a: lib.hasInfix "system.switch.enable = false" a.message) failing;
+
+  # the assertion lives under `mkIf wanted`: an image-based appliance that
+  # does not use the module at all must keep building without switch
+  system-auto-upgrade-no-switch-ok-when-unwanted =
+    let
+      failing = lib.filter (a: !a.assertion) (
+        (hostWith {
+          modules = [ { system.switch.enable = false; } ];
         }).config.assertions
       );
     in

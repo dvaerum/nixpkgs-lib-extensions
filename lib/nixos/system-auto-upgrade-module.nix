@@ -589,9 +589,10 @@
               (lib.mkIf wanted {
                 assertions = [
                   {
-                    # only the activating mode runs it; stage-only never does
-                    assertion = !cfg.activate || config.system.switch.enable;
-                    message = "services.systemAutoUpgrade activates a staged generation with switch-to-configuration, which system.switch.enable = false does not build. Enable one or the other, or set services.systemAutoUpgrade.activate = false.";
+                    # the engine runs it in BOTH modes (nixos-rebuild boot
+                    # writes the boot entry through it)
+                    assertion = config.system.switch.enable;
+                    message = "services.systemAutoUpgrade needs switch-to-configuration in every mode: the engine's `nixos-rebuild boot` runs it to write the boot entry, and the policy runs it to activate. system.switch.enable = false does not build it. Leave system.switch.enable at its default.";
                   }
                   {
                     assertion = !config.system.autoUpgrade.allowReboot;
