@@ -1037,19 +1037,42 @@ point, which with `--refresh` can activate a *newer* commit than the one
 just staged and boot-defaulted; the profile's own script cannot drift,
 and needs no network.
 
-To stage only, set `services.systemAutoUpgrade.activate = false;`. The
-first row's "not yet activated" case then does nothing either: the
-staged generation is already the next boot entry (the engine's
-`nixos-rebuild boot`), so it takes effect on the next reboot and the
-running system is never switched. The "differs" row, reminders and the
-pending-reboot status are unaffected.
+To stage only, set `services.systemAutoUpgrade.activation = "boot";` (the
+default, `"switch"`, activates). The first row's "not yet activated" case
+then does nothing either: the staged generation is already the next boot
+entry (the engine's `nixos-rebuild boot`), so it takes effect on the next
+reboot and the running system is never switched. The "differs" row,
+reminders and the pending-reboot status are unaffected. `"boot"` still
+needs `system.switch.enable`: the engine runs `switch-to-configuration
+boot` to write the boot entry.
 
-So that a staged update is not silent, the policy also writes
-`/run/nixos-upgrade-policy/staged` (`since=`, `generation=`) whenever the
-staged generation is not the booted one. It is information only --
-nothing reboots because of it, unlike `pending` -- and `nixos-upgrade-status`
-reports it as "update staged; it takes effect at the next boot". It lives
-in `/run`, so it disappears at the reboot that makes it untrue.
+Staging is **informational by design** and never escalates. A held
+system -- a long-running test machine that must not be updated mid-run
+and is rebooted on purpose beforehand -- can sit staged for as long as it
+likes; nothing turns the update into a reboot reminder.
+
+So that a staged update is not silent, the policy writes
+`/run/nixos-upgrade-policy/staged` while the staged generation is not the
+booted one:
+
+```
+since=<epoch seconds>
+generation=<store path of the staged system>
+```
+
+- `since` is when *that* generation was staged; a newer generation starts
+  its own clock.
+- It is removed once the staged generation is the booted one. `/run` is a
+  tmpfs, so it also disappears at the reboot that makes it untrue; a
+  script can test for it before rebooting and expect it gone afterwards.
+- It is refreshed only when the policy unit runs (after each engine run,
+  and on each poll when polling is on), so it can lag a staging by up to
+  one poll interval.
+- Nothing reboots because of it, unlike `pending`; `nixos-upgrade-status`
+  reports it as "update staged; it takes effect at the next boot". The
+  `onResult` hook already fires once per upgrade result, which is the
+  event for "an update was staged"; desktop notifications stay reserved
+  for a pending reboot.
 
 Whether a reboot is needed is **derived** every run, by comparing
 `/run/booted-system` against the staged profile -- never remembered, so

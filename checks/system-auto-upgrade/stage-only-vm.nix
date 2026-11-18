@@ -1,20 +1,22 @@
-# End-to-end VM test for `services.systemAutoUpgrade.activate`: the REAL
+# End-to-end VM test for `services.systemAutoUpgrade.activation`: the REAL
 # module, the REAL `nixos-upgrade.service` (`nixos-rebuild boot --flake`)
 # and the REAL policy unit, updating a booted NixOS guest from a flake.
 #
 # Two guests run the same update:
 #
-#   stageonly  activate = false  -> the next generation is staged as the
-#                                   boot default and the running system
-#                                   is NEVER switched; a marker says an
-#                                   update is waiting for the next boot
-#   control    activate = true   -> the policy says it WOULD switch
+#   stageonly  activation = "boot"   -> the next generation is staged as the
+#                                      boot default and the running system
+#                                      is NEVER switched; a marker says an
+#                                      update is waiting for the next boot
+#   control    activation = "switch" -> the policy says it WOULD switch
 #
 # The control is what keeps `stageonly` from passing vacuously: it proves
 # the very same update does reach the activation step when the option is
 # left alone. It runs with `dryRun` because a real switch to the minimal
 # target system would tear down the test backdoor mid-test; the script
-# test (script.nix) covers the real `switch-to-configuration` call.
+# test (script.nix) covers the real `switch-to-configuration` call, and
+# the booted == staged cases there cover the marker disappearing once the
+# staged generation is the booted one.
 #
 # Offline, like checks/bootstrap/switch-vm.nix: the update's flake is
 # GENERATED with a `path:` nixpkgs input and a lock made on the host, and
@@ -159,7 +161,7 @@ pkgs.testers.runNixOSTest {
   name = "system-auto-upgrade-stage-only";
 
   nodes = {
-    stageonly = node "stageonly" { activate = false; };
+    stageonly = node "stageonly" { activation = "boot"; };
     control = node "control" { dryRun = true; };
   };
 

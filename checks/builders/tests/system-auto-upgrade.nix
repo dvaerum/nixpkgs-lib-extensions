@@ -182,13 +182,45 @@ in
     modules = [ { services.systemAutoUpgrade.dryRun = true; } ];
   });
 
-  # activating is the DEFAULT, and "default" has to mean the flag is
+  # switching is the DEFAULT, and "default" has to mean the flag is
   # ABSENT; a stray --no-activate would silently stop every fleet updating
   system-auto-upgrade-activates-by-default = !(lib.hasInfix "--no-activate" (execOf withRef));
+  system-auto-upgrade-activation-defaults-to-switch =
+    withRef.services.systemAutoUpgrade.activation == "switch";
 
-  system-auto-upgrade-stage-only-wired = lib.hasInfix "--no-activate" (execWith {
-    modules = [ { services.systemAutoUpgrade.activate = false; } ];
+  system-auto-upgrade-boot-activation-wired = lib.hasInfix "--no-activate" (execWith {
+    modules = [ { services.systemAutoUpgrade.activation = "boot"; } ];
   });
+
+  # the explicit default spelling must behave like leaving it unset
+  system-auto-upgrade-switch-activation-wired =
+    !(lib.hasInfix "--no-activate" (execWith {
+      modules = [ { services.systemAutoUpgrade.activation = "switch"; } ];
+    }));
+
+  # `boot` composes with the other flags rather than replacing them
+  system-auto-upgrade-boot-activation-keeps-other-flags =
+    let
+      exec = execWith {
+        modules = [
+          {
+            services.systemAutoUpgrade.activation = "boot";
+            services.systemAutoUpgrade.dryRun = true;
+          }
+        ];
+      };
+    in
+    lib.hasInfix "--no-activate" exec
+    && lib.hasInfix "--dry-run" exec
+    && lib.hasInfix "--desktop-notify" exec;
+
+  # a typo'd mode must be an eval error, not silently "switch"
+  system-auto-upgrade-activation-rejects-unknown =
+    !(builtins.tryEval (
+      builtins.deepSeq (execWith {
+        modules = [ { services.systemAutoUpgrade.activation = "stage"; } ];
+      }) true
+    )).success;
 
   system-auto-upgrade-desktop-notify-default = lib.hasInfix "--desktop-notify" (execOf withRef);
 
@@ -312,7 +344,7 @@ in
           modules = [
             {
               system.switch.enable = false;
-              services.systemAutoUpgrade.activate = false;
+              services.systemAutoUpgrade.activation = "boot";
             }
           ];
         }).config.assertions
@@ -346,4 +378,20 @@ in
       };
     in
     out.nixosConfigurations.combohost.config.system.autoUpgrade.flake == liveRef;
+
+  # ...and so does the activation mode, whichever builder produced the host
+  system-auto-upgrade-activation-through-build-configurations =
+    let
+      out = myLib.buildConfigurations {
+        _defaults = {
+          inherit inputs system;
+          traceDiscoveredUsers = false;
+          users = [ ];
+          systemAutoUpgradeFlakeRef = liveRef;
+          modules = [ { services.systemAutoUpgrade.activation = "boot"; } ];
+        };
+        combohost = { };
+      };
+    in
+    lib.hasInfix "--no-activate" (execOf out.nixosConfigurations.combohost.config);
 }

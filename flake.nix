@@ -214,7 +214,7 @@
             pkgs = nixpkgs.legacyPackages.${system};
           };
           # the real module + real nixos-upgrade.service updating a booted
-          # guest: `activate = false` stages without switching, and the
+          # guest: `activation = "boot"` stages without switching, and the
           # default still reaches the activation step
           system-auto-upgrade-stage-only-vm = import ./checks/system-auto-upgrade/stage-only-vm.nix {
             pkgs = nixpkgs.legacyPackages.${system};

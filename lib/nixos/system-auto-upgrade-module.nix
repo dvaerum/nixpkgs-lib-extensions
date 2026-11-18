@@ -159,7 +159,7 @@
               "${resultFragment}"
             ]
             ++ lib.optional cfg.desktop.enable "--desktop-notify"
-            ++ lib.optional (!cfg.activate) "--no-activate"
+            ++ lib.optional (cfg.activation != "switch") "--no-activate"
             ++ lib.optional cfg.dryRun "--dry-run";
 
             # GIT_TERMINAL_PROMPT governs git's OWN prompting and not a
@@ -553,17 +553,22 @@
                 '';
               };
 
-              activate = mkOption {
-                type = types.bool;
-                default = true;
+              activation = mkOption {
+                type = types.enum [
+                  "switch"
+                  "boot"
+                ];
+                default = "switch";
                 description = ''
-                  Switch the running system to the staged generation as
-                  soon as it needs no reboot. `false` makes the module
-                  stage only: the new generation becomes the next boot
-                  entry (the engine's `nixos-rebuild boot`) and nothing
-                  ever runs `switch-to-configuration switch`, so the
-                  update takes effect on the next reboot. Reboot
-                  reminders and the pending-reboot status keep working.
+                  What happens to a staged generation that needs no reboot.
+                  `"switch"` switches the running system to it right away.
+                  `"boot"` stages only: the new generation becomes the next
+                  boot entry (the engine's `nixos-rebuild boot`) and nothing
+                  ever runs `switch-to-configuration switch`, so the update
+                  takes effect on the next reboot. Reboot reminders and the
+                  pending-reboot status keep working in both modes, and
+                  `"boot"` still needs `system.switch.enable` (the engine
+                  runs `switch-to-configuration boot`).
                 '';
               };
 
