@@ -606,6 +606,18 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
     --state-file "$TMPDIR/clean-state" --now 7200)
   echo "$res" | grep -q "reboot required"
   ! echo "$res" | grep -q "update staged"
+  # a clock that stepped backwards puts "since" in the future: an age is
+  # never negative, for the staged line or the pending one
+  printf 'since=9000\ngeneration=g\n' > "$TMPDIR/staged-future"
+  res=$("$status" --pending-file "$TMPDIR/absent" --staged-file "$TMPDIR/staged-future" \
+    --state-file "$TMPDIR/clean-state" --now 5000)
+  echo "$res" | grep -q "staged 0h ago"
+  ! echo "$res" | grep -q -- "-[0-9]h"
+  printf 'since=9000\nlast-notified=9000\nchanged=kernel\n' > "$TMPDIR/pending-future"
+  res=$("$status" --pending-file "$TMPDIR/pending-future" \
+    --state-file "$TMPDIR/clean-state" --now 5000)
+  echo "$res" | grep -q "pending for 0h"
+  ! echo "$res" | grep -q -- "-[0-9]h"
   [ -z "$("$status" --only-news --pending-file "$TMPDIR/absent" --state-file "$TMPDIR/clean-state")" ]
   "$status" --pending-file "$TMPDIR/absent" --state-file "$TMPDIR/clean-state" | grep -q "no reboot pending"
   # never run is not a failure

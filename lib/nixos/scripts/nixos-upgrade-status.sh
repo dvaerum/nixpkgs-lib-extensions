@@ -64,6 +64,13 @@ read_field() {
   sed -n "s/^$1=//p" "$2"
 }
 
+# Whole hours since an epoch, never negative: a clock that stepped
+# backwards puts "since" in the future, and "-1h ago" is nonsense.
+hours_since() {
+  local h=$(((now - $1) / 3600))
+  [ "$h" -ge 0 ] || h=0
+  echo "$h"
+}
 pending_since=$(read_field since "$pending_file")
 staged_since=$(read_field since "$staged_file")
 changed=$(read_field changed "$pending_file")
@@ -89,7 +96,7 @@ if [ "$failed" -eq 1 ]; then
 fi
 
 if [ -n "$pending_since" ]; then
-  hours=$(( (now - pending_since) / 3600 ))
+  hours=$(hours_since "$pending_since")
   echo "NixOS auto-upgrade: reboot required (${changed:-unknown} changed), pending for ${hours}h."
 
   # Say whether YOU are the one holding it up. Without this the two
@@ -111,7 +118,7 @@ fi
 # A pending reboot already covers a staged update, so only say this when
 # nothing stronger has been said.
 if [ -z "$pending_since" ] && [ -n "$staged_since" ]; then
-  hours=$(( (now - staged_since) / 3600 ))
+  hours=$(hours_since "$staged_since")
   echo "NixOS auto-upgrade: update staged; it takes effect at the next boot (staged ${hours}h ago)."
 fi
 
