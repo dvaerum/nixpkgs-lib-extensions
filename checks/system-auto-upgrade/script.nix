@@ -173,6 +173,36 @@ pkgs.runCommand "nixos-upgrade-policy-script-test" { } ''
   [ ! -e "$rt/staged" ]
   rm -rf "$rt"
 
+  # the marker's "since" belongs to ONE staged generation: a newer
+  # generation must not inherit an older one's age...
+  stage_flags=(--no-activate --reboot-triggers kernel,initrd
+    --booted-system $TMPDIR/gen1 --current-system $TMPDIR/gen1 --profile $TMPDIR/gen3)
+  reset
+  mkdir -p "$rt"; printf 'since=1\ngeneration=%s\n' "$TMPDIR/gen2" > "$rt/staged"
+  SESSIONS="" "$policy" "''${base[@]}" --now 5000 "''${stage_flags[@]}"
+  grep -q "^since=5000$" "$rt/staged"
+  grep -q "^generation=$TMPDIR/gen3$" "$rt/staged"
+  # ...while polling the SAME generation again keeps its original age
+  printf 'since=1\ngeneration=%s\n' "$TMPDIR/gen3" > "$rt/staged"
+  SESSIONS="" "$policy" "''${base[@]}" --now 9000 "''${stage_flags[@]}"
+  grep -q "^since=1$" "$rt/staged"
+  # a marker with no generation line (hand-edited, or from before the field
+  # existed) cannot vouch for its age: it starts a new clock, never an
+  # empty or inherited one
+  printf 'since=1\n' > "$rt/staged"
+  SESSIONS="" "$policy" "''${base[@]}" --now 7000 "''${stage_flags[@]}"
+  grep -q "^since=7000$" "$rt/staged"
+  # a matching generation with an empty since also falls back to now
+  printf 'since=\ngeneration=%s\n' "$TMPDIR/gen3" > "$rt/staged"
+  SESSIONS="" "$policy" "''${base[@]}" --now 8000 "''${stage_flags[@]}"
+  grep -q "^since=8000$" "$rt/staged"
+  # --dry-run guards destructive actions only; the marker is bookkeeping
+  # (like `pending`), so a dry run still reports a staged update
+  rm -rf "$rt"
+  SESSIONS="" "$policy" "''${base[@]}" --dry-run --now 5000 "''${stage_flags[@]}"
+  grep -q "^since=5000$" "$rt/staged"
+  rm -rf "$rt"
+
   # ── rebootTriggers actually selects what is compared ──
   # gen3 differs from gen1 ONLY in kernel-modules
   reset

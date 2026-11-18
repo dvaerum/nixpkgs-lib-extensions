@@ -178,9 +178,15 @@ if [ -n "$differing" ]; then reboot_pending=1; fi
 # it disappears at exactly the moment it stops being true: the reboot.
 staged_file="$runtime_dir/staged"
 if [ "$activate" -eq 0 ] && [ "$(link_of "$booted_system")" != "$(link_of "$profile")" ]; then
-  staged_since=$(read_field since "$staged_file")
+  staged_generation=$(link_of "$profile")
+  staged_since=
+  # `since` is the age of the generation recorded next to it; a newer one
+  # starts its own clock
+  if [ "$(read_field generation "$staged_file")" = "$staged_generation" ]; then
+    staged_since=$(read_field since "$staged_file")
+  fi
   [ -n "$staged_since" ] || staged_since=$now
-  printf 'since=%s\ngeneration=%s\n' "$staged_since" "$(link_of "$profile")" >"$staged_file"
+  printf 'since=%s\ngeneration=%s\n' "$staged_since" "$staged_generation" >"$staged_file"
 else
   rm -f "$staged_file"
 fi
